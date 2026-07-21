@@ -20,6 +20,7 @@
   <button data-tab="overview" class="active">Übersicht</button>
   <button data-tab="agents">Agenten</button>
   <button data-tab="skills">Skills</button>
+  <button data-tab="vault">Tresor</button>
   <button data-tab="sessions">Verlauf</button>
   <button data-tab="cron">Automationen</button>
   <button data-tab="usage">Nutzung</button>
@@ -68,6 +69,18 @@
     <div id="skill-proposals"></div>
     <div id="skill-list"></div>
     <div id="skill-editor" class="card hidden"></div>
+  </section>
+
+  <section id="tab-vault" class="tab">
+    <h2>Tresor</h2>
+    <p class="hint">Hier bewahrst du Passwörter und Zugangsdaten für deinen Operator auf —
+    <strong>verschlüsselt auf deinem Mac</strong>. Das Besondere: Dein Operator bekommt die
+    Passwörter <strong>nie zu sehen</strong>. Er benutzt nur Platzhalter wie
+    <span class="mono">{{tresor:name}}</span> — das echte Passwort wird erst im letzten
+    Moment eingesetzt und sofort wieder aus allen Antworten und Protokollen entfernt.<br>
+    <span class="small">Gesichert durch dein Master-Passwort (musst du nach jedem
+    Mac-Neustart einmal eingeben) und einen Wiederherstellungsschlüssel für den Notfall.</span></p>
+    <div id="vault-content"></div>
   </section>
 
   <section id="tab-m365" class="tab">
