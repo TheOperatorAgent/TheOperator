@@ -39,6 +39,13 @@ def db():
 
 def record(bot, messages, result, rc, duration_ms, tokens_in=0, tokens_out=0,
            kind="chat", model=""):
+    # Secrets niemals in den (FTS5-durchsuchbaren) Verlauf schreiben
+    try:
+        import redact
+        messages = redact.redact(messages or "")
+        result = redact.redact(result or "")
+    except ImportError:
+        pass
     con = db()
     con.execute(
         "INSERT INTO sessions(epoch, bot, kind, messages, result, rc, duration_ms, "
