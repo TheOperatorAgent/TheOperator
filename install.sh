@@ -43,14 +43,41 @@ jget() { python3 -c "import json,sys;d=json.load(sys.stdin);print(d$1)" 2>/dev/n
 # ---------------------------------------------------------------- Uninstall --
 if [ "${1:-}" = "--uninstall" ]; then
   bold "Deinstallation"
-  launchctl bootout "$GUI_DOMAIN" "$PLIST_PATH" 2>/dev/null && ok "Daemon gestoppt" || warn "Daemon war nicht geladen"
-  rm -f "$PLIST_PATH" && ok "LaunchAgent entfernt"
+  launchctl bootout "$GUI_DOMAIN" "$PLIST_PATH" 2>/dev/null && ok "Listener gestoppt" || warn "Listener war nicht geladen"
+  rm -f "$PLIST_PATH" && ok "Listener-LaunchAgent entfernt"
+  DPLIST="$HOME/Library/LaunchAgents/com.the-operator.dashboard.plist"
+  launchctl bootout "$GUI_DOMAIN" "$DPLIST" 2>/dev/null && ok "Dashboard gestoppt" || true
+  rm -f "$DPLIST"
   if [ -f "$BOT_DIR/credentials.json" ]; then
     HS=$(jget "['homeserver']" < "$BOT_DIR/credentials.json")
     TK=$(jget "['access_token']" < "$BOT_DIR/credentials.json")
-    [ -n "$TK" ] && mx POST "$HS/_matrix/client/v3/logout" '{}' "$TK" >/dev/null && ok "Matrix-Token invalidiert"
+    [ -n "$TK" ] && mx POST "$HS/_matrix/client/v3/logout" '{}' "$TK" >/dev/null && ok "Matrix-Token (Owner) invalidiert"
+    # Agenten-Bots ausloggen (Art.-17-Löschkette)
+    if [ -f "$BOT_DIR/bots.json" ]; then
+      python3 - "$BOT_DIR" "$HS" <<'PY'
+import json, sys, urllib.request
+bot_dir, hs = sys.argv[1], sys.argv[2]
+for b in json.load(open(bot_dir + "/bots.json")).get("bots", []):
+    try:
+        req = urllib.request.Request(hs + "/_matrix/client/v3/logout", method="POST",
+            data=b"{}", headers={"Authorization": "Bearer " + b["access_token"],
+                                 "Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+        print("  ✓ Bot-Token invalidiert:", b["user_id"])
+    except Exception as e:
+        print("  ! Bot-Logout fehlgeschlagen:", b.get("user_id"), e)
+PY
+    fi
   fi
-  ask CONFIRM "Verzeichnis $BOT_DIR komplett löschen? (ja/nein)" "nein"
+  # Google-Token bei Google widerrufen
+  if [ -x "$BOT_DIR/dashboard/venv/bin/python3" ] && [ -f "$BOT_DIR/connections/google.json" ]; then
+    "$BOT_DIR/dashboard/venv/bin/python3" -c "
+import sys; sys.path.insert(0, '$BOT_DIR/dashboard')
+import google_auth; google_auth.disconnect()" 2>/dev/null && ok "Google-Token widerrufen" || true
+  fi
+  security delete-generic-password -s "the-operator" -a "token-key" >/dev/null 2>&1 && ok "Keychain-Schlüssel gelöscht" || true
+  [ -f "$BOT_DIR/connections/m365.json" ] && warn "Hinweis: Die Entra-App 'Operator M365 Connector' im M365-Tenant ggf. manuell löschen (Entra Portal → App-Registrierungen)"
+  ask CONFIRM "Verzeichnis $BOT_DIR komplett löschen (inkl. Gedächtnis + Tokens)? (ja/nein)" "nein"
   [ "$CONFIRM" = "ja" ] && rm -rf "$BOT_DIR" && ok "Dateien gelöscht" || warn "Dateien behalten"
   bold "Fertig."; exit 0
 fi
@@ -234,8 +261,81 @@ launchctl print "$GUI_DOMAIN/$PLIST_LABEL" >/dev/null 2>&1 || die "Daemon läuft
 tail -1 "$BOT_DIR/listener.log" 2>/dev/null | grep -q "Listener gestartet" \
   && ok "Daemon läuft und lauscht" || warn "Daemon gestartet, Log noch leer — gleich prüfen: tail -f $BOT_DIR/listener.log"
 
+# -------------------------------------------------------- Phase 8: DASHBOARD (optional)
+bold "Phase 8 — Web-Dashboard (optional)"
+ask DASH_OPTIN "Web-Dashboard installieren (Agenten-GUI, Google/M365-Anbindung)? (ja/nein)" "ja"
+if [ "$DASH_OPTIN" = "ja" ]; then
+  DASH_DIR="$BOT_DIR/dashboard"
+  mkdir -p "$DASH_DIR/static" "$BOT_DIR/connections" "$BOT_DIR/secrets"
+  chmod 700 "$BOT_DIR/secrets"
+  # venv + gepinnte Abhängigkeiten (Fehlschlag degradiert NIE den Bot -> warn statt die)
+  DASH_OK=1
+  if [ ! -x "$DASH_DIR/venv/bin/python3" ]; then
+    python3 -m venv "$DASH_DIR/venv" || DASH_OK=0
+  fi
+  if [ "$DASH_OK" = "1" ]; then
+    "$DASH_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
+    "$DASH_DIR/venv/bin/pip" install -q "fastapi==0.116.*" "uvicorn==0.35.*" \
+      "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" || DASH_OK=0
+  fi
+  if [ "$DASH_OK" = "1" ]; then
+    for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py; do
+      if [ -f "$SCRIPT_DIR/dashboard/$F" ]; then cp "$SCRIPT_DIR/dashboard/$F" "$DASH_DIR/$F"
+      else curl -fsSL "$REPO_RAW/dashboard/$F" -o "$DASH_DIR/$F" || DASH_OK=0; fi
+    done
+    for F in index.html app.js style.css; do
+      if [ -f "$SCRIPT_DIR/dashboard/static/$F" ]; then cp "$SCRIPT_DIR/dashboard/static/$F" "$DASH_DIR/static/$F"
+      else curl -fsSL "$REPO_RAW/dashboard/static/$F" -o "$DASH_DIR/static/$F" || DASH_OK=0; fi
+    done
+    for F in m365.py gdrive.py; do
+      if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
+      else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || DASH_OK=0; fi
+    done
+  fi
+  if [ "$DASH_OK" = "1" ]; then
+    # Keychain-Master-Key (idempotent) + Dashboard-Token (bleibt bei Re-Install erhalten)
+    security find-generic-password -s "the-operator" -a "token-key" >/dev/null 2>&1 \
+      || security add-generic-password -s "the-operator" -a "token-key" -w "$(openssl rand -hex 32)"
+    if [ ! -f "$BOT_DIR/dashboard.json" ]; then
+      DTOK=$(openssl rand -hex 32)
+      python3 - "$DTOK" "$BOT_DIR" <<'PY'
+import hashlib, json, os, sys
+tok, bot = sys.argv[1], sys.argv[2]
+open(os.path.join(bot, "dashboard.json"), "w").write(json.dumps(
+    {"port": 8737, "token_sha256": hashlib.sha256(tok.encode()).hexdigest(), "version": 1}, indent=1))
+os.chmod(os.path.join(bot, "dashboard.json"), 0o600)
+open(os.path.join(bot, "dashboard", ".token"), "w").write(tok)
+os.chmod(os.path.join(bot, "dashboard", ".token"), 0o600)
+PY
+    fi
+    cat > "$HOME/Library/LaunchAgents/com.the-operator.dashboard.plist" <<DPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>com.the-operator.dashboard</string>
+	<key>ProgramArguments</key>
+	<array><string>$DASH_DIR/venv/bin/python3</string><string>$DASH_DIR/server.py</string></array>
+	<key>WorkingDirectory</key><string>$DASH_DIR</string>
+	<key>RunAtLoad</key><true/>
+	<key>KeepAlive</key><true/>
+	<key>ThrottleInterval</key><integer>15</integer>
+	<key>StandardOutPath</key><string>$BOT_DIR/dashboard.log</string>
+	<key>StandardErrorPath</key><string>$BOT_DIR/dashboard.log</string>
+</dict>
+</plist>
+DPLIST
+    launchctl bootout "$GUI_DOMAIN" "$HOME/Library/LaunchAgents/com.the-operator.dashboard.plist" 2>/dev/null || true
+    launchctl bootstrap "$GUI_DOMAIN" "$HOME/Library/LaunchAgents/com.the-operator.dashboard.plist" \
+      && ok "Dashboard läuft — öffnen mit: python3 $DASH_DIR/open.py" \
+      || warn "Dashboard-Start fehlgeschlagen — Bot läuft trotzdem (Log: $BOT_DIR/dashboard.log)"
+  else
+    warn "Dashboard-Installation unvollständig — der Chat-Bot läuft davon unabhängig weiter"
+  fi
+fi
+
 # -------------------------------------------------------------- Phase 7: TEST
-bold "Phase 7/7 — Funktionstest"
+bold "Phase 7 — Funktionstest"
 python3 "$BOT_DIR/send.py" "✅ Operator einsatzbereit! Ich bin dein Operator auf diesem Mac. Schreib mir einfach — ich antworte in Sekunden. (Verhalten anpassen: $BOT_DIR/VERHALTEN.md)" >/dev/null \
   && ok "Testnachricht im Raum — auf dem Handy prüfen!" \
   || warn "Testnachricht fehlgeschlagen — Log prüfen"
