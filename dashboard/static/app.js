@@ -45,7 +45,10 @@ async function loadStatus() {
     <div class="tile"><div class="k">${STATUS.agents.length}</div><div class="l">Agenten (${Object.keys(STATUS.published).length} veröffentlicht)</div></div>
     <div class="tile"><div class="k">${STATUS.memory_count}</div><div class="l">Fakten im Gedächtnis</div></div>
     <div class="tile ${STATUS.m365.connected ? "ok" : ""}"><div class="k">${STATUS.m365.connected ? "✓" : "—"}</div><div class="l">Microsoft 365</div></div>
-    <div class="tile ${STATUS.google.connected ? "ok" : ""}"><div class="k">${STATUS.google.connected ? "✓" : "—"}</div><div class="l">Google Drive</div></div>`;
+    <div class="tile ${STATUS.google.connected ? "ok" : ""}"><div class="k">${STATUS.google.connected ? "✓" : "—"}</div><div class="l">Google Drive</div></div>
+    <div class="tile ${STATUS.health.synapse_ok ? "ok" : "err"}"><div class="k">${STATUS.health.synapse_ok ? "ok" : "down"}</div><div class="l">Matrix-Server</div></div>
+    <div class="tile ${STATUS.health.disk_free_gb < 10 ? "warn" : ""}"><div class="k">${STATUS.health.disk_free_gb} GB</div><div class="l">Disk frei</div></div>
+    <div class="tile"><div class="k">${STATUS.health.usage_5h.runs}</div><div class="l">Claude-Läufe (5 h) · ${STATUS.health.cron_jobs} Automationen</div></div>`;
   const audit = await api("GET", "/api/audit?limit=12");
   $("#audit-list").innerHTML = audit.entries.reverse().map((e) =>
     `<div>${esc(e.ts)} · ${esc(e.actor)} · ${esc(e.action)} ${esc(e.target || "")} ${e.ok ? "" : "❌"}</div>`).join("") || "<div>Noch keine Einträge</div>";
@@ -277,6 +280,172 @@ async function googleDisconnect() {
   try { await api("DELETE", "/api/google"); toast("Getrennt"); loadGoogle(); } catch (e) { toast(e.message, 1); }
 }
 
+/* ---------- Verlauf (A1) ---------- */
+async function loadSessions() {
+  const q = $("#sess-q").value.trim();
+  const d = await api("GET", "/api/sessions?limit=30" + (q ? "&q=" + encodeURIComponent(q) : ""));
+  $("#sess-list").innerHTML = d.sessions.map((s) => `
+    <div class="card" style="padding:12px 16px;margin-bottom:8px">
+      <div class="row-between" style="margin-bottom:4px">
+        <div><strong>${esc(s.bot)}</strong> <span class="pill">${esc(s.kind)}</span>
+          ${s.rc !== 0 ? '<span class="pill" style="color:var(--red)">Fehler</span>' : ""}</div>
+        <span class="small">${esc(s.ts)} · ${(s.duration_ms / 1000).toFixed(1)}s · ${s.tokens_out} tok</span>
+      </div>
+      <div class="small">➤ ${esc(s.messages.slice(0, 200))}</div>
+      <div class="small" style="color:var(--text);margin-top:4px">✦ ${esc((s.result || "").slice(0, 300))}</div>
+    </div>`).join("") || "<p class='hint'>Noch keine Läufe aufgezeichnet.</p>";
+}
+
+/* ---------- Automationen (A3) ---------- */
+async function loadCron() {
+  const d = await api("GET", "/api/cron");
+  $("#cron-list").innerHTML = d.jobs.map((j) => `
+    <div class="agent-row">
+      <div><strong>${esc(j.name)}</strong>
+        <span class="pill model">${esc(j.schedule || "manuell")}</span>
+        <span class="pill">${esc(j.target)}</span>
+        ${j.enabled ? "" : '<span class="pill" style="color:var(--amber)">pausiert</span>'}
+        <div class="meta">${esc(j.prompt.slice(0, 120))}</div>
+        <div class="small">${j.last_run ? "Zuletzt: " + esc(j.last_run) : "Noch nie gelaufen"}</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="ghost" onclick="runCron('${j.id}')">▶ Jetzt</button>
+        <button class="ghost" onclick="editCron('${j.id}')">Bearbeiten</button>
+        <button class="danger" onclick="deleteCron('${j.id}')">Löschen</button>
+      </div></div>`).join("") || "<p class='hint'>Noch keine Automationen.</p>";
+}
+
+async function editCron(id) {
+  let j = { name: "", schedule: "0 7 * * *", prompt: "", target: "owner", enabled: true };
+  if (id) j = (await api("GET", "/api/cron")).jobs.find((x) => x.id === id) || j;
+  const agents = (await api("GET", "/api/agents")).agents.filter((a) => a.published);
+  $("#cron-editor").classList.remove("hidden");
+  $("#cron-editor").innerHTML = `
+    <h2>${id ? "Automation bearbeiten" : "Neue Automation"}</h2>
+    <label>Name</label><input type="text" id="cr-name" value="${esc(j.name)}">
+    <label>Zeitplan (Min Std Tag Monat Wochentag — leer = nur manuell)</label>
+    <input type="text" id="cr-schedule" value="${esc(j.schedule)}" placeholder="0 7 * * 1-5">
+    <label>Auftrag an den Operator</label>
+    <textarea id="cr-prompt" rows="4">${esc(j.prompt)}</textarea>
+    <label>Ausführen als</label>
+    <select id="cr-target"><option value="owner" ${j.target === "owner" ? "selected" : ""}>Operator (Haupt-Bot)</option>
+      ${agents.map((a) => `<option value="${a.name}" ${j.target === a.name ? "selected" : ""}>Agent: ${a.name}</option>`).join("")}</select>
+    <label class="switch" style="margin:8px 0"><input type="checkbox" id="cr-enabled" ${j.enabled ? "checked" : ""}>aktiv</label>
+    <div style="display:flex;gap:10px">
+      <button class="primary" onclick="saveCron(${id ? `'${id}'` : "null"})">Speichern</button>
+      <button class="ghost" onclick="$('#cron-editor').classList.add('hidden')">Abbrechen</button></div>`;
+}
+
+async function saveCron(id) {
+  const payload = { name: $("#cr-name").value.trim(), schedule: $("#cr-schedule").value.trim(),
+    prompt: $("#cr-prompt").value.trim(), target: $("#cr-target").value,
+    enabled: $("#cr-enabled").checked };
+  try {
+    await api(id ? "PUT" : "POST", "/api/cron" + (id ? "/" + id : ""), payload);
+    $("#cron-editor").classList.add("hidden");
+    toast("Gespeichert"); loadCron();
+  } catch (e) { toast(e.message, 1); }
+}
+async function runCron(id) {
+  try { await api("POST", `/api/cron/${id}/run`); toast("Gestartet — Ergebnis kommt in den Matrix-Raum und in den Verlauf"); }
+  catch (e) { toast(e.message, 1); }
+}
+async function deleteCron(id) {
+  if (!confirm("Automation löschen?")) return;
+  try { await api("DELETE", "/api/cron/" + id); loadCron(); } catch (e) { toast(e.message, 1); }
+}
+
+/* ---------- Nutzung (A4) ---------- */
+function bars(buckets, labelFn) {
+  const max = Math.max(1, ...buckets.map((b) => b.runs));
+  const w = 100 / buckets.length;
+  const rects = buckets.map((b, i) => {
+    const h = (b.runs / max) * 80;
+    const x = 100 - (i + 1) * w;
+    return `<rect x="${x}%" y="${90 - h}" width="${w * 0.7}%" height="${h}" rx="2"
+      fill="var(--accent)" opacity="${b.runs ? 0.9 : 0.15}">
+      <title>${labelFn(b)}: ${b.runs} Läufe, ${b.tokens_out} Tokens</title></rect>`;
+  }).join("");
+  return `<svg viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%;height:120px">${rects}</svg>`;
+}
+async function loadUsage() {
+  const d = await api("GET", "/api/usage");
+  const w = d.window_5h;
+  $("#usage-tiles").innerHTML = `
+    <div class="tile"><div class="k">${w.runs}</div><div class="l">Läufe (letzte 5 h)</div></div>
+    <div class="tile"><div class="k">${(w.tokens_out / 1000).toFixed(1)}k</div><div class="l">Antwort-Tokens (5 h)</div></div>
+    <div class="tile"><div class="k">${(w.tokens_in / 1000).toFixed(0)}k</div><div class="l">Kontext-Tokens (5 h)</div></div>
+    <div class="tile"><div class="k">${(w.duration_ms / 60000).toFixed(1)} min</div><div class="l">Rechenzeit (5 h)</div></div>`;
+  $("#usage-24h").innerHTML = bars(d.buckets_24h, (b) => `vor ${b.offset} h`);
+  $("#usage-7d").innerHTML = bars(d.buckets_7d, (b) => `vor ${b.offset} Tagen`);
+}
+
+/* ---------- Gedächtnis (A2) ---------- */
+async function loadMemory() {
+  const q = $("#mem-q").value.trim();
+  const d = await api("GET", "/api/memory?limit=50" + (q ? "&q=" + encodeURIComponent(q) : ""));
+  $("#mem-list").innerHTML = d.memories.map((m) => `
+    <div class="agent-row" style="padding:10px 16px">
+      <div>${esc(m.text)}<div class="small">#${m.id} · ${esc(m.created)} · ${m.uses}× abgerufen</div></div>
+      <button class="danger" onclick="forgetMemory(${m.id})">Vergessen</button>
+    </div>`).join("") || "<p class='hint'>Leeres Gedächtnis.</p>";
+}
+async function addMemory() {
+  const text = $("#mem-new").value.trim();
+  if (!text) return;
+  try { await api("POST", "/api/memory", { text }); $("#mem-new").value = ""; toast("Gespeichert"); loadMemory(); }
+  catch (e) { toast(e.message, 1); }
+}
+async function forgetMemory(id) {
+  try { await api("DELETE", "/api/memory/" + id); loadMemory(); } catch (e) { toast(e.message, 1); }
+}
+
+/* ---------- Logs (A5) ---------- */
+async function loadLogs() {
+  const d = await api("GET", `/api/logs?file=${$("#log-file").value}&lines=300&errors_only=${$("#log-errors").checked}`);
+  const v = $("#log-view");
+  v.textContent = d.lines.join("\n") || "(leer)";
+  v.scrollTop = v.scrollHeight;
+}
+
+/* ---------- System: Backup + MCP (B1/B2) ---------- */
+async function loadSystem() {
+  const b = await api("GET", "/api/backups");
+  $("#backup-list").innerHTML = b.backups.map((x) => `
+    <div class="agent-row" style="padding:8px 14px">
+      <div class="mono small">${esc(x.name)} · ${(x.size / 1e6).toFixed(1)} MB · ${esc(x.ts)}</div>
+      <button class="ghost" onclick="restoreBackup('${x.name}')">Wiederherstellen</button>
+    </div>`).join("") || "<p class='hint'>Noch keine Backups.</p>";
+  const m = await api("GET", "/api/mcp");
+  $("#mcp-list").innerHTML = m.servers.map((s) => `
+    <div class="agent-row" style="padding:8px 14px">
+      <div><strong>${esc(s.name)}</strong> <span class="pill">${esc(s.transport)}</span>
+        <span class="mono small">${esc(s.command || s.url)}</span></div>
+      <button class="danger" onclick="deleteMcp('${s.name}')">Entfernen</button>
+    </div>`).join("") || "<p class='hint'>Keine MCP-Server konfiguriert.</p>";
+}
+async function createBackup() {
+  try { const r = await api("POST", "/api/backup"); toast(`Backup erstellt: ${r.name} (${(r.size / 1e6).toFixed(1)} MB)`); loadSystem(); }
+  catch (e) { toast(e.message, 1); }
+}
+async function restoreBackup(name) {
+  if (!confirm(`Backup "${name}" zur Prüfung entpacken? (Überschreibt nichts automatisch)`)) return;
+  try { const r = await api("POST", "/api/backup/restore", { name }); toast("Entpackt nach: " + r.dest); }
+  catch (e) { toast(e.message, 1); }
+}
+async function addMcp() {
+  const name = $("#mcp-name").value.trim(), target = $("#mcp-target").value.trim();
+  if (!name || !target) return toast("Name und Kommando/URL angeben", 1);
+  if (!confirm(`⚠️ MCP-Server "${name}" wird mit deinen Rechten ausgeführt und steht dem Operator als Werkzeug zur Verfügung. Vertraust du der Quelle?`)) return;
+  const payload = target.startsWith("http")
+    ? { name, url: target }
+    : { name, command: target.split(" ")[0], args: target.split(" ").slice(1) };
+  try { await api("POST", "/api/mcp", payload); toast("Hinzugefügt"); $("#mcp-name").value = ""; $("#mcp-target").value = ""; loadSystem(); }
+  catch (e) { toast(e.message, 1); }
+}
+async function deleteMcp(name) {
+  try { await api("DELETE", "/api/mcp/" + name); loadSystem(); } catch (e) { toast(e.message, 1); }
+}
+
 /* ---------- Verhalten & Datenschutz ---------- */
 async function loadVerhalten() { $("#verhalten-text").value = (await api("GET", "/api/verhalten")).content; }
 async function saveVerhalten() {
@@ -303,8 +472,14 @@ async function refresh() {
   try {
     if (active === "overview") await loadStatus();
     if (active === "agents") await loadAgents();
+    if (active === "sessions") await loadSessions();
+    if (active === "cron") await loadCron();
+    if (active === "usage") await loadUsage();
+    if (active === "memory") await loadMemory();
     if (active === "m365") await loadM365();
     if (active === "google") await loadGoogle();
+    if (active === "logs") await loadLogs();
+    if (active === "system") await loadSystem();
     if (active === "verhalten") await loadVerhalten();
     if (active === "privacy") await loadPrivacy();
   } catch (e) {
