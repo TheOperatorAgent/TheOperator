@@ -119,6 +119,15 @@ ID is answered; shell access is opt-in; the bot room is not end-to-end encrypted
   Microsoft 365 mit Lese-/Schreib-Reglern je Dienst — Datenschutz by Design, alles bleibt lokal
 - Ende-zu-Ende-Verschlüsselung des Bot-Raums
 
+## Passwort-Tresor
+
+Der Operator kann Zugangsdaten **nutzen, ohne sie je im Klartext zu sehen**. Im Dashboard-Tab
+**„Tresor"** legst du ein Master-Passwort fest und bekommst einen Wiederherstellungsschlüssel
+(Notfall-Kit). Passwörter trägst du danach verschlüsselt ein und sprichst sie im Chat nur per
+Referenz an: *„Logge dich mit `{{tresor:gitea-admin}}` ein"*. Der echte Wert wird erst im Moment
+der Kommando-Ausführung als Umgebungsvariable eingesetzt und sofort wieder aus allen Antworten,
+Logs und dem Gesprächsverlauf entfernt (Redaction). Details und Threat-Model: [SICHERHEIT.md](SICHERHEIT.md).
+
 ## Lizenz
 
 [MIT](LICENSE)
