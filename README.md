@@ -92,6 +92,13 @@ Claude login on your own machine. Customize its behavior in
 `~/.claude/matrix-bot/VERHALTEN.md` (hot-reloaded per message). Security: only your Matrix
 ID is answered; shell access is opt-in; the bot room is not end-to-end encrypted yet.
 
+## Roadmap
+
+- **v2.0 — Dashboard:** lokale Web-Oberfläche zur Verwaltung von Agenten (Modelle, Werkzeuge,
+  Veröffentlichung als eigene Matrix-Bots) sowie geführte Anbindung von Google Drive und
+  Microsoft 365 mit Lese-/Schreib-Reglern je Dienst — Datenschutz by Design, alles bleibt lokal
+- Ende-zu-Ende-Verschlüsselung des Bot-Raums
+
 ## Lizenz
 
 [MIT](LICENSE)
