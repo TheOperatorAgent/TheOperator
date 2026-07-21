@@ -74,6 +74,15 @@ def search(text, n=20):
         "ORDER BY s.id DESC LIMIT ?", (q, n)).fetchall())
 
 
+def recent_dialog(bot, n=6, max_age_h=24):
+    """Letzte n Chat-Runden dieses Bots (aufsteigend) für Gesprächskontext."""
+    since = time.time() - max_age_h * 3600
+    rows = db().execute(
+        "SELECT messages, result FROM sessions WHERE bot=? AND kind='chat' "
+        "AND epoch > ? AND rc = 0 ORDER BY id DESC LIMIT ?", (bot, since, n)).fetchall()
+    return [(m, r) for m, r in reversed(rows)]
+
+
 def usage(hours=5.0):
     since = time.time() - hours * 3600
     row = db().execute(
