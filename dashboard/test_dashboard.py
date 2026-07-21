@@ -141,6 +141,12 @@ def test_sessions_roundtrip(tmp_path, monkeypatch):
     assert u["runs"] == 2 and u["tokens_out"] == 70
     buckets = sessions.usage_buckets(24, 1)
     assert buckets[0]["runs"] == 2
+    # Gesprächskontext: nur eigener Bot, chronologisch, nur erfolgreiche Chat-Runden
+    dialog = sessions.recent_dialog("owner")
+    assert dialog == [("Wie ist das Wetter?", "Sonnig, 25 Grad")]
+    sessions.record("owner", "kaputt", "err", 1, 10, 0, 0)          # rc!=0 -> raus
+    sessions.record("owner", "cronlauf", "x", 0, 10, 0, 0, kind="cron")  # cron -> raus
+    assert len(sessions.recent_dialog("owner")) == 1
 
 
 def test_sessions_is_stdlib_only():
