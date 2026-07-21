@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
 import memory as memory_db          # noqa: E402  (stdlib-Modul aus BOT_DIR)
 import sessions as sessions_db      # noqa: E402
 import cron_runner                  # noqa: E402
+import skills as skills_store       # noqa: E402
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -163,6 +164,8 @@ def api_status():
         "agents": agents_store.list_agents(),
         "published": {b["agent"]: b["user_id"] for b in bots if b.get("enabled")},
         "memory_count": mem_count,
+        "skills_count": len(skills_store.list_skills()),
+        "skill_proposals": len(skills_store.load_proposals()),
         "m365": m365_setup.status(),
         "google": google_auth.status(),
         "health": {"disk_free_gb": disk_free_gb, "synapse_ok": synapse_ok,
@@ -617,6 +620,62 @@ def api_cron_run(jid: str):
     cron_runner.save_jobs(jobs)
     audit("dashboard", "cron.run_now", job["name"])
     return {"ok": True, "info": "Listener startet den Lauf binnen ~5 Sekunden"}
+
+
+# ---------------------------------------------------------------- Skills --
+@app.get("/api/skills")
+def api_skills():
+    return {"skills": skills_store.list_skills(),
+            "proposals": skills_store.load_proposals()}
+
+
+@app.get("/api/skills/{name}")
+def api_skill_get(name: str):
+    s = skills_store.get(name)
+    return s if s else err("notfound", "Skill nicht gefunden", 404)
+
+
+@app.post("/api/skills")
+async def api_skill_create(request: Request):
+    b = await request.json()
+    if skills_store.get(b.get("name", "")):
+        return err("exists", "Skill existiert bereits", 409)
+    ok, msg = skills_store.save(b.get("name", ""), b.get("description", ""),
+                                b.get("body", ""), source="dashboard")
+    audit("dashboard", "skill.create", b.get("name", ""), ok)
+    return {"ok": True} if ok else err("validate", msg)
+
+
+@app.put("/api/skills/{name}")
+async def api_skill_put(name: str, request: Request):
+    if not skills_store.get(name):
+        return err("notfound", "Skill nicht gefunden", 404)
+    b = await request.json()
+    ok, msg = skills_store.save(name, b.get("description", ""), b.get("body", ""),
+                                source="dashboard")
+    audit("dashboard", "skill.update", name, ok)
+    return {"ok": True} if ok else err("validate", msg)
+
+
+@app.delete("/api/skills/{name}")
+def api_skill_delete(name: str):
+    ok = skills_store.delete(name)
+    audit("dashboard", "skill.delete", name, ok)
+    return {"ok": True} if ok else err("notfound", "Skill nicht gefunden", 404)
+
+
+@app.post("/api/skills/proposals/{pid}/accept")
+def api_skill_proposal_accept(pid: str):
+    ok, msg = skills_store.accept(pid)
+    audit("dashboard", "skill.proposal_accept", pid, ok)
+    return {"ok": True} if ok else err("validate", msg)
+
+
+@app.post("/api/skills/proposals/{pid}/reject")
+def api_skill_proposal_reject(pid: str):
+    ok, msg = skills_store.reject(pid)
+    audit("dashboard", "skill.proposal_reject", pid, ok)
+    return {"ok": True} if ok else err("validate", msg)
 
 
 # ---------------------------------------------------------------- MCP (B1) --
