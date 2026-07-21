@@ -29,6 +29,7 @@ import memory as memory_db          # noqa: E402  (stdlib-Modul aus BOT_DIR)
 import sessions as sessions_db      # noqa: E402
 import cron_runner                  # noqa: E402
 import skills as skills_store       # noqa: E402
+import vault as vault_store         # noqa: E402
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -45,6 +46,11 @@ _pending_flows: dict = {}   # {"m365": flow, "google": flow}
 
 # ---------------------------------------------------------------- Hilfen --
 def audit(actor: str, action: str, target: str = "", ok: bool = True) -> None:
+    try:
+        import redact as _redact
+        target = _redact.redact(target or "")
+    except ImportError:
+        pass
     entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%S"), "actor": actor,
              "action": action, "target": target, "ok": ok}
     try:
@@ -166,6 +172,7 @@ def api_status():
         "memory_count": mem_count,
         "skills_count": len(skills_store.list_skills()),
         "skill_proposals": len(skills_store.load_proposals()),
+        "vault": vault_store.status(),
         "m365": m365_setup.status(),
         "google": google_auth.status(),
         "health": {"disk_free_gb": disk_free_gb, "synapse_ok": synapse_ok,
@@ -620,6 +627,136 @@ def api_cron_run(jid: str):
     cron_runner.save_jobs(jobs)
     audit("dashboard", "cron.run_now", job["name"])
     return {"ok": True, "info": "Listener startet den Lauf binnen ~5 Sekunden"}
+
+
+# ---------------------------------------------------------------- Tresor --
+_vault_fails = {"count": 0, "until": 0.0}
+
+
+def _vault_brake() -> JSONResponse | None:
+    if time.time() < _vault_fails["until"]:
+        wait = int(_vault_fails["until"] - time.time()) + 1
+        return err("ratelimit", f"Zu viele Fehlversuche — bitte {wait} s warten", 429)
+    return None
+
+
+def _vault_fail():
+    _vault_fails["count"] += 1
+    if _vault_fails["count"] >= 5:
+        _vault_fails["until"] = time.time() + 30
+        _vault_fails["count"] = 0
+
+
+@app.get("/api/vault/status")
+def api_vault_status():
+    return vault_store.status()
+
+
+@app.post("/api/vault/init")
+async def api_vault_init(request: Request):
+    b = await request.json()
+    try:
+        recovery_key = vault_store.init(b.get("master_pw", ""))
+    except (ValueError, RuntimeError) as e:
+        audit("dashboard", "vault.init", "", False)
+        return err("validate", str(e), 409 if "existiert" in str(e) else 400)
+    audit("dashboard", "vault.init", "")
+    return {"ok": True, "recovery_key": recovery_key}
+
+
+@app.post("/api/vault/unlock")
+async def api_vault_unlock(request: Request):
+    if (brake := _vault_brake()):
+        return brake
+    b = await request.json()
+    try:
+        vault_store.unlock(b.get("master_pw", ""))
+    except (ValueError, RuntimeError) as e:
+        _vault_fail()
+        audit("dashboard", "vault.unlock", "", False)
+        return err("auth", str(e), 403)
+    _vault_fails["count"] = 0
+    audit("dashboard", "vault.unlock", "")
+    return {"ok": True}
+
+
+@app.post("/api/vault/lock")
+def api_vault_lock():
+    vault_store.lock()
+    audit("dashboard", "vault.lock", "")
+    return {"ok": True}
+
+
+@app.get("/api/vault/entries")
+def api_vault_entries():
+    try:
+        return {"entries": vault_store.list_entries()}
+    except PermissionError:
+        return err("locked", "Tresor ist gesperrt", 423)
+    except RuntimeError as e:
+        return err("notfound", str(e), 404)
+
+
+@app.put("/api/vault/entries/{name}")
+async def api_vault_entry_put(name: str, request: Request):
+    b = await request.json()
+    try:
+        if b.get("value"):
+            vault_store.add_entry(name, b["value"], b.get("description", ""),
+                                  b.get("username", ""), b.get("url", ""))
+        else:
+            vault_store.update_meta(name, b.get("description"), b.get("username"),
+                                    b.get("url"))
+    except PermissionError:
+        return err("locked", "Tresor ist gesperrt", 423)
+    except KeyError:
+        return err("notfound", "Eintrag nicht gefunden (neuer Eintrag braucht einen Wert)", 404)
+    except (ValueError, RuntimeError) as e:
+        return err("validate", str(e))
+    audit("dashboard", "vault.entry.save", name)
+    return {"ok": True}
+
+
+@app.delete("/api/vault/entries/{name}")
+def api_vault_entry_delete(name: str):
+    try:
+        vault_store.remove_entry(name)
+    except PermissionError:
+        return err("locked", "Tresor ist gesperrt", 423)
+    except (KeyError, RuntimeError):
+        return err("notfound", "Eintrag nicht gefunden", 404)
+    audit("dashboard", "vault.entry.delete", name)
+    return {"ok": True}
+
+
+@app.post("/api/vault/rotate-master")
+async def api_vault_rotate(request: Request):
+    if (brake := _vault_brake()):
+        return brake
+    b = await request.json()
+    try:
+        vault_store.rotate_master(b.get("old_pw", ""), b.get("new_pw", ""))
+    except (ValueError, RuntimeError) as e:
+        _vault_fail()
+        audit("dashboard", "vault.rotate", "", False)
+        return err("auth", str(e), 403)
+    audit("dashboard", "vault.rotate", "")
+    return {"ok": True}
+
+
+@app.post("/api/vault/recover")
+async def api_vault_recover(request: Request):
+    if (brake := _vault_brake()):
+        return brake
+    b = await request.json()
+    try:
+        new_key = vault_store.recover(b.get("recovery_key", ""), b.get("new_master_pw", ""))
+    except (ValueError, RuntimeError) as e:
+        _vault_fail()
+        audit("dashboard", "vault.recover", "", False)
+        return err("auth", str(e), 403)
+    audit("dashboard", "vault.recover", "")
+    return {"ok": True, "recovery_key": new_key}
 
 
 # ---------------------------------------------------------------- Skills --
