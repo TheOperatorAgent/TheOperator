@@ -43,6 +43,19 @@ Der Wizard führt durch alles:
 Erneutes Ausführen ist gefahrlos: Das Skript repariert/aktualisiert, statt doppelt zu
 installieren. Deinstallation: `bash install.sh --uninstall`.
 
+## Agenten & Gedächtnis (v2)
+
+- **Agenten per MD-Datei:** In `~/.claude/matrix-bot/workspace/.claude/agents/` definieren
+  einfache Markdown-Dateien Spezialisten (mitgeliefert: `recherche`, `schreiber`, bei
+  Shell-Freigabe auch `sysadmin`). Der Haupt-Operator delegiert selbstständig — und kann auf
+  Zuruf im Chat neue Agenten anlegen („Leg mir einen Übersetzer-Agenten an").
+  Günstige Modelle (`model: haiku`) schonen dein Abo-Kontingent.
+- **Tokensparendes Gedächtnis:** `memory.py` speichert Fakten in einer lokalen
+  SQLite-Volltext-Datenbank. Vor jedem Wecken werden nur die zur Nachricht passenden
+  Einträge in den Prompt gelegt — dein Assistent erinnert sich, ohne dass der Prompt mit
+  wachsendem Wissen immer teurer wird. Der Operator speichert Merkenswertes selbst
+  (Shell-Freigabe nötig) und kann Einträge korrigieren oder vergessen.
+
 ## Verhalten anpassen
 
 `~/.claude/matrix-bot/VERHALTEN.md` ist das Gehirn-Briefing deines Assistenten: Wer er ist,
