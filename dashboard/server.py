@@ -744,6 +744,48 @@ async def api_vault_rotate(request: Request):
     return {"ok": True}
 
 
+@app.get("/api/vault/fido")
+def api_vault_fido_list():
+    return {"keys": vault_store.fido_list()}
+
+
+@app.post("/api/vault/fido/enroll")
+async def api_vault_fido_enroll(request: Request):
+    label = (await request.json()).get("label", "")
+    try:
+        name = vault_store.fido_enroll(label)
+    except PermissionError:
+        return err("locked", "Tresor ist gesperrt", 423)
+    except (ValueError, RuntimeError) as e:
+        audit("dashboard", "vault.fido.add", "", False)
+        return err("fido", str(e))
+    audit("dashboard", "vault.fido.add", name)
+    return {"ok": True, "label": name}
+
+
+@app.post("/api/vault/fido/unlock")
+def api_vault_fido_unlock():
+    try:
+        vault_store.fido_unlock()
+    except (ValueError, RuntimeError) as e:
+        audit("dashboard", "vault.fido.unlock", "", False)
+        return err("fido", str(e), 403)
+    audit("dashboard", "vault.fido.unlock", "")
+    return {"ok": True}
+
+
+@app.delete("/api/vault/fido/{label}")
+def api_vault_fido_remove(label: str):
+    try:
+        vault_store.fido_remove(label)
+    except PermissionError:
+        return err("locked", "Tresor ist gesperrt", 423)
+    except (KeyError, RuntimeError):
+        return err("notfound", "Schlüssel nicht gefunden", 404)
+    audit("dashboard", "vault.fido.remove", label)
+    return {"ok": True}
+
+
 @app.post("/api/vault/recover")
 async def api_vault_recover(request: Request):
     if (brake := _vault_brake()):
