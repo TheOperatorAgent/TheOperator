@@ -55,12 +55,13 @@ OWNER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest s
 {verhalten}
 
 ---
-{memories}
+{history}{memories}
 Michi hat dir soeben im Matrix-Chat geschrieben:
 
 {messages}
 
-Erledige/beantworte das jetzt gemäß den Regeln oben und sende die Antwort in den Raum."""
+Erledige/beantworte das jetzt gemäß den Regeln oben und sende die Antwort in den Raum. \
+Beziehe dich auf den Gesprächsverlauf oben, wenn sich die Nachricht darauf bezieht."""
 
 AGENT_PROMPT = """Du bist der Agent „{name}" und läufst als eigenständiger Matrix-Bot. \
 Dein Auftraggeber ist {owner}. Dein Verhalten:
@@ -68,7 +69,7 @@ Dein Auftraggeber ist {owner}. Dein Verhalten:
 {body}
 
 ---
-
+{history}
 {owner_short} hat dir soeben geschrieben:
 
 {messages}
@@ -158,6 +159,24 @@ class BotSession(threading.Thread):
             log(f"Gedächtnis-Abruf fehlgeschlagen: {e}")
         return ""
 
+    def history_block(self):
+        """Letzte Gesprächsrunden als Kontext (aus sessions.db) — löst das
+        „jede Nachricht weckt mich neu ohne Verlauf"-Problem."""
+        if not sessions_db:
+            return ""
+        try:
+            rounds = sessions_db.recent_dialog(self.bot_name, n=6, max_age_h=24)
+        except Exception:
+            return ""
+        if not rounds:
+            return ""
+        lines = []
+        for msg, res in rounds:
+            lines.append(f"Michi: {msg[:400]}")
+            lines.append(f"Du: {res[:400]}")
+        return ("Bisheriger Gesprächsverlauf (chronologisch, zur Einordnung von "
+                "Rückbezügen wie 'darüber' oder 'das'):\n" + "\n".join(lines) + "\n\n")
+
     def build(self, bodies):
         messages = "\n".join(f"- {b}" for b in bodies)
         if self.kind == "owner":
@@ -166,6 +185,7 @@ class BotSession(threading.Thread):
             except OSError:
                 verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende per python3 ~/.claude/matrix-bot/send.py)"
             return (OWNER_PROMPT.format(verhalten=verhalten, messages=messages,
+                                        history=self.history_block(),
                                         memories=self.recall(" ".join(bodies))),
                     OWNER_TOOLS, None)
         agent = parse_agent_md(self.bot_name) or {"tools": [], "model": None,
@@ -177,6 +197,7 @@ class BotSession(threading.Thread):
         return (AGENT_PROMPT.format(name=self.bot_name, owner=OWNER,
                                     owner_short=OWNER.split(":")[0],
                                     body=agent["body"], messages=messages,
+                                    history=self.history_block(),
                                     bot_dir=BOT_DIR),
                 tools, model)
 
