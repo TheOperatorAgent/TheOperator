@@ -174,7 +174,15 @@ async function loadM365() {
          eingeschalteten Dienste zugreifen. Frag ihn im Chat z. B.:
          <em>„Was steht in meinen letzten 3 Mails?"</em><br>
          <span class="small">Firma: <span class="mono">${esc(s.tenant_id)}</span> ·
-         Zugang gültig bis ${esc((s.secret_expires || "?").slice(0, 10))}</span></p>`
+         Zugang gültig bis ${esc((s.secret_expires || "?").slice(0, 10))}</span></p>
+         <div class="stepbox" style="margin-top:12px">
+           <strong>Wessen Daten?</strong>
+           <p class="hint" style="margin:6px 0 8px">Es ist keine weitere Anmeldung nötig.
+           Trage hier einfach die M365-E-Mail-Adresse des Benutzers ein, dessen Postfach,
+           Kalender und OneDrive dein Operator verwenden soll (z. B. deine eigene):</p>
+           <input type="text" id="m365-upn" value="${esc(s.primary_user || "")}" placeholder="name@deinefirma.de">
+           <button class="ghost" onclick="saveM365Upn()">Benutzer speichern</button>
+         </div>`
       : `<p class="hint"><strong>So verbindest du dein Microsoft 365 — in 3 Schritten:</strong></p>
          <div class="stepbox">
            <div class="stepline"><span class="num">1</span><span>Klicke unten auf
@@ -212,6 +220,12 @@ async function loadM365() {
 async function saveM365Cid() {
   try { await api("PUT", "/api/m365/setup-client", { client_id: $("#m365-cid").value.trim() }); toast("Gespeichert"); loadM365(); }
   catch (e) { toast(e.message, 1); }
+}
+async function saveM365Upn() {
+  try {
+    await api("PUT", "/api/m365/primary-user", { upn: $("#m365-upn").value });
+    toast("Gespeichert — dein Operator nutzt jetzt die Daten dieses Benutzers");
+  } catch (e) { toast(e.message, 1); }
 }
 async function m365Login() {
   try { const r = await api("POST", "/api/m365/auth/start"); window.open(r.auth_url, "_blank"); toast("Anmeldefenster geöffnet — danach hier fortfahren"); }
