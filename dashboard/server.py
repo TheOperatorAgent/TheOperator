@@ -63,6 +63,24 @@ def creds() -> dict:
     return json.load(open(os.path.join(BOT_DIR, "credentials.json")))
 
 
+def keychain_set(account: str, value: str) -> None:
+    subprocess.run(["security", "add-generic-password", "-U", "-s", "the-operator",
+                    "-a", account, "-w", value], check=True, capture_output=True)
+
+
+def keychain_get(account: str, fallback: str = "keychain") -> str:
+    if fallback != "keychain":
+        return fallback
+    r = subprocess.run(["security", "find-generic-password", "-s", "the-operator",
+                        "-a", account, "-w"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def keychain_delete(account: str) -> None:
+    subprocess.run(["security", "delete-generic-password", "-s", "the-operator",
+                    "-a", account], capture_output=True)
+
+
 def load_bots() -> dict:
     if os.path.exists(BOTS_FILE):
         return json.load(open(BOTS_FILE))
@@ -283,8 +301,9 @@ async def api_agent_publish(name: str, request: Request):
         audit("dashboard", "agent.publish", name, False)
         return err("matrix", str(e), 502)
 
+    keychain_set("matrix-bot-" + name, login["access_token"])
     bots["bots"].append({"agent": name, "user_id": bot_mxid,
-                         "access_token": login["access_token"],
+                         "access_token": "keychain",
                          "room_id": room["room_id"], "enabled": True,
                          "created": time.strftime("%Y-%m-%dT%H:%M:%S")})
     save_bots(bots)
@@ -300,10 +319,12 @@ def api_agent_unpublish(name: str):
         return err("notfound", "Agent ist nicht veröffentlicht", 404)
     c = creds()
     try:
-        mx(c["homeserver"], "POST", "/_matrix/client/v3/logout", {},
-           token=entry["access_token"])
+        tok = keychain_get("matrix-bot-" + name, entry["access_token"])
+        if tok:
+            mx(c["homeserver"], "POST", "/_matrix/client/v3/logout", {}, token=tok)
     except RuntimeError:
         pass  # Token evtl. schon tot
+    keychain_delete("matrix-bot-" + name)
     bots["bots"] = [b for b in bots["bots"] if b["agent"] != name]
     save_bots(bots)
     audit("dashboard", "agent.unpublish", name)
