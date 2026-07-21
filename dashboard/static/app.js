@@ -45,7 +45,7 @@ async function loadStatus() {
     <div class="tile"><div class="k">${STATUS.agents.length}</div><div class="l">Agenten (${Object.keys(STATUS.published).length} veröffentlicht)</div></div>
     <div class="tile"><div class="k">${STATUS.memory_count}</div><div class="l">Fakten im Gedächtnis</div></div>
     <div class="tile ${STATUS.skill_proposals ? "warn" : ""}"><div class="k">${STATUS.skills_count}</div><div class="l">Skills${STATUS.skill_proposals ? ` · ${STATUS.skill_proposals} Vorschlag${STATUS.skill_proposals > 1 ? "e" : ""} 💡` : ""}</div></div>
-    <div class="tile ${STATUS.vault.exists ? (STATUS.vault.locked ? "warn" : "ok") : ""}"><div class="k">${STATUS.vault.exists ? (STATUS.vault.locked ? "🔒" : "🔓") : "—"}</div><div class="l">Tresor${STATUS.vault.exists && !STATUS.vault.locked ? ` · ${STATUS.vault.entries} Einträge` : STATUS.vault.exists ? " · gesperrt" : ""}</div></div>
+    <div class="tile ${STATUS.vault.exists ? (STATUS.vault.locked ? "warn" : "ok") : ""}"><div class="k">${STATUS.vault.exists ? (STATUS.vault.locked ? "🔒" : "🔓") : "—"}</div><div class="l">Tresor${STATUS.vault.exists && !STATUS.vault.locked ? ` · ${STATUS.vault.entries} Einträge` : STATUS.vault.exists ? " · gesperrt" : ""}${STATUS.vault.fido_keys ? ` · 🔑${STATUS.vault.fido_keys}` : ""}</div></div>
     <div class="tile ${STATUS.m365.connected ? "ok" : ""}"><div class="k">${STATUS.m365.connected ? "✓" : "—"}</div><div class="l">Microsoft 365</div></div>
     <div class="tile ${STATUS.google.connected ? "ok" : ""}"><div class="k">${STATUS.google.connected ? "✓" : "—"}</div><div class="l">Google Drive</div></div>
     <div class="tile ${STATUS.health.synapse_ok ? "ok" : "err"}"><div class="k">${STATUS.health.synapse_ok ? "ok" : "down"}</div><div class="l">Matrix-Server</div></div>
@@ -262,10 +262,12 @@ async function loadVault() {
       <label>Master-Passwort</label>
       <input type="password" id="v-unlock-pw" autocomplete="current-password"
         onkeydown="if(event.key==='Enter')vaultUnlock()">
-      <div style="display:flex;gap:10px;align-items:center">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button class="primary" onclick="vaultUnlock()">Entsperren</button>
+        ${s.fido_keys ? `<button class="ghost" onclick="vaultFidoUnlock()">🔑 Mit Sicherheitsschlüssel entsperren</button>` : ""}
         <a href="#" onclick="vaultRecoverForm();return false" class="small">Master-Passwort vergessen?</a>
       </div>
+      <div id="v-fido-status" class="small" style="margin-top:8px"></div>
       <div id="v-recover-form"></div>
     </div>`;
     return;
@@ -302,7 +304,62 @@ async function loadVault() {
       <button class="primary" onclick="saveVaultEntry()">Verschlüsselt speichern</button>
       <p class="hint" style="margin-top:8px">Danach im Chat: <em>„Logge dich mit
       {{tresor:${"name"}}} ein"</em> — dein Operator setzt das Passwort ein, ohne es zu sehen.</p>
+    </div>
+    <div class="card"><h2>🔑 Sicherheitsschlüssel (FIDO)</h2>
+      <p class="hint">Statt dein Master-Passwort zu tippen, kannst du den Tresor auch mit einem
+      Hardware-Schlüssel (z. B. YubiKey) öffnen — einfach einstecken und antippen. Du kannst
+      mehrere registrieren (z. B. einen Haupt- und einen Backup-Schlüssel). Verlierst du einen,
+      entfernst du ihn hier; dein Master-Passwort und der Wiederherstellungsschlüssel funktionieren
+      immer weiter.</p>
+      <div id="v-fido-list"></div>
+      <div style="display:flex;gap:10px;align-items:flex-end;margin-top:10px">
+        <div style="flex:1"><label>Name für den neuen Schlüssel</label>
+          <input type="text" id="v-fido-label" placeholder="z. B. YubiKey blau"></div>
+        <button class="primary" onclick="vaultFidoEnroll()">Schlüssel hinzufügen</button>
+      </div>
+      <div id="v-fido-enroll-status" class="small" style="margin-top:8px"></div>
     </div>`;
+  loadFidoList();
+}
+
+async function loadFidoList() {
+  const d = await api("GET", "/api/vault/fido");
+  const el = $("#v-fido-list");
+  if (!el) return;
+  el.innerHTML = d.keys.map((k) => `
+    <div class="agent-row" style="padding:8px 14px">
+      <div><strong>${esc(k.label)}</strong> <span class="small">hinzugefügt ${esc(k.added)}</span></div>
+      <button class="danger" onclick="vaultFidoRemove('${k.label.replace(/'/g, "\\'")}')">Entfernen</button>
+    </div>`).join("") || "<p class='hint'>Noch kein Sicherheitsschlüssel registriert.</p>";
+}
+
+async function vaultFidoEnroll() {
+  const label = $("#v-fido-label").value.trim();
+  if (!label) return toast("Bitte einen Namen für den Schlüssel angeben", 1);
+  const st = $("#v-fido-enroll-status");
+  st.textContent = "🔑 Steck deinen Schlüssel ein und tippe ihn an, wenn er blinkt (zweimal beim Registrieren)…";
+  try {
+    await api("POST", "/api/vault/fido/enroll", { label });
+    st.textContent = "";
+    $("#v-fido-label").value = "";
+    toast(`Schlüssel „${label}" registriert`);
+    loadFidoList();
+  } catch (e) { st.textContent = ""; toast(e.message, 1); }
+}
+
+async function vaultFidoRemove(label) {
+  if (!confirm(`Sicherheitsschlüssel "${label}" entfernen?`)) return;
+  try { await api("DELETE", "/api/vault/fido/" + encodeURIComponent(label)); toast("Entfernt"); loadFidoList(); }
+  catch (e) { toast(e.message, 1); }
+}
+
+async function vaultFidoUnlock() {
+  const st = $("#v-fido-status");
+  if (st) st.textContent = "🔑 Tippe jetzt deinen Sicherheitsschlüssel an…";
+  try {
+    await api("POST", "/api/vault/fido/unlock");
+    toast("Tresor entsperrt"); loadVault(); loadStatus().catch(() => {});
+  } catch (e) { if (st) st.textContent = ""; toast(e.message, 1); }
 }
 
 async function vaultInit() {
