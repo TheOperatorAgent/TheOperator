@@ -1,0 +1,4 @@
+credentials.json
+state.json
+*.log
+.DS_Store
