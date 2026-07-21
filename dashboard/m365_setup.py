@@ -7,12 +7,20 @@ find-or-create App -> requiredResourceAccess -> ServicePrincipal -> appRoleAssig
 Die Permission-GUIDs werden zur Laufzeit aus den appRoles des Graph-ServicePrincipals
 im Kunden-Tenant aufgeloest (kein GUID-Hardcoding).
 """
+import base64
 import json
 import os
 import time
 
 import msal
 import requests
+
+
+def _tid_from_token(token: str) -> str:
+    """Tenant-ID aus dem JWT-Payload lesen (kein extra Graph-Recht nötig)."""
+    payload = token.split(".")[1]
+    payload += "=" * (-len(payload) % 4)
+    return json.loads(base64.urlsafe_b64decode(payload)).get("tid", "")
 
 import tokens
 
@@ -197,6 +205,11 @@ def ensure_pipeline(perm_matrix: dict):
     else:
         sp = g.req("POST", "/servicePrincipals", {"appId": app["appId"]})
     yield ev("sp", "done", sp["id"])
+    # App-Identität sofort persistieren — macht Wiederholungsläufe voll idempotent
+    # (Secret wird dann wiederverwendet statt bei jedem Lauf neu erzeugt)
+    conn.update({"app_object_id": app["id"], "app_client_id": app["appId"],
+                 "sp_id": sp["id"]})
+    _save_conn(conn)
 
     yield ev("consent", "running", "Admin-Consent je Berechtigung erteilen")
     existing = g.req("GET", f"/servicePrincipals/{sp['id']}/appRoleAssignments")
@@ -226,10 +239,9 @@ def ensure_pipeline(perm_matrix: dict):
         conn["secret_expires"] = pw.get("endDateTime", "")
         yield ev("secret", "done", f"neues Secret bis {conn['secret_expires'][:10]}")
 
-    org = g.req("GET", "/organization")
+    # Tenant-ID direkt aus dem Token (GET /organization braeuchte ein extra Leserecht)
     conn.update({
-        "tenant_id": org["value"][0]["id"],
-        "app_object_id": app["id"], "app_client_id": app["appId"], "sp_id": sp["id"],
+        "tenant_id": _tid_from_token(token),
         "graph_sp_id": graph_sp_id,
         "permissions": perm_matrix, "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
     })
