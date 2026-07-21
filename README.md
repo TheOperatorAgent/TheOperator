@@ -56,6 +56,26 @@ installieren. Deinstallation: `bash install.sh --uninstall`.
   wachsendem Wissen immer teurer wird. Der Operator speichert Merkenswertes selbst
   (Shell-Freigabe nötig) und kann Einträge korrigieren oder vergessen.
 
+## Neu in v2.1 — Verlauf, Automationen, Nutzung & mehr
+
+- **Verlauf:** Jede Assistenten-Antwort wird lokal aufgezeichnet (SQLite) und ist im
+  Dashboard volltextdurchsuchbar — inkl. Dauer, Tokens und Fehlern.
+- **Automationen:** Zeitgesteuerte Aufträge („Jeden Morgen 7 Uhr: …") im Cron-Format,
+  mit „Jetzt ausführen", Lauf-Historie und Ziel-Wahl (Operator oder ein Agent).
+- **Nutzung:** Eigenverbrauch im 5-Stunden-Fenster (Abo-Limit-Logik) plus 24h/7-Tage-Charts.
+- **Gedächtnis-Browser:** Fakten einsehen, ergänzen, vergessen — direkt im Dashboard.
+- **Logs & Health:** Listener-/Dashboard-Logs mit Fehlerfilter; Kacheln für
+  Matrix-Server-Erreichbarkeit, Disk und Datenbank-Größen.
+- **MCP-Server:** Eigene MCP-Werkzeuge per UI registrieren (mit Sicherheitsabfrage) —
+  der Assistent lädt sie automatisch.
+- **Backups:** Ein Klick sichert Konfiguration, Agenten, Gedächtnis und verschlüsselte
+  Tokens; Wiederherstellung entpackt zur Prüfung und überschreibt nie automatisch.
+
+**Sicherheit als Standard:** Anders als verbreitete Alternativen ist das Operator-Dashboard
+ab Werk gehärtet — Bearer-Token-Pflicht (kein Cookie ⇒ kein CSRF), Host-Whitelist gegen
+DNS-Rebinding, reine Loopback-Bindung, verschlüsselte Token-Ablage mit Schlüssel im
+macOS-Schlüsselbund und Privacy-by-Default bei allen Integrations-Reglern.
+
 ## Verhalten anpassen
 
 `~/.claude/matrix-bot/VERHALTEN.md` ist das Gehirn-Briefing deines Assistenten: Wer er ist,
