@@ -1,6 +1,11 @@
-# Matrix-Claude-Assistant
+# Operator
 
-**Your personal Claude assistant in your Matrix chat — self-hosted, one install command.**
+**Your operator inside the Matrix.** Ein persönlicher Claude-Assistent in deinem
+Matrix-Chat — selbst gehostet, ein Installationsbefehl.
+
+> *Im Film ruft man den Operator an, wenn man in der Matrix Hilfe braucht — er sitzt an den
+> Systemen und macht Dinge möglich. Genau das ist Operator: Du schreibst ihm im Matrix-Chat,
+> er arbeitet auf deinem Rechner.*
 *(English quick start below · Hauptdokumentation auf Deutsch)*
 
 Schreib deinem Assistenten in Element (oder jedem Matrix-Client) — er liest mit deinem
@@ -22,7 +27,7 @@ Du (Element, Handy) ──▶ dein Matrix-Server ──▶ Listener (dein Mac) �
 ## Installation
 
 ```bash
-curl -fsSL https://RAW-URL-DIESES-REPOS/install.sh | bash
+curl -fsSL http://192.168.178.53:3000/root/the-operator/raw/branch/main/install.sh | bash
 ```
 
 Der Wizard führt durch alles:
@@ -66,7 +71,7 @@ Nachricht frisch geladen — Änderungen wirken sofort, ohne Neustart.
 
 ## English quick start
 
-A self-hosted personal Claude assistant living in your Matrix chat. Requirements: macOS, a
+Operator is a self-hosted personal Claude assistant living in your Matrix chat — the operator you call from inside the Matrix. Requirements: macOS, a
 Claude subscription, and a dedicated Matrix account for the bot. Run the install command
 above — the wizard walks you through the Claude browser login and all Matrix setup, then
 starts a background service. Your assistant answers within seconds, powered by your own
