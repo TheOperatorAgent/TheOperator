@@ -111,6 +111,51 @@ def test_listener_is_stdlib_only():
     assert not (imports & forbidden), f"venv-Import im Listener: {imports & forbidden}"
 
 
+# ---------------------------------------------------------------- Cron (A3) --
+def test_cron_parser():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import time as _t
+    import cron_runner
+    t = _t.struct_time((2026, 7, 21, 7, 0, 0, 1, 202, 1))  # Di 07:00 (tm_wday 1=Di)
+    assert cron_runner.cron_match("0 7 * * *", t)
+    assert cron_runner.cron_match("0 7 * * 2", t)          # dow 2 = Dienstag
+    assert cron_runner.cron_match("*/15 * * * *", t)
+    assert cron_runner.cron_match("0 6-8 * * 1-5", t)
+    assert not cron_runner.cron_match("30 7 * * *", t)
+    assert not cron_runner.cron_match("0 7 * * 0", t)      # Sonntag
+    assert not cron_runner.cron_match("kaputt", t)
+    assert not cron_runner.cron_match("0 7 * *", t)        # nur 4 Felder
+
+
+# ---------------------------------------------------------------- Sessions (A1) --
+def test_sessions_roundtrip(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import sessions
+    monkeypatch.setattr(sessions, "DB", str(tmp_path / "s.db"))
+    sessions.record("owner", "Wie ist das Wetter?", "Sonnig, 25 Grad", 0, 1234, 100, 50)
+    sessions.record("recherche", "Suche Synapse-Doku", "Gefunden: matrix.org", 0, 999, 10, 20, kind="chat")
+    assert len(sessions.list_sessions()) == 2
+    hits = sessions.search("Wetter")
+    assert len(hits) == 1 and hits[0]["bot"] == "owner"
+    u = sessions.usage(5)
+    assert u["runs"] == 2 and u["tokens_out"] == 70
+    buckets = sessions.usage_buckets(24, 1)
+    assert buckets[0]["runs"] == 2
+
+
+def test_sessions_is_stdlib_only():
+    import ast
+    for fn in ("sessions.py", "cron_runner.py"):
+        src = open(os.path.expanduser("~/.claude/matrix-bot/" + fn)).read()
+        imports = set()
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.Import):
+                imports.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module.split(".")[0])
+        assert not (imports & {"fastapi", "uvicorn", "msal", "cryptography", "requests"}), fn
+
+
 def test_listener_agent_md_parser():
     sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
     listener = importlib.import_module("listener")
