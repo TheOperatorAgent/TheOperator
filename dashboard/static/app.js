@@ -170,9 +170,24 @@ async function loadM365() {
   const perms = s.permissions || {};
   c.innerHTML = `
     <div class="card">${s.connected
-      ? `<p>✅ Verbunden mit Tenant <span class="mono">${esc(s.tenant_id)}</span> — Connector-App <span class="mono">${esc(s.app_client_id)}</span><br>
-         <span class="small">Secret läuft ab: ${esc((s.secret_expires || "?").slice(0, 10))}</span></p>`
-      : `<p class="hint">Noch nicht verbunden. Melde dich als M365-Admin an — die Connector-App wird danach automatisch in deinem Entra registriert.</p>
+      ? `<p>✅ <strong>Verbunden.</strong> Dein Operator kann jetzt auf die unten
+         eingeschalteten Dienste zugreifen. Frag ihn im Chat z. B.:
+         <em>„Was steht in meinen letzten 3 Mails?"</em><br>
+         <span class="small">Firma: <span class="mono">${esc(s.tenant_id)}</span> ·
+         Zugang gültig bis ${esc((s.secret_expires || "?").slice(0, 10))}</span></p>`
+      : `<p class="hint"><strong>So verbindest du dein Microsoft 365 — in 3 Schritten:</strong></p>
+         <div class="stepbox">
+           <div class="stepline"><span class="num">1</span><span>Klicke unten auf
+             <strong>„Als Admin anmelden"</strong>. Dein Browser öffnet die normale
+             Microsoft-Anmeldung — melde dich mit deinem <strong>Admin-Konto</strong> an
+             und klicke auf <strong>Accept</strong>.</span></div>
+           <div class="stepline"><span class="num">2</span><span>Komm hierher zurück und
+             schalte unten ein, was dein Operator darf — zum Beispiel
+             <strong>Mail → Lesen</strong>. Alles ist zu Beginn AUS.</span></div>
+           <div class="stepline"><span class="num">3</span><span>Klicke auf
+             <strong>„Einrichtung starten"</strong> und schau zu — den Rest erledigt
+             Operator von allein.</span></div>
+         </div>
          <button class="primary" onclick="m365Login()">Als Admin anmelden</button>`}
     </div>
     <div class="card"><h2>Berechtigungen je Dienst</h2>
@@ -189,7 +204,9 @@ async function loadM365() {
         <button class="primary" onclick="m365Apply(${s.connected})">${s.connected ? "Rechte aktualisieren" : "Einrichtung starten"}</button>
         ${s.connected ? `<button class="danger" onclick="m365Delete()">Verbindung + Entra-App löschen</button>` : ""}
       </div>
-      <p class="hint" style="margin-top:8px">Privacy by Default: Alles startet AUS. Schreiben schaltet Lesen mit ein. Regler AUS entzieht die Rechte auch im Entra wieder.</p>
+      <p class="hint" style="margin-top:8px">Zur Sicherheit startet alles AUS.
+      „Schreiben" erlaubt automatisch auch „Lesen". Schaltest du einen Regler wieder AUS,
+      wird das Recht bei Microsoft <strong>wirklich entzogen</strong> — nicht nur versteckt.</p>
     </div>`;
 }
 async function saveM365Cid() {
@@ -254,15 +271,27 @@ async function loadGoogle() {
   const s = await api("GET", "/api/google/status");
   const c = $("#google-content");
   if (!s.configured) {
-    c.innerHTML = `<div class="card"><h2>Einmalige Einrichtung (dein eigener Google-Client)</h2>
-      <p class="hint">Operator nutzt bewusst KEINEN zentralen Hersteller-Client — deine Drive-Daten laufen nie über Dritte. Dafür brauchst du einmalig (~5 min) einen kostenlosen OAuth-Client:</p>
-      <ol class="steps">
-        <li><a href="https://console.cloud.google.com/projectcreate" target="_blank">Google-Cloud-Projekt anlegen</a> (Name egal, z. B. „operator")</li>
-        <li><a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank">Google Drive API aktivieren</a></li>
-        <li><a href="https://console.cloud.google.com/auth/branding" target="_blank">OAuth-Zustimmungsbildschirm</a>: extern, dich selbst als <strong>Testnutzer</strong> eintragen</li>
-        <li><a href="https://console.cloud.google.com/auth/clients" target="_blank">Client erstellen</a>: Typ <strong>Desktopanwendung</strong> → Client-ID + Secret unten eintragen</li>
-      </ol>
-      <label>Client-ID</label><input type="text" id="g-cid" placeholder="….apps.googleusercontent.com">
+    c.innerHTML = `<div class="card"><h2>Google Drive verbinden — einmalige Vorbereitung</h2>
+      <p class="hint">Deine Google-Daten sollen <strong>nur dir</strong> gehören. Darum legst du
+      einmalig deinen eigenen, kostenlosen „Zugangs-Schlüssel" bei Google an (~5 Minuten) —
+      so läuft nichts über fremde Firmen. Einfach die 4 Links von oben nach unten abarbeiten,
+      auf jeder Seite ist es nur ein Klick oder zwei:</p>
+      <div class="stepbox">
+        <div class="stepline"><span class="num">1</span><span>
+          <a href="https://console.cloud.google.com/projectcreate" target="_blank">Neues Google-Projekt anlegen</a>
+          — Name ist egal, z. B. „operator". Auf „Erstellen" klicken.</span></div>
+        <div class="stepline"><span class="num">2</span><span>
+          <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank">Drive-Schnittstelle einschalten</a>
+          — blauen Knopf „Aktivieren" klicken.</span></div>
+        <div class="stepline"><span class="num">3</span><span>
+          <a href="https://console.cloud.google.com/auth/branding" target="_blank">Zustimmungs-Seite einrichten</a>
+          — „Extern" wählen und <strong>deine eigene Gmail-Adresse als Testnutzer</strong> eintragen.</span></div>
+        <div class="stepline"><span class="num">4</span><span>
+          <a href="https://console.cloud.google.com/auth/clients" target="_blank">Schlüssel erstellen</a>
+          — Typ <strong>„Desktopanwendung"</strong> wählen. Google zeigt dir dann zwei lange
+          Zeichenketten: <strong>Client-ID</strong> und <strong>Client-Secret</strong>. Beide unten einfügen.</span></div>
+      </div>
+      <label>Client-ID (endet auf .apps.googleusercontent.com)</label><input type="text" id="g-cid" placeholder="….apps.googleusercontent.com">
       <label>Client-Secret</label><input type="password" id="g-secret">
       <button class="primary" onclick="saveGoogleCfg()">Speichern</button></div>`;
     return;
@@ -502,3 +531,30 @@ async function refresh() {
 loadStatus().catch(() => refresh());
 refresh();
 setInterval(() => { if (document.querySelector("nav button.active").dataset.tab === "overview") loadStatus().catch(() => {}); }, 15000);
+
+/* ---------- Matrix-Code-Regen (dezent, im Hintergrund) ---------- */
+(function rain() {
+  const cv = document.getElementById("rain");
+  if (!cv) return;
+  const ctx = cv.getContext("2d");
+  const CHARS = "アィウェオカキクケコサシスセソタチツテトナニヌネノ01オペレータOPERATOR";
+  let cols, drops;
+  function size() {
+    cv.width = innerWidth; cv.height = innerHeight;
+    cols = Math.floor(cv.width / 18);
+    drops = Array.from({ length: cols }, () => Math.random() * -50);
+  }
+  size();
+  addEventListener("resize", size);
+  setInterval(() => {
+    ctx.fillStyle = "rgba(3, 9, 5, 0.12)";
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    ctx.fillStyle = "#00ff41";
+    ctx.font = "15px monospace";
+    for (let i = 0; i < cols; i++) {
+      ctx.fillText(CHARS[Math.floor(Math.random() * CHARS.length)], i * 18, drops[i] * 18);
+      if (drops[i] * 18 > cv.height && Math.random() > 0.975) drops[i] = 0;
+      drops[i]++;
+    }
+  }, 66);
+})();
