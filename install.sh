@@ -140,10 +140,10 @@ echo "  (Mächtig — Serververwaltung etc. —, aber jede Chat-Nachricht von di
 echo "  Kommandos auslösen. Ohne Freigabe kann er nur lesen und im Web recherchieren.)"
 ask BASH_OPTIN "Shell-Zugriff erlauben? (ja/nein)" "nein"
 if [ "$BASH_OPTIN" = "ja" ]; then
-  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent"]'
+  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "mcp__m365"]'
   TOOLS_TEXT="Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Kleine Aufgaben direkt erledigen; Unumkehrbares nur nach Rückfrage im Chat."
 else
-  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent"]'
+  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "mcp__m365"]'
   TOOLS_TEXT="Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben — wenn eine Aufgabe das bräuchte, sag das ehrlich. (Hinweis: Ohne Shell kannst du dein Gedächtnis nicht selbst beschreiben.)"
 fi
 
@@ -206,6 +206,22 @@ for A in $AGENTS; do
   else curl -fsSL "$REPO_RAW/agents/$A.md" -o "$DEST" || die "Agent-Vorlage $A.md nicht gefunden"; fi
   ok "Agent $A installiert"
 done
+# Standard-MCP (M365) im Workspace registrieren — Tools melden sich freundlich,
+# solange M365 noch nicht verbunden ist
+python3 - "$BOT_DIR" <<'PYMCP'
+import json, os, sys
+bot = sys.argv[1]
+p = os.path.join(bot, "workspace", ".mcp.json")
+data = {"mcpServers": {}}
+if os.path.exists(p):
+    try: data = json.load(open(p))
+    except ValueError: pass
+data.setdefault("mcpServers", {})["m365"] = {
+    "command": os.path.join(bot, "dashboard", "venv", "bin", "python3"),
+    "args": [os.path.join(bot, "mcp_m365.py")]}
+open(p, "w").write(json.dumps(data, indent=1))
+PYMCP
+ok "Standard-MCP m365 registriert"
 # VERHALTEN.md aus Template personalisieren (bestehende Datei wird nie überschrieben)
 if [ -f "$BOT_DIR/VERHALTEN.md" ]; then
   ok "VERHALTEN.md existiert — bleibt unverändert"
@@ -281,7 +297,7 @@ if [ "$DASH_OPTIN" = "ja" ]; then
   if [ "$DASH_OK" = "1" ]; then
     "$DASH_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
     "$DASH_DIR/venv/bin/pip" install -q "fastapi==0.116.*" "uvicorn==0.35.*" \
-      "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" || DASH_OK=0
+      "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" "mcp==1.*" "starlette<0.49" || DASH_OK=0
   fi
   if [ "$DASH_OK" = "1" ]; then
     for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py; do
@@ -292,7 +308,7 @@ if [ "$DASH_OPTIN" = "ja" ]; then
       if [ -f "$SCRIPT_DIR/dashboard/static/$F" ]; then cp "$SCRIPT_DIR/dashboard/static/$F" "$DASH_DIR/static/$F"
       else curl -fsSL "$REPO_RAW/dashboard/static/$F" -o "$DASH_DIR/static/$F" || DASH_OK=0; fi
     done
-    for F in m365.py gdrive.py; do
+    for F in m365.py gdrive.py mcp_m365.py; do
       if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
       else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || DASH_OK=0; fi
     done
