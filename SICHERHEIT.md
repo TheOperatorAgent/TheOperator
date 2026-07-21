@@ -50,6 +50,25 @@ Redaction-Schicht (`redact.py`), die bekannte Tresor-Werte und generische Secret
 durch `[REDACTED:…]` ersetzt — vor dem Schreiben in `sessions.db`, in Logs und beim
 Wiedereinspielen alter Runden in den Prompt.
 
+### Entsperren mit FIDO2-Hardware-Key (optional)
+Als bequeme Alternative zum Master-Passwort kann der Tresor mit einem FIDO2-Hardware-Key
+(YubiKey o. ä.) entsperrt werden — einstecken und antippen.
+- **Mechanismus:** CTAP2-`hmac-secret`-Extension (via `python-fido2`, BSD-Lizenz). Der Key
+  liefert für ein gespeichertes `salt` einen deterministischen 32-Byte-Wert
+  (`HMAC(CredRandom, salt)`), der das Secure Element nie verlässt und nur mit **genau diesem
+  physischen Key** reproduzierbar ist. Dieser Wert wird als KEK ein **weiterer DEK-Wrap** —
+  gleichwertig neben Master-Passwort und Recovery-Key. Es findet **keine** Re-Encryption statt.
+- **Mehrere Keys:** Es können mehrere Keys registriert werden (Haupt + Backup), jeder ein
+  eigener Wrap; alle teilen ein gemeinsames `salt`, sodass ein einziges Antippen beim Öffnen
+  den passenden Key findet. Gespeichert werden nur `credential_id` + `salt` (öffentlich).
+- **Touch-only (bewusste Wahl):** Es wird **nur User-Presence (Antippen)** verlangt, keine
+  Key-PIN (`CredRandomWithoutUV`). Bequem — aber: **wer den physischen Key besitzt UND Zugriff
+  auf die `vault.enc`-Datei hat, kann den Tresor öffnen.** Gegenmittel: bei Verlust den Key im
+  Dashboard entfernen; Master-Passwort und Recovery-Key funktionieren immer weiter. Wer stärkere
+  Bindung will, kann später auf PIN+Touch umstellen (Format ist vorbereitet).
+- **Key verloren?** Recovery-Key nutzen (oder Master-Passwort), dann den verlorenen Key im
+  Dashboard entfernen. Der Key allein enthält keine Tresordaten.
+
 ## Sperr-Modell
 Der Tresor wird pro Sitzung mit dem Master-Passwort entsperrt. Der Sitzungs-Schlüssel liegt im
 nutzer-privaten Temp-Verzeichnis und **verschwindet beim Reboot** → nach jedem Neustart ist der
