@@ -23,6 +23,12 @@ import google_auth
 import m365_setup
 import tokens as token_store
 
+import sys
+sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+import memory as memory_db          # noqa: E402  (stdlib-Modul aus BOT_DIR)
+import sessions as sessions_db      # noqa: E402
+import cron_runner                  # noqa: E402
+
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
 PORT = DASH_CFG.get("port", 8737)
@@ -116,6 +122,20 @@ def api_status():
         pass
     c = creds()
     bots = load_bots()["bots"]
+    # Health (A6): Disk, Synapse, DB-Größen
+    st = os.statvfs(BOT_DIR)
+    disk_free_gb = round(st.f_bavail * st.f_frsize / 1e9, 1)
+    synapse_ok = False
+    try:
+        req = urllib.request.Request(c["homeserver"] + "/health")
+        synapse_ok = urllib.request.urlopen(req, timeout=5).status == 200
+    except Exception:
+        pass
+
+    def _sz(fn):
+        p = os.path.join(BOT_DIR, fn)
+        return round(os.path.getsize(p) / 1e6, 2) if os.path.exists(p) else 0
+
     return {
         "listener_running": listener,
         "owner": c.get("owner_id"),
@@ -127,6 +147,10 @@ def api_status():
         "memory_count": mem_count,
         "m365": m365_setup.status(),
         "google": google_auth.status(),
+        "health": {"disk_free_gb": disk_free_gb, "synapse_ok": synapse_ok,
+                   "memory_db_mb": _sz("memory.db"), "sessions_db_mb": _sz("sessions.db"),
+                   "cron_jobs": len(cron_runner.load_jobs()),
+                   "usage_5h": sessions_db.usage(5)},
     }
 
 
@@ -424,6 +448,270 @@ def api_google_delete():
     google_auth.disconnect()
     audit("dashboard", "google.disconnect")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- Verlauf (A1) --
+@app.get("/api/sessions")
+def api_sessions(q: str = "", limit: int = 30):
+    if q.strip():
+        return {"sessions": sessions_db.search(q, limit)}
+    return {"sessions": sessions_db.list_sessions(limit)}
+
+
+# ---------------------------------------------------------------- Nutzung (A4) --
+@app.get("/api/usage")
+def api_usage():
+    return {
+        "window_5h": sessions_db.usage(5),
+        "buckets_24h": sessions_db.usage_buckets(24, 1),
+        "buckets_7d": sessions_db.usage_buckets(24 * 7, 24),
+    }
+
+
+# ---------------------------------------------------------------- Gedächtnis (A2) --
+@app.get("/api/memory")
+def api_memory(q: str = "", limit: int = 50):
+    con = memory_db.db()
+    if q.strip():
+        fq = memory_db.fts_query(q)
+        rows = con.execute(
+            "SELECT m.id, m.text, m.created, m.uses FROM memories_fts f "
+            "JOIN memories m ON m.id=f.rowid WHERE memories_fts MATCH ? "
+            "ORDER BY bm25(memories_fts) LIMIT ?", (fq, limit)).fetchall() if fq else []
+    else:
+        rows = con.execute(
+            "SELECT id, text, created, uses FROM memories ORDER BY id DESC LIMIT ?",
+            (limit,)).fetchall()
+    return {"memories": [{"id": r[0], "text": r[1], "created": r[2], "uses": r[3]}
+                         for r in rows]}
+
+
+@app.post("/api/memory")
+async def api_memory_add(request: Request):
+    text = (await request.json()).get("text", "").strip()
+    if not text:
+        return err("validate", "Text fehlt")
+    con = memory_db.db()
+    if not con.execute("SELECT 1 FROM memories WHERE text=?", (text,)).fetchone():
+        con.execute("INSERT INTO memories(text) VALUES (?)", (text,))
+        con.commit()
+    audit("dashboard", "memory.add", text[:60])
+    return {"ok": True}
+
+
+@app.delete("/api/memory/{mid}")
+def api_memory_delete(mid: int):
+    con = memory_db.db()
+    con.execute("DELETE FROM memories WHERE id=?", (mid,))
+    con.commit()
+    audit("dashboard", "memory.forget", str(mid))
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- Logs (A5) --
+LOG_WHITELIST = {"listener": os.path.join(BOT_DIR, "listener.log"),
+                 "dashboard": os.path.join(BOT_DIR, "dashboard.log")}
+
+
+@app.get("/api/logs")
+def api_logs(file: str = "listener", lines: int = 200, errors_only: bool = False):
+    path = LOG_WHITELIST.get(file)
+    if not path:
+        return err("validate", "Unbekannte Log-Datei", 404)
+    if not os.path.exists(path):
+        return {"lines": []}
+    out = open(path, errors="replace").readlines()[-max(10, min(lines, 2000)):]
+    if errors_only:
+        out = [x for x in out if any(k in x for k in ("Fehler", "FEHLER", "⚠", "ERROR", "rc=1", "401"))]
+    return {"lines": [x.rstrip("\n") for x in out]}
+
+
+# ---------------------------------------------------------------- Automationen (A3) --
+@app.get("/api/cron")
+def api_cron_list():
+    return {"jobs": cron_runner.load_jobs()}
+
+
+@app.post("/api/cron")
+async def api_cron_create(request: Request):
+    b = await request.json()
+    if not b.get("name") or not b.get("prompt"):
+        return err("validate", "Name und Auftrag sind Pflicht")
+    if b.get("schedule") and not cron_runner.cron_match(
+            b["schedule"], time.localtime()) and len(b["schedule"].split()) != 5:
+        return err("validate", "Zeitplan muss 5-Feld-Cron sein (z. B. '0 7 * * *')")
+    jobs = cron_runner.load_jobs()
+    job = {"id": hashlib.sha256(os.urandom(8)).hexdigest()[:8],
+           "name": b["name"], "schedule": b.get("schedule", ""),
+           "prompt": b["prompt"], "target": b.get("target", "owner"),
+           "enabled": bool(b.get("enabled", True))}
+    jobs.append(job)
+    cron_runner.save_jobs(jobs)
+    audit("dashboard", "cron.create", job["name"])
+    return {"ok": True, "id": job["id"]}
+
+
+@app.put("/api/cron/{jid}")
+async def api_cron_update(jid: str, request: Request):
+    b = await request.json()
+    jobs = cron_runner.load_jobs()
+    job = next((j for j in jobs if j["id"] == jid), None)
+    if not job:
+        return err("notfound", "Automation nicht gefunden", 404)
+    for k in ("name", "schedule", "prompt", "target", "enabled"):
+        if k in b:
+            job[k] = b[k]
+    cron_runner.save_jobs(jobs)
+    audit("dashboard", "cron.update", job["name"])
+    return {"ok": True}
+
+
+@app.delete("/api/cron/{jid}")
+def api_cron_delete(jid: str):
+    jobs = cron_runner.load_jobs()
+    if not any(j["id"] == jid for j in jobs):
+        return err("notfound", "Automation nicht gefunden", 404)
+    cron_runner.save_jobs([j for j in jobs if j["id"] != jid])
+    audit("dashboard", "cron.delete", jid)
+    return {"ok": True}
+
+
+@app.post("/api/cron/{jid}/run")
+def api_cron_run(jid: str):
+    jobs = cron_runner.load_jobs()
+    job = next((j for j in jobs if j["id"] == jid), None)
+    if not job:
+        return err("notfound", "Automation nicht gefunden", 404)
+    job["run_now"] = True
+    cron_runner.save_jobs(jobs)
+    audit("dashboard", "cron.run_now", job["name"])
+    return {"ok": True, "info": "Listener startet den Lauf binnen ~5 Sekunden"}
+
+
+# ---------------------------------------------------------------- MCP (B1) --
+MCP_FILE = os.path.join(BOT_DIR, "workspace", ".mcp.json")
+
+
+def load_mcp() -> dict:
+    try:
+        return json.load(open(MCP_FILE))
+    except (OSError, ValueError):
+        return {"mcpServers": {}}
+
+
+@app.get("/api/mcp")
+def api_mcp_list():
+    servers = load_mcp().get("mcpServers", {})
+    out = []
+    for name, cfg in servers.items():
+        out.append({"name": name,
+                    "transport": "http" if cfg.get("url") else "stdio",
+                    "command": cfg.get("command", ""), "url": cfg.get("url", ""),
+                    "args": cfg.get("args", []), "env_keys": sorted(cfg.get("env", {}))})
+    return {"servers": out}
+
+
+@app.post("/api/mcp")
+async def api_mcp_add(request: Request):
+    b = await request.json()
+    name = b.get("name", "").strip()
+    if not re.match(r"^[a-zA-Z0-9_-]{2,32}$", name):
+        return err("validate", "Ungültiger Server-Name")
+    if not b.get("command") and not b.get("url"):
+        return err("validate", "command (stdio) oder url (http) angeben")
+    data = load_mcp()
+    entry = {}
+    if b.get("url"):
+        entry["url"] = b["url"]
+    else:
+        entry["command"] = b["command"]
+        if b.get("args"):
+            entry["args"] = b["args"] if isinstance(b["args"], list) else b["args"].split()
+    if b.get("env"):
+        entry["env"] = b["env"]
+    data.setdefault("mcpServers", {})[name] = entry
+    os.makedirs(os.path.dirname(MCP_FILE), exist_ok=True)
+    open(MCP_FILE, "w").write(json.dumps(data, indent=1))
+    audit("dashboard", "mcp.add", name)
+    return {"ok": True}
+
+
+@app.delete("/api/mcp/{name}")
+def api_mcp_delete(name: str):
+    data = load_mcp()
+    if name not in data.get("mcpServers", {}):
+        return err("notfound", "MCP-Server nicht gefunden", 404)
+    del data["mcpServers"][name]
+    open(MCP_FILE, "w").write(json.dumps(data, indent=1))
+    audit("dashboard", "mcp.delete", name)
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- Backup (B2) --
+BACKUP_DIR = os.path.expanduser("~/OperatorBackups")
+
+
+@app.post("/api/backup")
+def api_backup_create():
+    import tarfile
+    os.makedirs(BACKUP_DIR, exist_ok=True)
+    name = f"operator-backup-{time.strftime('%Y%m%d_%H%M%S')}.tar.gz"
+    path = os.path.join(BACKUP_DIR, name)
+    skip = ("dashboard/venv", "listener.log", "dashboard.log", ".tmp", "__pycache__")
+    with tarfile.open(path, "w:gz") as tar:
+        for root, dirs, files in os.walk(BOT_DIR):
+            rel_root = os.path.relpath(root, BOT_DIR)
+            if any(s in rel_root for s in skip):
+                dirs[:] = []
+                continue
+            for fn in files:
+                rel = os.path.normpath(os.path.join(rel_root, fn))
+                if any(s in rel for s in skip):
+                    continue
+                tar.add(os.path.join(root, fn), arcname=rel)
+    size = os.path.getsize(path)
+    audit("dashboard", "backup.create", f"{name} ({size} B)")
+    return {"ok": True, "name": name, "size": size}
+
+
+@app.get("/api/backups")
+def api_backup_list():
+    if not os.path.isdir(BACKUP_DIR):
+        return {"backups": []}
+    out = []
+    for fn in sorted(os.listdir(BACKUP_DIR), reverse=True):
+        if fn.startswith("operator-backup-") and fn.endswith(".tar.gz"):
+            p = os.path.join(BACKUP_DIR, fn)
+            out.append({"name": fn, "size": os.path.getsize(p),
+                        "ts": time.strftime("%Y-%m-%d %H:%M",
+                                            time.localtime(os.path.getmtime(p)))})
+    return {"backups": out[:20]}
+
+
+@app.post("/api/backup/restore")
+async def api_backup_restore(request: Request):
+    """Sicherer Restore: entpackt in Prüf-Verzeichnis, überschreibt NICHTS automatisch."""
+    import tarfile
+    name = (await request.json()).get("name", "")
+    path = os.path.join(BACKUP_DIR, os.path.basename(name))
+    if not (name.startswith("operator-backup-") and os.path.exists(path)):
+        return err("notfound", "Backup nicht gefunden", 404)
+    dest = os.path.join(BACKUP_DIR, "restore-" + time.strftime("%Y%m%d_%H%M%S"))
+    with tarfile.open(path) as tar:
+        tar.extractall(dest, filter="data")
+    audit("dashboard", "backup.restore", f"{name} -> {dest}")
+    return {"ok": True, "dest": dest,
+            "info": "Entpackt zur Prüfung — Dateien bei Bedarf manuell zurückkopieren"}
+
+
+@app.get("/api/agents/{name}/export")
+def api_agent_export(name: str):
+    a = agents_store.get_agent(name)
+    if not a:
+        return err("notfound", "Agent nicht gefunden", 404)
+    path = os.path.join(agents_store.AGENTS_DIR, name + ".md")
+    return FileResponse(path, filename=name + ".md",
+                        media_type="text/markdown")
 
 
 # ---------------------------------------------------------------- Static --
