@@ -77,3 +77,12 @@ table.kv { width: 100%; border-collapse: collapse; }
 table.kv td { padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
 table.kv td:first-child { color: var(--muted); width: 40%; }
 svg rect { fill: var(--accent); }
+.ascii-banner { text-align: center; padding: 18px 0 8px; animation: banner-in .4s ease; }
+.ascii-banner pre { display: inline-block; text-align: left; background: none; border: none; font-size: 14px; line-height: 1.15; padding: 0; overflow: visible; }
+.ascii-banner.ok pre { color: var(--accent); text-shadow: 0 0 14px rgba(0, 255, 65, .55); }
+.ascii-banner.err pre { color: var(--red); text-shadow: 0 0 14px rgba(255, 92, 92, .55); }
+.ascii-banner .cursor { display: inline-block; animation: blink 1s steps(1) infinite; }
+.ascii-banner.ok .cursor { color: var(--accent); }
+.ascii-banner.err .cursor { color: var(--red); }
+@keyframes blink { 50% { opacity: 0; } }
+@keyframes banner-in { from { opacity: 0; transform: scale(.92); } to { opacity: 1; } }
