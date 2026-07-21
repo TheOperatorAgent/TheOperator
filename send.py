@@ -8,8 +8,22 @@ import time
 import urllib.parse
 import urllib.request
 
+args = sys.argv[1:]
+bot = None
+if args and args[0] == "--bot":
+    bot = args[1]
+    args = args[2:]
+
 creds = json.load(open(os.path.expanduser("~/.claude/matrix-bot/credentials.json")))
-text = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.read().strip()
+if bot:
+    bots = json.load(open(os.path.expanduser("~/.claude/matrix-bot/bots.json")))
+    entry = next((b for b in bots["bots"] if b["agent"] == bot), None)
+    if not entry:
+        sys.exit(f"Bot '{bot}' nicht in bots.json")
+    creds = {"homeserver": creds["homeserver"],
+             "access_token": entry["access_token"], "room_id": entry["room_id"]}
+
+text = args[0] if args else sys.stdin.read().strip()
 if not text:
     sys.exit("Kein Text übergeben")
 
