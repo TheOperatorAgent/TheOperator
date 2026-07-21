@@ -18,6 +18,17 @@ import urllib.parse
 import urllib.request
 
 BOT_DIR = "/Users/michi/.claude/matrix-bot"
+
+
+def keychain_token(account, fallback):
+    """Token aus dem macOS-Schlüsselbund; Datei-Wert nur als Fallback (Altbestand)."""
+    if fallback != "keychain":
+        return fallback
+    r = subprocess.run(["security", "find-generic-password", "-s", "the-operator",
+                        "-a", account, "-w"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
 CREDS = json.load(open(f"{BOT_DIR}/credentials.json"))
 BOTS_FILE = f"{BOT_DIR}/bots.json"
 CRON_FILE = f"{BOT_DIR}/cron.json"
@@ -296,14 +307,22 @@ def load_bot_sessions():
         bots = []
     for b in bots:
         if b.get("enabled"):
+            tok = keychain_token("matrix-bot-" + b["agent"], b["access_token"])
+            if not tok:
+                log(f"[{b['agent']}] Kein Token im Keychain — Bot übersprungen")
+                continue
             sessions[b["agent"]] = BotSession(
-                "agent", b["agent"], CREDS["homeserver"], b["access_token"],
+                "agent", b["agent"], CREDS["homeserver"], tok,
                 b["room_id"], b["user_id"])
     return sessions
 
 
 def main():
-    owner = BotSession("owner", "owner", CREDS["homeserver"], CREDS["access_token"],
+    owner_token = keychain_token("matrix-owner", CREDS["access_token"])
+    if not owner_token:
+        log("FATAL: Owner-Token weder im Keychain noch in credentials.json")
+        return
+    owner = BotSession("owner", "owner", CREDS["homeserver"], owner_token,
                        CREDS["room_id"], CREDS["user_id"])
     owner.start()
     agents = load_bot_sessions()
