@@ -18,8 +18,14 @@
 <nav id="tabs">
   <button data-tab="overview" class="active">Übersicht</button>
   <button data-tab="agents">Agenten</button>
+  <button data-tab="sessions">Verlauf</button>
+  <button data-tab="cron">Automationen</button>
+  <button data-tab="usage">Nutzung</button>
+  <button data-tab="memory">Gedächtnis</button>
   <button data-tab="m365">Microsoft 365</button>
   <button data-tab="google">Google Drive</button>
+  <button data-tab="logs">Logs</button>
+  <button data-tab="system">System</button>
   <button data-tab="verhalten">Verhalten</button>
   <button data-tab="privacy">Datenschutz</button>
 </nav>
@@ -48,6 +54,64 @@
   <section id="tab-google" class="tab">
     <h2>Google Drive</h2>
     <div id="google-content"></div>
+  </section>
+
+  <section id="tab-sessions" class="tab">
+    <h2>Verlauf</h2>
+    <input type="text" id="sess-q" placeholder="Volltextsuche über Nachrichten und Antworten…" oninput="loadSessions()">
+    <div id="sess-list"></div>
+  </section>
+
+  <section id="tab-cron" class="tab">
+    <div class="row-between"><h2>Automationen</h2>
+      <button class="primary" onclick="editCron(null)">+ Neue Automation</button></div>
+    <p class="hint">Zeitgesteuerte Aufträge an deinen Operator — z. B. „Jeden Morgen 7 Uhr: fasse meine ungelesenen Mails zusammen". Zeitplan im 5-Feld-Cron-Format (Min Std Tag Monat Wochentag).</p>
+    <div id="cron-list"></div>
+    <div id="cron-editor" class="card hidden"></div>
+  </section>
+
+  <section id="tab-usage" class="tab">
+    <h2>Nutzung</h2>
+    <p class="hint">Dein Eigenverbrauch über das Claude-Abo (keine Extra-Kosten — aber Abo-Limits gelten im ~5-Stunden-Fenster).</p>
+    <div class="tiles" id="usage-tiles"></div>
+    <div class="card"><h2>Letzte 24 Stunden (Läufe je Stunde)</h2><div id="usage-24h"></div></div>
+    <div class="card"><h2>Letzte 7 Tage (Läufe je Tag)</h2><div id="usage-7d"></div></div>
+  </section>
+
+  <section id="tab-memory" class="tab">
+    <div class="row-between"><h2>Gedächtnis</h2></div>
+    <div class="card">
+      <label>Neuen Fakt speichern (ein Satz, eigenständig verständlich)</label>
+      <input type="text" id="mem-new" placeholder="z. B.: Michis Lieblings-Editor ist VS Code">
+      <button class="primary" onclick="addMemory()">Speichern</button>
+    </div>
+    <input type="text" id="mem-q" placeholder="Gedächtnis durchsuchen…" oninput="loadMemory()">
+    <div id="mem-list"></div>
+  </section>
+
+  <section id="tab-logs" class="tab">
+    <div class="row-between"><h2>Logs</h2>
+      <div style="display:flex;gap:8px">
+        <select id="log-file" onchange="loadLogs()"><option value="listener">Listener</option><option value="dashboard">Dashboard</option></select>
+        <label class="switch"><input type="checkbox" id="log-errors" onchange="loadLogs()">nur Fehler</label>
+      </div></div>
+    <pre id="log-view" class="mono small">…</pre>
+  </section>
+
+  <section id="tab-system" class="tab">
+    <h2>System</h2>
+    <div class="card"><h2>Backups</h2>
+      <p class="hint">Sichert Konfiguration, Agenten, Gedächtnis, Verlauf und verschlüsselte Tokens nach ~/OperatorBackups (ohne venv/Logs). Wiederherstellung entpackt zur Prüfung — überschreibt nie automatisch.</p>
+      <button class="primary" onclick="createBackup()">Backup jetzt erstellen</button>
+      <div id="backup-list" style="margin-top:12px"></div></div>
+    <div class="card"><h2>MCP-Server</h2>
+      <p class="hint">⚠️ MCP-Server sind Programme mit eigenen Rechten, die dein Operator als Werkzeuge nutzen kann. Nur Quellen hinzufügen, denen du vertraust.</p>
+      <div id="mcp-list"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px">
+        <div><label>Name</label><input type="text" id="mcp-name"></div>
+        <div><label>Kommando ODER URL</label><input type="text" id="mcp-target" placeholder="npx server-xyz  |  https://…"></div>
+      </div>
+      <button class="ghost" onclick="addMcp()">MCP-Server hinzufügen</button></div>
   </section>
 
   <section id="tab-verhalten" class="tab">
