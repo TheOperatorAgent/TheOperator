@@ -51,6 +51,7 @@ if [ "${1:-}" = "--uninstall" ]; then
   if [ -f "$BOT_DIR/credentials.json" ]; then
     HS=$(jget "['homeserver']" < "$BOT_DIR/credentials.json")
     TK=$(jget "['access_token']" < "$BOT_DIR/credentials.json")
+    [ "$TK" = "keychain" ] && TK=$(security find-generic-password -s "the-operator" -a "matrix-owner" -w 2>/dev/null || true)
     [ -n "$TK" ] && mx POST "$HS/_matrix/client/v3/logout" '{}' "$TK" >/dev/null && ok "Matrix-Token (Owner) invalidiert"
     # Agenten-Bots ausloggen (Art.-17-Löschkette)
     if [ -f "$BOT_DIR/bots.json" ]; then
@@ -221,7 +222,11 @@ PY
   rm -f "$BOT_DIR/.template.tmp"
   ok "VERHALTEN.md aus Template erstellt — dort später eigenes Wissen eintragen!"
 fi
-python3 - "$BOT_DIR/credentials.json" "$HS" "@$BOT_USER:$SERVER_NAME" "$TOKEN" "$ROOM" "$HUMAN" "$ALLOWED_TOOLS" "$CLAUDE_BIN" <<'PY'
+# Matrix-Token in den macOS-Schlüsselbund (Härtung); Datei enthält nur den Marker
+TOKEN_REF="keychain"
+security add-generic-password -U -s "the-operator" -a "matrix-owner" -w "$TOKEN" 2>/dev/null \
+  || { warn "Keychain nicht verfügbar — Token bleibt in der Datei (0600)"; TOKEN_REF="$TOKEN"; }
+python3 - "$BOT_DIR/credentials.json" "$HS" "@$BOT_USER:$SERVER_NAME" "$TOKEN_REF" "$ROOM" "$HUMAN" "$ALLOWED_TOOLS" "$CLAUDE_BIN" <<'PY'
 import json, sys
 open(sys.argv[1], "w").write(json.dumps({
     "homeserver": sys.argv[2], "user_id": sys.argv[3],
@@ -230,7 +235,7 @@ open(sys.argv[1], "w").write(json.dumps({
     "claude_bin": sys.argv[8]}, indent=1))
 PY
 chmod 600 "$BOT_DIR/credentials.json"
-ok "credentials.json geschrieben (chmod 600)"
+ok "credentials.json geschrieben (Token im Schlüsselbund)"
 # Plist mit dynamischen Pfaden erzeugen
 cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -298,14 +303,13 @@ if [ "$DASH_OPTIN" = "ja" ]; then
       || security add-generic-password -s "the-operator" -a "token-key" -w "$(openssl rand -hex 32)"
     if [ ! -f "$BOT_DIR/dashboard.json" ]; then
       DTOK=$(openssl rand -hex 32)
+      security add-generic-password -U -s "the-operator" -a "dashboard-token" -w "$DTOK"
       python3 - "$DTOK" "$BOT_DIR" <<'PY'
 import hashlib, json, os, sys
 tok, bot = sys.argv[1], sys.argv[2]
 open(os.path.join(bot, "dashboard.json"), "w").write(json.dumps(
     {"port": 8737, "token_sha256": hashlib.sha256(tok.encode()).hexdigest(), "version": 1}, indent=1))
 os.chmod(os.path.join(bot, "dashboard.json"), 0o600)
-open(os.path.join(bot, "dashboard", ".token"), "w").write(tok)
-os.chmod(os.path.join(bot, "dashboard", ".token"), 0o600)
 PY
     fi
     cat > "$HOME/Library/LaunchAgents/com.the-operator.dashboard.plist" <<DPLIST
