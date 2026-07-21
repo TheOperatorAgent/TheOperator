@@ -83,7 +83,10 @@ def start_auth(redirect_uri: str) -> dict:
             "Client-ID in dashboard.json unter m365_setup_client_id eintragen"
         )
     app, _ = _msal_app()
-    flow = app.initiate_auth_code_flow(SETUP_SCOPES, redirect_uri=redirect_uri)
+    # prompt=select_account: verhindert stilles SSO mit dem falschen Konto —
+    # der Admin bekommt IMMER die Microsoft-Kontoauswahl angezeigt
+    flow = app.initiate_auth_code_flow(SETUP_SCOPES, redirect_uri=redirect_uri,
+                                       prompt="select_account")
     if "auth_uri" not in flow:
         raise RuntimeError(f"MSAL-Flow-Fehler: {flow}")
     return flow  # enthaelt auth_uri + state; Server haelt den Flow in der Pending-Registry
