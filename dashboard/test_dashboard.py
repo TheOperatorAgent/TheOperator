@@ -249,9 +249,8 @@ def test_vault_roundtrip(tmp_path, monkeypatch):
     assert b"SuperGeheim123" not in blob and b"gitea-admin" not in blob
     vault.remove_entry("gitea-admin")
     assert vault.list_entries() == []
-    assert vault.status() == {"exists": True, "locked": False, "entries": 0,
-                              "autolock_minutes": vault.status()["autolock_minutes"],
-                              "updated": vault.status()["updated"]}
+    st = vault.status()
+    assert st["exists"] and not st["locked"] and st["entries"] == 0 and st["fido_keys"] == 0
     assert vault.normalize_recovery_key(rk) == rk
 
 
@@ -366,3 +365,79 @@ def test_scrypt_production_params():
     key = hashlib.scrypt(b"pw", salt=b"x" * 16, n=2 ** 17, r=8, p=1,
                          maxmem=192 * 1024 * 1024, dklen=32)
     assert len(key) == 32
+
+
+# ---------------------------------------------------------------- Tresor: FIDO2 --
+def _fake_fido(vault):
+    """Installiert einen Software-Authenticator (HMAC-basiert) in vault.py.
+    ACTIVE['key'] bestimmt, welcher „Schlüssel" gerade angesteckt ist."""
+    import hashlib, hmac
+    ACTIVE = {}
+    class FakeKey:
+        def __init__(self, name):
+            self.cred_id = ("cred-" + name).encode().ljust(16, b"\0")
+            self.cr = hashlib.sha256(name.encode()).digest()
+        def secret(self, salt):
+            return hmac.new(self.cr, salt, hashlib.sha256).digest()
+    def make_hook(salt):
+        k = ACTIVE["key"]; return k.cred_id, k.secret(salt)
+    def get_hook(cred_ids, salt):
+        k = ACTIVE["key"]; return k.cred_id, k.secret(salt)
+    vault._FIDO_MAKE_HOOK = make_hook
+    vault._FIDO_GET_HOOK = get_hook
+    return ACTIVE, FakeKey
+
+
+def test_fido_enroll_and_unlock(tmp_path, monkeypatch):
+    vault = _vault(tmp_path, monkeypatch)
+    ACTIVE, FakeKey = _fake_fido(vault)
+    vault.init("master-passwort-test")
+    vault.add_entry("gitea", "GEHEIM-123")
+    keyA = FakeKey("A"); ACTIVE["key"] = keyA
+    vault.fido_enroll("YubiKey blau")
+    assert vault.status()["fido_keys"] == 1
+    assert [k["label"] for k in vault.fido_list()] == ["YubiKey blau"]
+    # Entsperren ohne Master-Passwort, nur mit dem Key
+    vault.lock()
+    assert vault.status()["locked"]
+    vault.fido_unlock()
+    assert not vault.status()["locked"]
+    assert [e["name"] for e in vault.list_entries()] == ["gitea"]
+    # vault.enc bleibt klartextfrei
+    assert b"GEHEIM-123" not in open(str(tmp_path / "vault.enc"), "rb").read()
+
+
+def test_fido_multi_key_and_isolation(tmp_path, monkeypatch):
+    import pytest
+    vault = _vault(tmp_path, monkeypatch)
+    ACTIVE, FakeKey = _fake_fido(vault)
+    vault.init("master-passwort-test")
+    a, b = FakeKey("A"), FakeKey("B")
+    ACTIVE["key"] = a; vault.fido_enroll("Haupt")
+    ACTIVE["key"] = b; vault.fido_enroll("Backup")
+    assert vault.status()["fido_keys"] == 2
+    # Beide Keys öffnen (gemeinsames Salt, je eigener Wrap)
+    for k in (a, b):
+        vault.lock(); ACTIVE["key"] = k; vault.fido_unlock()
+        assert not vault.status()["locked"]
+    # Fremder Key wird abgewiesen
+    vault.lock(); ACTIVE["key"] = FakeKey("boese")
+    with pytest.raises(ValueError):
+        vault.fido_unlock()
+
+
+def test_fido_remove_and_backward_compat(tmp_path, monkeypatch):
+    import json
+    vault = _vault(tmp_path, monkeypatch)
+    ACTIVE, FakeKey = _fake_fido(vault)
+    vault.init("master-passwort-test")
+    ACTIVE["key"] = FakeKey("A"); vault.fido_enroll("Haupt")
+    vault.fido_remove("Haupt")
+    assert vault.fido_list() == []
+    # Vault ohne fido-Feld bleibt lesbar (Bestandsdatei)
+    v = json.load(open(str(tmp_path / "vault.enc")))
+    assert "fido" not in v or v["fido"] == []
+    assert vault.status()["fido_keys"] == 0
+    # Entsperren per Master-PW weiter möglich
+    vault.lock(); vault.unlock("master-passwort-test")
+    assert not vault.status()["locked"]
