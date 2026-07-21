@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Operator Dashboard</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <div class="brand">
+    <span class="logo">📞</span>
+    <div><h1>Operator</h1><p class="sub">your operator inside the matrix</p></div>
+  </div>
+  <div id="listener-badge" class="badge">…</div>
+</header>
+
+<nav id="tabs">
+  <button data-tab="overview" class="active">Übersicht</button>
+  <button data-tab="agents">Agenten</button>
+  <button data-tab="m365">Microsoft 365</button>
+  <button data-tab="google">Google Drive</button>
+  <button data-tab="verhalten">Verhalten</button>
+  <button data-tab="privacy">Datenschutz</button>
+</nav>
+
+<main>
+  <section id="tab-overview" class="tab active">
+    <div class="tiles" id="overview-tiles"></div>
+    <div class="card"><h2>Letzte Aktionen</h2><div id="audit-list" class="mono small"></div></div>
+  </section>
+
+  <section id="tab-agents" class="tab">
+    <div class="row-between">
+      <h2>Agenten</h2>
+      <button class="primary" onclick="editAgent(null)">+ Neuer Agent</button>
+    </div>
+    <div id="agent-list"></div>
+    <div id="agent-editor" class="card hidden"></div>
+  </section>
+
+  <section id="tab-m365" class="tab">
+    <h2>Microsoft 365</h2>
+    <div id="m365-content"></div>
+    <pre id="m365-log" class="mono small hidden"></pre>
+  </section>
+
+  <section id="tab-google" class="tab">
+    <h2>Google Drive</h2>
+    <div id="google-content"></div>
+  </section>
+
+  <section id="tab-verhalten" class="tab">
+    <h2>Verhalten des Operators</h2>
+    <p class="hint">Wird bei jeder Nachricht frisch geladen — Änderungen wirken sofort. Vor jedem Speichern wird ein Backup (.bak) angelegt.</p>
+    <textarea id="verhalten-text" rows="24" class="mono"></textarea>
+    <button class="primary" onclick="saveVerhalten()">Speichern</button>
+  </section>
+
+  <section id="tab-privacy" class="tab">
+    <h2>Datenschutz — was liegt wo?</h2>
+    <div id="privacy-content"></div>
+  </section>
+</main>
+<div id="toast" class="hidden"></div>
+<script src="app.js"></script>
+</body>
+</html>
