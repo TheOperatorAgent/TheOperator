@@ -211,6 +211,11 @@ function collectM365Matrix() {
 }
 async function m365Apply(connected) {
   const permissions = collectM365Matrix();
+  const any = Object.values(permissions).some((p) => p.read || p.write);
+  if (!connected && !any) {
+    return toast("Bitte zuerst mindestens einen Regler aktivieren (z. B. Mail › Lesen)", 1);
+  }
+  if (connected && !any && !confirm("Alle Regler sind AUS — das entzieht der Connector-App sämtliche Rechte. Fortfahren?")) return;
   if (!connected) {
     const log = $("#m365-log");
     log.classList.remove("hidden");
