@@ -3,10 +3,19 @@
 Aufruf: python3 send.py "Text"   (oder Text über stdin)"""
 import json
 import os
+import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
+
+
+def keychain_token(account, fallback):
+    if fallback != "keychain":
+        return fallback
+    r = subprocess.run(["security", "find-generic-password", "-s", "the-operator",
+                        "-a", account, "-w"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else ""
 
 args = sys.argv[1:]
 bot = None
@@ -21,7 +30,12 @@ if bot:
     if not entry:
         sys.exit(f"Bot '{bot}' nicht in bots.json")
     creds = {"homeserver": creds["homeserver"],
-             "access_token": entry["access_token"], "room_id": entry["room_id"]}
+             "access_token": keychain_token("matrix-bot-" + bot, entry["access_token"]),
+             "room_id": entry["room_id"]}
+else:
+    creds["access_token"] = keychain_token("matrix-owner", creds["access_token"])
+if not creds["access_token"]:
+    sys.exit("Kein Matrix-Token verfügbar (Keychain leer?)")
 
 text = args[0] if args else sys.stdin.read().strip()
 if not text:
