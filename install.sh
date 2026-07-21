@@ -329,7 +329,8 @@ if [ "$DASH_OPTIN" = "ja" ]; then
   if [ "$DASH_OK" = "1" ]; then
     "$DASH_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
     "$DASH_DIR/venv/bin/pip" install -q "fastapi==0.116.*" "uvicorn==0.35.*" \
-      "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" "mcp==1.*" "starlette<0.49" || DASH_OK=0
+      "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" "mcp==1.*" "starlette<0.49" \
+      "fido2>=1.1" || DASH_OK=0
   fi
   if [ "$DASH_OK" = "1" ]; then
     for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py; do
