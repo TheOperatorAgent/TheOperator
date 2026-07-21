@@ -63,7 +63,9 @@ So 18:30) analysiert die Historie. Manuell gepflegte Skills sind vor Auto-Übers
 geschützt.
 
 ### Passwort-Tresor — vault.py + redact.py
-Lokaler, verschlüsselter Tresor; Nutzung nur per `{{tresor:name}}`-Referenz. Details in
+Lokaler, verschlüsselter Tresor; Nutzung nur per `{{tresor:name}}`-Referenz. Entsperren per
+Master-Passwort, Wiederherstellungsschlüssel **oder FIDO2-Hardware-Key** (hmac-secret via
+`python-fido2`, Touch-only, mehrere Keys möglich — jeweils ein eigener DEK-Wrap). Details in
 SICHERHEIT.md.
 
 ### M365-MCP — mcp_m365.py
