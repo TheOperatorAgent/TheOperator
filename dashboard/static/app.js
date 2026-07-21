@@ -45,6 +45,7 @@ async function loadStatus() {
     <div class="tile"><div class="k">${STATUS.agents.length}</div><div class="l">Agenten (${Object.keys(STATUS.published).length} veröffentlicht)</div></div>
     <div class="tile"><div class="k">${STATUS.memory_count}</div><div class="l">Fakten im Gedächtnis</div></div>
     <div class="tile ${STATUS.skill_proposals ? "warn" : ""}"><div class="k">${STATUS.skills_count}</div><div class="l">Skills${STATUS.skill_proposals ? ` · ${STATUS.skill_proposals} Vorschlag${STATUS.skill_proposals > 1 ? "e" : ""} 💡` : ""}</div></div>
+    <div class="tile ${STATUS.vault.exists ? (STATUS.vault.locked ? "warn" : "ok") : ""}"><div class="k">${STATUS.vault.exists ? (STATUS.vault.locked ? "🔒" : "🔓") : "—"}</div><div class="l">Tresor${STATUS.vault.exists && !STATUS.vault.locked ? ` · ${STATUS.vault.entries} Einträge` : STATUS.vault.exists ? " · gesperrt" : ""}</div></div>
     <div class="tile ${STATUS.m365.connected ? "ok" : ""}"><div class="k">${STATUS.m365.connected ? "✓" : "—"}</div><div class="l">Microsoft 365</div></div>
     <div class="tile ${STATUS.google.connected ? "ok" : ""}"><div class="k">${STATUS.google.connected ? "✓" : "—"}</div><div class="l">Google Drive</div></div>
     <div class="tile ${STATUS.health.synapse_ok ? "ok" : "err"}"><div class="k">${STATUS.health.synapse_ok ? "ok" : "down"}</div><div class="l">Matrix-Server</div></div>
@@ -225,6 +226,205 @@ async function skillProposal(id, action) {
     toast(action === "accept" ? "Angenommen — der Skill ist ab sofort aktiv" : "Abgelehnt");
     loadSkills();
   } catch (e) { toast(e.message, 1); }
+}
+
+/* ---------- Tresor ---------- */
+async function loadVault() {
+  const s = await api("GET", "/api/vault/status");
+  const c = $("#vault-content");
+  if (!s.exists) {
+    c.innerHTML = `<div class="card">
+      <h2>Tresor anlegen — dauert 1 Minute</h2>
+      <div class="stepbox">
+        <div class="stepline"><span class="num">1</span><span>Denk dir ein
+          <strong>Master-Passwort</strong> aus (mindestens 10 Zeichen). Damit schließt du
+          den Tresor auf — nach jedem Neustart deines Macs einmal.</span></div>
+        <div class="stepline"><span class="num">2</span><span>Du bekommst danach GENAU EINMAL
+          einen <strong>Wiederherstellungsschlüssel</strong> angezeigt. Druck ihn aus oder
+          speichere die Notfall-Datei an einem sicheren Ort — er ist deine einzige Rettung,
+          falls du das Master-Passwort vergisst.</span></div>
+        <div class="stepline"><span class="num">3</span><span>Dann Passwörter eintragen —
+          und im Chat einfach schreiben: <em>„Nutze {{tresor:name}} dafür"</em>.</span></div>
+      </div>
+      <label>Master-Passwort (mind. 10 Zeichen)</label>
+      <input type="password" id="v-pw1" autocomplete="new-password">
+      <label>Master-Passwort wiederholen</label>
+      <input type="password" id="v-pw2" autocomplete="new-password">
+      <button class="primary" onclick="vaultInit()">Tresor anlegen</button>
+    </div>`;
+    return;
+  }
+  if (s.locked) {
+    c.innerHTML = `<div class="card">
+      <h2>🔒 Tresor ist gesperrt</h2>
+      <p class="hint">Master-Passwort eingeben, um ihn für diese Sitzung zu öffnen.
+      Dein Operator kann Zugangsdaten erst wieder nutzen, wenn du entsperrt hast.</p>
+      <label>Master-Passwort</label>
+      <input type="password" id="v-unlock-pw" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter')vaultUnlock()">
+      <div style="display:flex;gap:10px;align-items:center">
+        <button class="primary" onclick="vaultUnlock()">Entsperren</button>
+        <a href="#" onclick="vaultRecoverForm();return false" class="small">Master-Passwort vergessen?</a>
+      </div>
+      <div id="v-recover-form"></div>
+    </div>`;
+    return;
+  }
+  const d = await api("GET", "/api/vault/entries");
+  c.innerHTML = `
+    <div class="card">
+      <div class="row-between"><h2>🔓 Entsperrt · ${s.entries} ${s.entries === 1 ? "Eintrag" : "Einträge"}</h2>
+        <div style="display:flex;gap:8px">
+          <button class="ghost" onclick="vaultLock()">Jetzt sperren</button>
+          <button class="ghost" onclick="vaultRotateForm()">Master-Passwort ändern</button>
+        </div></div>
+      <div id="v-rotate-form"></div>
+      ${d.entries.map((e) => `
+        <div class="agent-row">
+          <div><strong>${esc(e.name)}</strong>
+            <span class="pill mono">{{tresor:${esc(e.name)}}}</span>
+            ${e.username ? `<span class="pill">${esc(e.username)}</span>` : ""}
+            <div class="meta">${esc(e.description)}</div>
+            <div class="small">Wert gespeichert · zuletzt geändert ${esc(e.updated)}
+              — der Wert wird nie wieder angezeigt</div></div>
+          <button class="danger" onclick="deleteVaultEntry('${e.name}')">Löschen</button>
+        </div>`).join("") || "<p class='hint'>Noch keine Einträge.</p>"}
+    </div>
+    <div class="card"><h2>Eintrag speichern / ersetzen</h2>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>Name (klein, z. B. gitea-admin)</label><input type="text" id="v-name"></div>
+        <div><label>Benutzername (optional)</label><input type="text" id="v-user"></div>
+      </div>
+      <label>Wofür ist das? (hilft deinem Operator, den richtigen Eintrag zu wählen)</label>
+      <input type="text" id="v-desc" placeholder="z. B. Admin-Login für Gitea auf dem Pi">
+      <label>Passwort / Wert (wird nach dem Speichern nie wieder angezeigt)</label>
+      <input type="password" id="v-value" autocomplete="new-password">
+      <button class="primary" onclick="saveVaultEntry()">Verschlüsselt speichern</button>
+      <p class="hint" style="margin-top:8px">Danach im Chat: <em>„Logge dich mit
+      {{tresor:${"name"}}} ein"</em> — dein Operator setzt das Passwort ein, ohne es zu sehen.</p>
+    </div>`;
+}
+
+async function vaultInit() {
+  const p1 = $("#v-pw1").value, p2 = $("#v-pw2").value;
+  if (p1 !== p2) return toast("Die Passwörter stimmen nicht überein", 1);
+  try {
+    const r = await api("POST", "/api/vault/init", { master_pw: p1 });
+    showEmergencyKit(r.recovery_key, "Tresor angelegt!");
+  } catch (e) { toast(e.message, 1); }
+}
+
+function kitText(key) {
+  const d = new Date().toLocaleDateString("de-DE");
+  return `OPERATOR NOTFALL-KIT  (erstellt am ${d})
+=========================================
+
+Wiederherstellungsschlüssel für deinen Operator-Tresor:
+
+    ${key}
+
+Master-Passwort (von Hand eintragen): ______________________
+
+Wenn du dein Master-Passwort vergisst:
+Dashboard (http://127.0.0.1:8737) → Tab „Tresor" → „Master-Passwort vergessen?"
+→ diesen Schlüssel eingeben → neues Master-Passwort setzen.
+Danach bekommst du einen NEUEN Schlüssel — dieses Blatt dann vernichten.
+
+Bewahre dieses Blatt sicher auf (nicht auf dem Mac speichern!).`;
+}
+
+function showEmergencyKit(key, title) {
+  $("#vault-content").innerHTML = `<div class="card" style="border-color:var(--accent)">
+    <h2>${esc(title)} Dein Wiederherstellungsschlüssel:</h2>
+    <div class="kit-key mono">${esc(key)}</div>
+    <p class="hint"><strong>Dieser Schlüssel wird NIE wieder angezeigt.</strong> Er ist deine
+    einzige Rettung, wenn du das Master-Passwort vergisst. Speichere die Notfall-Datei an
+    einem sicheren Ort (USB-Stick, Passwort-Manager, Ausdruck im Ordner) — nicht einfach
+    auf diesem Mac liegen lassen.</p>
+    <div style="display:flex;gap:10px;margin:10px 0">
+      <button class="ghost" onclick="downloadKit('txt')">Notfall-Kit (.txt)</button>
+      <button class="ghost" onclick="downloadKit('html')">Notfall-Kit zum Drucken (.html)</button>
+    </div>
+    <label class="switch"><input type="checkbox" id="v-kit-ok">Ich habe den
+      Wiederherstellungsschlüssel gesichert</label>
+    <button class="primary" style="margin-top:10px"
+      onclick="if(!$('#v-kit-ok').checked)return toast('Bitte erst den Schlüssel sichern und das Häkchen setzen',1);KIT_KEY=null;loadVault()">
+      Weiter zum Tresor</button>
+  </div>`;
+  KIT_KEY = key;
+}
+let KIT_KEY = null;
+function downloadKit(fmt) {
+  if (!KIT_KEY) return;
+  const txt = kitText(KIT_KEY);
+  const content = fmt === "html"
+    ? `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Operator Notfall-Kit</title></head>
+       <body style="font-family:monospace;padding:40px;max-width:640px"><pre style="white-space:pre-wrap;font-size:14px">${txt.replace(/</g, "&lt;")}</pre></body></html>`
+    : txt;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([content], { type: fmt === "html" ? "text/html" : "text/plain" }));
+  a.download = "Operator-Notfall-Kit." + fmt;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function vaultUnlock() {
+  try {
+    await api("POST", "/api/vault/unlock", { master_pw: $("#v-unlock-pw").value });
+    toast("Tresor entsperrt"); loadVault(); loadStatus().catch(() => {});
+  } catch (e) { toast(e.message, 1); }
+}
+async function vaultLock() {
+  try { await api("POST", "/api/vault/lock"); toast("Tresor gesperrt"); loadVault(); loadStatus().catch(() => {}); }
+  catch (e) { toast(e.message, 1); }
+}
+
+function vaultRecoverForm() {
+  $("#v-recover-form").innerHTML = `
+    <label style="margin-top:12px">Wiederherstellungsschlüssel (aus deinem Notfall-Kit)</label>
+    <input type="text" id="v-rk" class="mono" placeholder="XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX">
+    <label>Neues Master-Passwort (mind. 10 Zeichen)</label>
+    <input type="password" id="v-new-pw" autocomplete="new-password">
+    <button class="primary" onclick="vaultRecover()">Neues Master-Passwort setzen</button>`;
+}
+async function vaultRecover() {
+  try {
+    const r = await api("POST", "/api/vault/recover",
+      { recovery_key: $("#v-rk").value, new_master_pw: $("#v-new-pw").value });
+    showEmergencyKit(r.recovery_key, "Neues Master-Passwort gesetzt! Alter Schlüssel ist ungültig.");
+  } catch (e) { toast(e.message, 1); }
+}
+
+function vaultRotateForm() {
+  $("#v-rotate-form").innerHTML = `<div class="stepbox" style="margin-bottom:12px">
+    <label>Aktuelles Master-Passwort</label><input type="password" id="v-old-pw">
+    <label>Neues Master-Passwort (mind. 10 Zeichen)</label><input type="password" id="v-rot-pw">
+    <button class="primary" onclick="vaultRotate()">Ändern</button></div>`;
+}
+async function vaultRotate() {
+  try {
+    await api("POST", "/api/vault/rotate-master",
+      { old_pw: $("#v-old-pw").value, new_pw: $("#v-rot-pw").value });
+    toast("Master-Passwort geändert — Wiederherstellungsschlüssel bleibt gültig"); loadVault();
+  } catch (e) { toast(e.message, 1); }
+}
+
+async function saveVaultEntry() {
+  const name = $("#v-name").value.trim();
+  try {
+    await api("PUT", "/api/vault/entries/" + encodeURIComponent(name), {
+      value: $("#v-value").value, description: $("#v-desc").value.trim(),
+      username: $("#v-user").value.trim(),
+    });
+    $("#v-value").value = "";
+    toast(`Gespeichert — im Chat nutzbar als {{tresor:${name}}}`);
+    loadVault();
+  } catch (e) { toast(e.message, 1); }
+}
+async function deleteVaultEntry(name) {
+  if (!confirm(`Eintrag "${name}" endgültig löschen?`)) return;
+  try { await api("DELETE", "/api/vault/entries/" + encodeURIComponent(name)); loadVault(); }
+  catch (e) { toast(e.message, 1); }
 }
 
 /* ---------- M365 ---------- */
@@ -645,6 +845,7 @@ async function refresh() {
     if (active === "overview") await loadStatus();
     if (active === "agents") await loadAgents();
     if (active === "skills") await loadSkills();
+    if (active === "vault") await loadVault();
     if (active === "sessions") await loadSessions();
     if (active === "cron") await loadCron();
     if (active === "usage") await loadUsage();
