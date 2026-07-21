@@ -77,6 +77,8 @@ import sys; sys.path.insert(0, '$BOT_DIR/dashboard')
 import google_auth; google_auth.disconnect()" 2>/dev/null && ok "Google-Token widerrufen" || true
   fi
   security delete-generic-password -s "the-operator" -a "token-key" >/dev/null 2>&1 && ok "Keychain-Schlüssel gelöscht" || true
+  # Tresor-Sitzungsschlüssel entfernen (der Tresor selbst liegt in  und wird unten mitgelöscht)
+  rm -f "/var/folders/wz/54tj6kwj783gfqnl5k105nm00000gn/T//operator-vault.dek" "/private/tmp/operator-vault-501.dek" 2>/dev/null || true
   [ -f "$BOT_DIR/connections/m365.json" ] && warn "Hinweis: Die Entra-App 'Operator M365 Connector' im M365-Tenant ggf. manuell löschen (Entra Portal → App-Registrierungen)"
   ask CONFIRM "Verzeichnis $BOT_DIR komplett löschen (inkl. Gedächtnis + Tokens)? (ja/nein)" "nein"
   [ "$CONFIRM" = "ja" ] && rm -rf "$BOT_DIR" && ok "Dateien gelöscht" || warn "Dateien behalten"
@@ -190,7 +192,7 @@ fi
 bold "Phase 5/7 — Dateien einrichten"
 mkdir -p "$BOT_DIR"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
-for F in listener.py send.py memory.py skills.py; do
+for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py; do
   if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
   else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
   ok "$F installiert"
@@ -338,7 +340,7 @@ if [ "$DASH_OPTIN" = "ja" ]; then
       if [ -f "$SCRIPT_DIR/dashboard/static/$F" ]; then cp "$SCRIPT_DIR/dashboard/static/$F" "$DASH_DIR/static/$F"
       else curl -fsSL "$REPO_RAW/dashboard/static/$F" -o "$DASH_DIR/static/$F" || DASH_OK=0; fi
     done
-    for F in m365.py gdrive.py mcp_m365.py; do
+    for F in m365.py gdrive.py mcp_m365.py vault.py; do
       if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
       else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || DASH_OK=0; fi
     done
