@@ -16,7 +16,7 @@ import re
 AGENTS_DIR = os.path.expanduser("~/.claude/matrix-bot/workspace/.claude/agents")
 NAME_RE = re.compile(r"^[a-z0-9-]{2,32}$")
 KNOWN_MODELS = ("haiku", "sonnet", "opus", "inherit")
-KNOWN_TOOLS = ("Bash", "Read", "Write", "WebFetch", "WebSearch", "Agent")
+KNOWN_TOOLS = ("Bash", "Read", "Write", "WebFetch", "WebSearch", "Agent", "Skill")
 
 
 def parse(text: str) -> dict:
