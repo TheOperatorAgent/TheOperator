@@ -19,6 +19,7 @@
 <nav id="tabs">
   <button data-tab="overview" class="active">Übersicht</button>
   <button data-tab="agents">Agenten</button>
+  <button data-tab="skills">Skills</button>
   <button data-tab="sessions">Verlauf</button>
   <button data-tab="cron">Automationen</button>
   <button data-tab="usage">Nutzung</button>
@@ -49,6 +50,24 @@
     eigenen Kontakt.</p>
     <div id="agent-list"></div>
     <div id="agent-editor" class="card hidden"></div>
+  </section>
+
+  <section id="tab-skills" class="tab">
+    <div class="row-between">
+      <h2>Skills</h2>
+      <button class="primary" onclick="editSkill(null)">+ Neuer Skill</button>
+    </div>
+    <p class="hint">Ein Skill ist eine <strong>gespeicherte Fähigkeit</strong> — eine
+    Schritt-für-Schritt-Anleitung, die dein Operator ab sofort beherrscht. Beispiel: „Pi-Status
+    prüfen" oder „Wochenbericht schreiben". Das Beste: Dein Operator <strong>lernt selbst
+    dazu</strong>. Bittest du ihn öfter um dasselbe, merkt er das und macht daraus einen Skill —
+    entweder direkt (er sagt dir Bescheid) oder als Vorschlag hier unten, den du erst
+    freigibst.<br><span class="small">Deine eigenen Skills sind geschützt: Was du hier anlegst
+    oder bearbeitest, verändert der Operator nie von allein — er macht höchstens einen
+    Verbesserungs-Vorschlag.</span></p>
+    <div id="skill-proposals"></div>
+    <div id="skill-list"></div>
+    <div id="skill-editor" class="card hidden"></div>
   </section>
 
   <section id="tab-m365" class="tab">
