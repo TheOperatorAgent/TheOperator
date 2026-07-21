@@ -402,6 +402,16 @@ def api_m365_delete():
     return {"ok": True}
 
 
+@app.put("/api/m365/primary-user")
+async def api_m365_primary_user(request: Request):
+    upn = (await request.json()).get("upn", "").strip()
+    if upn and ("@" not in upn or " " in upn):
+        return err("validate", "Bitte die vollständige M365-E-Mail-Adresse angeben")
+    m365_setup.set_primary_user(upn)
+    audit("dashboard", "m365.primary-user", upn)
+    return {"ok": True}
+
+
 @app.put("/api/m365/setup-client")
 async def api_m365_setup_client(request: Request):
     cid = (await request.json()).get("client_id", "").strip()
