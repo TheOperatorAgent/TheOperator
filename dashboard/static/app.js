@@ -156,8 +156,14 @@ async function loadM365() {
   const c = $("#m365-content");
   if (!s.configured) {
     c.innerHTML = `<div class="card">
-      <p class="hint">Einmalige Voraussetzung: Die Multi-Tenant-App „The Operator Setup" (Anleitung im Repo, Sprint 0). Danach hier die Client-ID eintragen:</p>
-      <label>Setup-Client-ID (GUID)</label><input type="text" id="m365-cid" placeholder="xxxxxxxx-xxxx-…">
+      <h2>Einmalige Hersteller-Einrichtung nötig</h2>
+      <p class="hint">Danach ist die M365-Anbindung für alle Nutzer ein reiner Berechtigungs-Dialog
+      („Als Admin anmelden" → Microsoft-Consent → Regler setzen — fertig).<br><br>
+      Voraussetzung ist die Multi-Tenant-App <strong>„The Operator Setup"</strong> im
+      Hersteller-Tenant — sie ist der Name, den Admins auf dem Microsoft-Consent-Screen
+      sehen. Bewusst keine geliehene Fremd-Client-ID: Wer zustimmt, muss sehen, wem.
+      Anleitung: README im Repo (15 Minuten, einmalig).</p>
+      <label>Client-ID der Setup-App (GUID)</label><input type="text" id="m365-cid" placeholder="xxxxxxxx-xxxx-…">
       <button class="primary" onclick="saveM365Cid()">Speichern</button></div>`;
     return;
   }
@@ -457,7 +463,7 @@ async function loadPrivacy() {
   $("#privacy-content").innerHTML = `<div class="card"><table class="kv">
     <tr><td>Chat-Verarbeitung</td><td>Nachrichten werden zur Beantwortung an die Claude-API (Anthropic) übertragen — über dein persönliches Abo</td></tr>
     <tr><td>Gedächtnis</td><td>${s.memory_count} Fakten, lokal in <span class="mono">~/.claude/matrix-bot/memory.db</span> — verlässt deinen Mac nie</td></tr>
-    <tr><td>Matrix-Zugangsdaten</td><td>lokal, Dateirechte 0600</td></tr>
+    <tr><td>Matrix-Zugangsdaten</td><td>im macOS-Schlüsselbund (nicht mehr als Klartext-Datei)</td></tr>
     <tr><td>OAuth-Tokens (Google/M365)</td><td>AES-256-verschlüsselt in <span class="mono">secrets/</span>, Schlüssel im macOS-Schlüsselbund</td></tr>
     <tr><td>Microsoft 365</td><td>${s.m365.connected ? "Aktive Rechte: <span class='mono'>" + esc(s.m365.active_values.join(", ")) + "</span>" : "nicht verbunden — keine Daten"}</td></tr>
     <tr><td>Google Drive</td><td>${s.google.connected ? "Scope: <span class='mono'>" + esc(s.google.scopes.join(", ")) + "</span> (" + esc(s.google.connected_email) + ")" : "nicht verbunden — keine Daten"}</td></tr>
