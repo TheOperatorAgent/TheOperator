@@ -112,11 +112,11 @@ echo "  (Mächtig — Serververwaltung etc. —, aber jede Chat-Nachricht von di
 echo "  Kommandos auslösen. Ohne Freigabe kann er nur lesen und im Web recherchieren.)"
 ask BASH_OPTIN "Shell-Zugriff erlauben? (ja/nein)" "nein"
 if [ "$BASH_OPTIN" = "ja" ]; then
-  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch"]'
-  TOOLS_TEXT="Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen und im Web recherchieren. Kleine Aufgaben direkt erledigen; Unumkehrbares nur nach Rückfrage im Chat."
+  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent"]'
+  TOOLS_TEXT="Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Kleine Aufgaben direkt erledigen; Unumkehrbares nur nach Rückfrage im Chat."
 else
-  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch"]'
-  TOOLS_TEXT="Du darfst Dateien lesen und im Web recherchieren. Shell-Zugriff ist NICHT freigegeben — wenn eine Aufgabe das bräuchte, sag das ehrlich."
+  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent"]'
+  TOOLS_TEXT="Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben — wenn eine Aufgabe das bräuchte, sag das ehrlich. (Hinweis: Ohne Shell kannst du dein Gedächtnis nicht selbst beschreiben.)"
 fi
 
 # ------------------------------------------------------------ Phase 4: MATRIX
@@ -162,10 +162,21 @@ fi
 bold "Phase 5/7 — Dateien einrichten"
 mkdir -p "$BOT_DIR"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
-for F in listener.py send.py; do
+for F in listener.py send.py memory.py; do
   if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
   else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
   ok "$F installiert"
+done
+# Agenten-Workspace: MD-Dateien in .claude/agents/ definieren die Subagenten des Operators
+mkdir -p "$BOT_DIR/workspace/.claude/agents"
+AGENTS="recherche schreiber"
+[ "$BASH_OPTIN" = "ja" ] && AGENTS="$AGENTS sysadmin"
+for A in $AGENTS; do
+  DEST="$BOT_DIR/workspace/.claude/agents/$A.md"
+  if [ -f "$DEST" ]; then ok "Agent $A existiert — bleibt unverändert"; continue; fi
+  if [ -f "$SCRIPT_DIR/agents/$A.md" ]; then cp "$SCRIPT_DIR/agents/$A.md" "$DEST"
+  else curl -fsSL "$REPO_RAW/agents/$A.md" -o "$DEST" || die "Agent-Vorlage $A.md nicht gefunden"; fi
+  ok "Agent $A installiert"
 done
 # VERHALTEN.md aus Template personalisieren (bestehende Datei wird nie überschrieben)
 if [ -f "$BOT_DIR/VERHALTEN.md" ]; then
