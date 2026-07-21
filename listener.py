@@ -44,6 +44,29 @@ try:
     import cron_runner
 except Exception:
     cron_runner = None
+try:
+    import redact as redact_mod
+except Exception:
+    redact_mod = None
+VENV_PY = f"{BOT_DIR}/dashboard/venv/bin/python3"
+
+
+def redact_text(text):
+    """Secrets aus Text entfernen, bevor er in Log/Verlauf/Prompt landet.
+    Bekannte Tresor-Werte via vault.py-Subprocess (best effort, venv),
+    generische Muster immer (stdlib)."""
+    if not text:
+        return text
+    try:
+        import os as _os
+        if _os.path.exists(f"{BOT_DIR}/secrets/vault.enc") and _os.path.exists(VENV_PY):
+            r = subprocess.run([VENV_PY, f"{BOT_DIR}/vault.py", "redact"],
+                               input=text, capture_output=True, text=True, timeout=10)
+            if r.returncode == 0 and r.stdout:
+                return r.stdout
+    except Exception:
+        pass
+    return redact_mod.redact(text) if redact_mod else text
 CLAUDE = CREDS.get("claude_bin", "/Users/michi/.npm-global/bin/claude")
 OWNER = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
@@ -76,7 +99,8 @@ Dein Auftraggeber ist {owner}. Dein Verhalten:
 
 Erledige/beantworte das jetzt. Sende deine Antwort am Ende zwingend per Bash:
 python3 {bot_dir}/send.py --bot {name} "DEINE ANTWORT"
-(mehrzeilig: Text per stdin an send.py --bot {name}). Keine Secrets in den Chat."""
+(mehrzeilig: Text per stdin an send.py --bot {name}). Keine Secrets in den Chat — \
+Zugangsdaten existieren nur als Referenz {{{{tresor:name}}}} über den Tresor-Wrapper."""
 
 
 def log(msg):
@@ -172,6 +196,9 @@ class BotSession(threading.Thread):
             return ""
         lines = []
         for msg, res in rounds:
+            # Altbestand aus der Zeit vor der Redaction ebenfalls filtern
+            if redact_mod:
+                msg, res = redact_mod.redact(msg), redact_mod.redact(res)
             lines.append(f"Michi: {msg[:400]}")
             lines.append(f"Du: {res[:400]}")
         return ("Bisheriger Gesprächsverlauf (chronologisch, zur Einordnung von "
@@ -251,6 +278,8 @@ class BotSession(threading.Thread):
                 dur = data.get("duration_ms", dur)
             except ValueError:
                 result = r.stdout[-500:]
+            result = redact_text(result)
+            messages_label = redact_text(messages_label)
             log(f"[{self.bot_name}] Claude fertig (rc={r.returncode}, {dur}ms, "
                 f"{tok_out} out-tok): {result[-200:]}")
             if sessions_db:
