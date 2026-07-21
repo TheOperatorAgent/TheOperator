@@ -22,11 +22,13 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 GRAPH_APP_ID = "00000003-0000-0000-c000-000000000000"
 APP_DISPLAY_NAME = "Operator M365 Connector"
 SETUP_SCOPES = ["Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All"]
-# Die Setup-App ("The Operator Setup") ist eine EINMALIGE Hersteller-Voraussetzung:
-# eine Multi-Tenant-App im Hersteller-Tenant, deren Name auf dem Microsoft-Consent-
-# Screen erscheint. Bewusst KEINE fremde/first-party Client-ID als Default —
+# "The Operator Setup" — Multi-Tenant-App im Hersteller-Tenant (ai.quantex,
+# angelegt 2026-07-21 per az ad app create). Ihr Name erscheint auf dem
+# Microsoft-Consent-Screen. Bewusst KEINE fremde/first-party Client-ID —
 # der Admin muss beim Consent sehen, WEM er Rechte gibt (Security by Design).
-PLACEHOLDER_CLIENT_ID = "ERSETZEN-DURCH-THE-OPERATOR-SETUP-CLIENT-ID"
+# Über dashboard.json (m365_setup_client_id) überschreibbar.
+DEFAULT_SETUP_CLIENT_ID = "25be2732-6e55-46cd-a9cc-22dc2817c276"
+PLACEHOLDER_CLIENT_ID = "ERSETZEN-DURCH-THE-OPERATOR-SETUP-CLIENT-ID"  # Abwärtskompat.
 
 # Dienst + Regler -> Graph-Application-Permission-VALUES (Schreiben impliziert Lesen)
 PERMISSION_MAP = {
@@ -42,7 +44,8 @@ PERMISSION_MAP = {
 
 def setup_client_id() -> str:
     cfg = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
-    return cfg.get("m365_setup_client_id", PLACEHOLDER_CLIENT_ID)
+    cid = cfg.get("m365_setup_client_id")
+    return cid if cid and cid != PLACEHOLDER_CLIENT_ID else DEFAULT_SETUP_CLIENT_ID
 
 
 def matrix_to_values(perm_matrix: dict) -> list:
