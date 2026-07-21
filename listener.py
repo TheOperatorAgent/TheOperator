@@ -20,7 +20,19 @@ import urllib.request
 BOT_DIR = "/Users/michi/.claude/matrix-bot"
 CREDS = json.load(open(f"{BOT_DIR}/credentials.json"))
 BOTS_FILE = f"{BOT_DIR}/bots.json"
+CRON_FILE = f"{BOT_DIR}/cron.json"
 WORKSPACE = f"{BOT_DIR}/workspace"
+
+import sys as _sys
+_sys.path.insert(0, BOT_DIR)
+try:
+    import sessions as sessions_db
+except Exception:
+    sessions_db = None
+try:
+    import cron_runner
+except Exception:
+    cron_runner = None
 CLAUDE = CREDS.get("claude_bin", "/Users/michi/.npm-global/bin/claude")
 OWNER = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent"])
@@ -160,9 +172,18 @@ class BotSession(threading.Thread):
     # ---------- Claude ----------
     def answer(self, bodies, last_event_id):
         prompt, tools, model = self.build(bodies)
-        log(f"[{self.bot_name}] Claude wird geweckt für {len(bodies)} Nachricht(en)"
-            + (f" (model={model})" if model else ""))
         self.mark_read(last_event_id)
+        self.execute(prompt, tools, model, " | ".join(bodies), kind="chat")
+
+    def run_automation(self, job):
+        framing = f"[Automation „{job['name']}“ wurde planmäßig ausgelöst] {job['prompt']}"
+        prompt, tools, model = self.build([framing])
+        log(f"[{self.bot_name}] Automation '{job['name']}' startet")
+        self.execute(prompt, tools, model, framing, kind="cron")
+
+    def execute(self, prompt, tools, model, messages_label, kind):
+        log(f"[{self.bot_name}] Claude wird geweckt ({kind})"
+            + (f" (model={model})" if model else ""))
         done = threading.Event()
 
         def keep_typing():
@@ -172,14 +193,41 @@ class BotSession(threading.Thread):
 
         t = threading.Thread(target=keep_typing, daemon=True)
         t.start()
-        cmd = [CLAUDE, "-p", prompt, "--allowedTools", *tools]
+        cmd = [CLAUDE, "-p", prompt, "--output-format", "json", "--allowedTools", *tools]
         if model:
             cmd += ["--model", model]
+        # Vom Nutzer im Dashboard konfigurierte MCP-Server explizit laden
+        mcp_file = f"{WORKSPACE}/.mcp.json"
+        try:
+            import os as _os
+            if _os.path.getsize(mcp_file) > 20:
+                cmd += ["--mcp-config", mcp_file]
+        except OSError:
+            pass
+        start = time.time()
         try:
             with CLAUDE_SLOTS:
                 r = subprocess.run(cmd, capture_output=True, text=True,
                                    timeout=600, cwd=WORKSPACE)
-            log(f"[{self.bot_name}] Claude fertig (rc={r.returncode}): {r.stdout[-300:]}")
+            result, tok_in, tok_out, dur = "", 0, 0, int((time.time() - start) * 1000)
+            try:
+                data = json.loads(r.stdout)
+                result = str(data.get("result", ""))[:4000]
+                u = data.get("usage", {})
+                tok_in = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+                tok_out = u.get("output_tokens", 0)
+                dur = data.get("duration_ms", dur)
+            except ValueError:
+                result = r.stdout[-500:]
+            log(f"[{self.bot_name}] Claude fertig (rc={r.returncode}, {dur}ms, "
+                f"{tok_out} out-tok): {result[-200:]}")
+            if sessions_db:
+                try:
+                    sessions_db.record(self.bot_name, messages_label, result,
+                                       r.returncode, dur, tok_in, tok_out, kind,
+                                       model or "inherit")
+                except Exception as e:
+                    log(f"Session-Recording fehlgeschlagen: {e}")
             if r.returncode != 0:
                 out = (r.stdout + r.stderr).lower()
                 if "401" in out or "authenticate" in out or "oauth" in out:
@@ -193,6 +241,12 @@ class BotSession(threading.Thread):
                         "listener.log am Mac). Probier's gleich nochmal.")
         except subprocess.TimeoutExpired:
             log(f"[{self.bot_name}] Claude-Lauf abgebrochen (Timeout 600s)")
+            if sessions_db:
+                try:
+                    sessions_db.record(self.bot_name, messages_label, "(Timeout 600s)",
+                                       -1, 600000, 0, 0, kind, model or "inherit")
+                except Exception:
+                    pass
             self.send_message("⚠️ Die Aufgabe hat länger als 10 Minuten gedauert — abgebrochen. "
                               "Für so große Sachen besser eine Claude-Code-Session am Mac nutzen.")
         finally:
@@ -276,6 +330,11 @@ def main():
             agents = load_bot_sessions()
             for s in agents.values():
                 s.start()
+        if cron_runner:
+            try:
+                cron_runner.tick(owner, agents, log)
+            except Exception as e:
+                log(f"Automations-Prüfung fehlgeschlagen: {e}")
 
 
 if __name__ == "__main__":
