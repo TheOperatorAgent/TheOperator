@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
-"""Matrix-Listener: wartet per /sync-Long-Poll auf Nachrichten von @michi
-und weckt bei jeder neuen Nachricht den Claude-CLI zum Antworten."""
+"""Operator Listener v2 — Matrix-Multiplexer.
+
+Ein Daemon, ein Thread je Matrix-Bot-Account:
+- Owner-Bot (credentials.json): VERHALTEN.md + Gedächtnis-Recall, volles Verhalten wie v1
+- Agenten-Bots (bots.json): je ein veröffentlichter Agent mit eigenem Account/Raum,
+  Prompt = Agenten-MD, Werkzeuge = Frontmatter ∩ Owner-Freigabe, Modell aus Frontmatter
+
+bots.json wird zur Laufzeit überwacht (mtime) — Publish/Unpublish greift ohne Neustart.
+100 % Python-Standardbibliothek (läuft auch ohne Dashboard-venv).
+"""
 import json
+import re
 import subprocess
 import threading
 import time
@@ -10,15 +19,14 @@ import urllib.request
 
 BOT_DIR = "/Users/michi/.claude/matrix-bot"
 CREDS = json.load(open(f"{BOT_DIR}/credentials.json"))
-HS = CREDS["homeserver"]
-TOKEN = CREDS["access_token"]
-ROOM = CREDS["room_id"]
-MICHI = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
-ALLOWED_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent"])
-CLAUDE = CREDS.get("claude_bin", "/Users/michi/.npm-global/bin/claude")
+BOTS_FILE = f"{BOT_DIR}/bots.json"
 WORKSPACE = f"{BOT_DIR}/workspace"
+CLAUDE = CREDS.get("claude_bin", "/Users/michi/.npm-global/bin/claude")
+OWNER = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
+OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent"])
+CLAUDE_SLOTS = threading.Semaphore(2)
 
-RESPONDER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest stehen hier \
+OWNER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest stehen hier \
 (strikt befolgen):
 
 {verhalten}
@@ -31,162 +39,243 @@ Michi hat dir soeben im Matrix-Chat geschrieben:
 
 Erledige/beantworte das jetzt gemäß den Regeln oben und sende die Antwort in den Raum."""
 
+AGENT_PROMPT = """Du bist der Agent „{name}" und läufst als eigenständiger Matrix-Bot. \
+Dein Auftraggeber ist {owner}. Dein Verhalten:
 
-def recall(text, k=5):
-    """Top-k relevante Gedächtnis-Einträge zur eingehenden Nachricht (tokensparend)."""
-    try:
-        r = subprocess.run(
-            ["python3", f"{BOT_DIR}/memory.py", "search", text, "-k", str(k)],
-            capture_output=True, text=True, timeout=15,
-        )
-        hits = r.stdout.strip()
-        if hits:
-            return f"Relevante Einträge aus deinem Gedächtnis:\n{hits}\n\n"
-    except Exception as e:
-        log(f"Gedächtnis-Abruf fehlgeschlagen: {e}")
-    return ""
+{body}
 
+---
 
-def api(path, timeout=90, method="GET", body=None):
-    req = urllib.request.Request(
-        HS + path,
-        method=method,
-        data=json.dumps(body).encode() if body is not None else None,
-        headers={
-            "Authorization": "Bearer " + TOKEN,
-            "Content-Type": "application/json",
-        },
-    )
-    return json.load(urllib.request.urlopen(req, timeout=timeout))
+{owner_short} hat dir soeben geschrieben:
 
+{messages}
 
-ROOM_ENC = urllib.parse.quote(ROOM)
-BOT_ENC = urllib.parse.quote(CREDS.get("user_id", "@claude:matrix.vonaschenbrenner.bayern"))
-
-
-def set_typing(on):
-    try:
-        api(
-            f"/_matrix/client/v3/rooms/{ROOM_ENC}/typing/{BOT_ENC}",
-            method="PUT",
-            body={"typing": on, "timeout": 25000} if on else {"typing": False},
-            timeout=10,
-        )
-    except Exception as e:
-        log(f"Typing-Signal fehlgeschlagen: {e}")
-
-
-def send_message(text):
-    try:
-        api(
-            f"/_matrix/client/v3/rooms/{ROOM_ENC}/send/m.room.message/{time.time_ns()}",
-            method="PUT", body={"msgtype": "m.text", "body": text}, timeout=15,
-        )
-    except Exception as e:
-        log(f"Nachricht senden fehlgeschlagen: {e}")
-
-
-def mark_read(event_id):
-    try:
-        api(
-            f"/_matrix/client/v3/rooms/{ROOM_ENC}/receipt/m.read/{urllib.parse.quote(event_id)}",
-            method="POST", body={}, timeout=10,
-        )
-    except Exception as e:
-        log(f"Lesebestätigung fehlgeschlagen: {e}")
+Erledige/beantworte das jetzt. Sende deine Antwort am Ende zwingend per Bash:
+python3 {bot_dir}/send.py --bot {name} "DEINE ANTWORT"
+(mehrzeilig: Text per stdin an send.py --bot {name}). Keine Secrets in den Chat."""
 
 
 def log(msg):
     print(f"[{time.strftime('%F %T')}] {msg}", flush=True)
 
 
-def answer(bodies, last_event_id):
-    messages = "\n".join(f"- {b}" for b in bodies)
+def parse_agent_md(name):
+    """Frontmatter + Body eines Agenten lesen (stdlib-Parser)."""
     try:
-        verhalten = open(f"{BOT_DIR}/VERHALTEN.md").read()
+        text = open(f"{WORKSPACE}/.claude/agents/{name}.md").read()
     except OSError:
-        verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende die Antwort per python3 ~/.claude/matrix-bot/send.py in den Raum.)"
-    prompt = RESPONDER_PROMPT.format(
-        verhalten=verhalten, messages=messages, memories=recall(" ".join(bodies))
-    )
-    log(f"Claude wird geweckt für {len(bodies)} Nachricht(en)")
-    # Sofort sichtbar machen, dass gearbeitet wird: gelesen + "tippt..."
-    mark_read(last_event_id)
-    done = threading.Event()
+        return None
+    m = re.match(r"^---\n(.*?)\n---\n?(.*)$", text, re.DOTALL)
+    if not m:
+        return {"tools": [], "model": None, "body": text}
+    fm = {}
+    for line in m.group(1).splitlines():
+        if ":" in line:
+            k, v = line.split(":", 1)
+            fm[k.strip()] = v.strip()
+    tools = [t.strip() for t in fm.get("tools", "").split(",") if t.strip()]
+    return {"tools": tools, "model": fm.get("model"), "body": m.group(2).strip()}
 
-    def keep_typing():
-        while not done.is_set():
-            set_typing(True)
-            done.wait(20)
 
-    t = threading.Thread(target=keep_typing, daemon=True)
-    t.start()
+class BotSession(threading.Thread):
+    """Ein Matrix-Account: Long-Poll-Loop + Claude-Wecker."""
+
+    def __init__(self, kind, name, homeserver, token, room_id, user_id):
+        super().__init__(daemon=True, name=f"bot-{name}")
+        self.kind = kind          # "owner" | "agent"
+        self.bot_name = name
+        self.hs = homeserver
+        self.token = token
+        self.room = room_id
+        self.room_enc = urllib.parse.quote(room_id)
+        self.user_enc = urllib.parse.quote(user_id)
+        self.stop_event = threading.Event()
+
+    # ---------- Matrix-API ----------
+    def api(self, path, timeout=90, method="GET", body=None):
+        req = urllib.request.Request(
+            self.hs + path, method=method,
+            data=json.dumps(body).encode() if body is not None else None,
+            headers={"Authorization": "Bearer " + self.token,
+                     "Content-Type": "application/json"})
+        return json.load(urllib.request.urlopen(req, timeout=timeout))
+
+    def send_message(self, text):
+        try:
+            self.api(f"/_matrix/client/v3/rooms/{self.room_enc}/send/m.room.message/{time.time_ns()}",
+                     method="PUT", body={"msgtype": "m.text", "body": text}, timeout=15)
+        except Exception as e:
+            log(f"[{self.bot_name}] Senden fehlgeschlagen: {e}")
+
+    def set_typing(self, on):
+        try:
+            self.api(f"/_matrix/client/v3/rooms/{self.room_enc}/typing/{self.user_enc}",
+                     method="PUT",
+                     body={"typing": on, "timeout": 25000} if on else {"typing": False},
+                     timeout=10)
+        except Exception:
+            pass
+
+    def mark_read(self, event_id):
+        try:
+            self.api(f"/_matrix/client/v3/rooms/{self.room_enc}/receipt/m.read/{urllib.parse.quote(event_id)}",
+                     method="POST", body={}, timeout=10)
+        except Exception:
+            pass
+
+    # ---------- Prompt-Bau ----------
+    def recall(self, text, k=5):
+        try:
+            r = subprocess.run(["python3", f"{BOT_DIR}/memory.py", "search", text, "-k", str(k)],
+                               capture_output=True, text=True, timeout=15)
+            hits = r.stdout.strip()
+            if hits:
+                return f"Relevante Einträge aus deinem Gedächtnis:\n{hits}\n\n"
+        except Exception as e:
+            log(f"Gedächtnis-Abruf fehlgeschlagen: {e}")
+        return ""
+
+    def build(self, bodies):
+        messages = "\n".join(f"- {b}" for b in bodies)
+        if self.kind == "owner":
+            try:
+                verhalten = open(f"{BOT_DIR}/VERHALTEN.md").read()
+            except OSError:
+                verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende per python3 ~/.claude/matrix-bot/send.py)"
+            return (OWNER_PROMPT.format(verhalten=verhalten, messages=messages,
+                                        memories=self.recall(" ".join(bodies))),
+                    OWNER_TOOLS, None)
+        agent = parse_agent_md(self.bot_name) or {"tools": [], "model": None,
+                                                  "body": "(Agenten-Datei fehlt)"}
+        tools = [t for t in agent["tools"] if t in OWNER_TOOLS or t == "Read"]
+        if "Bash" not in tools:
+            tools.append("Bash")  # noetig fuer send.py; Agent-Frontmatter bleibt die inhaltliche Leitplanke
+        model = agent["model"] if agent["model"] in ("haiku", "sonnet", "opus") else None
+        return (AGENT_PROMPT.format(name=self.bot_name, owner=OWNER,
+                                    owner_short=OWNER.split(":")[0],
+                                    body=agent["body"], messages=messages,
+                                    bot_dir=BOT_DIR),
+                tools, model)
+
+    # ---------- Claude ----------
+    def answer(self, bodies, last_event_id):
+        prompt, tools, model = self.build(bodies)
+        log(f"[{self.bot_name}] Claude wird geweckt für {len(bodies)} Nachricht(en)"
+            + (f" (model={model})" if model else ""))
+        self.mark_read(last_event_id)
+        done = threading.Event()
+
+        def keep_typing():
+            while not done.is_set():
+                self.set_typing(True)
+                done.wait(20)
+
+        t = threading.Thread(target=keep_typing, daemon=True)
+        t.start()
+        cmd = [CLAUDE, "-p", prompt, "--allowedTools", *tools]
+        if model:
+            cmd += ["--model", model]
+        try:
+            with CLAUDE_SLOTS:
+                r = subprocess.run(cmd, capture_output=True, text=True,
+                                   timeout=600, cwd=WORKSPACE)
+            log(f"[{self.bot_name}] Claude fertig (rc={r.returncode}): {r.stdout[-300:]}")
+            if r.returncode != 0:
+                out = (r.stdout + r.stderr).lower()
+                if "401" in out or "authenticate" in out or "oauth" in out:
+                    self.send_message(
+                        "⚠️ Ich kann gerade nicht antworten: Mein Claude-CLI-Login ist "
+                        "abgelaufen. Bitte am Mac im Terminal `claude /login` ausführen — "
+                        "danach beantworte ich deine Nachricht gern nochmal.")
+                else:
+                    self.send_message(
+                        "⚠️ Beim Bearbeiten ist ein Fehler aufgetreten (Details im "
+                        "listener.log am Mac). Probier's gleich nochmal.")
+        except subprocess.TimeoutExpired:
+            log(f"[{self.bot_name}] Claude-Lauf abgebrochen (Timeout 600s)")
+            self.send_message("⚠️ Die Aufgabe hat länger als 10 Minuten gedauert — abgebrochen. "
+                              "Für so große Sachen besser eine Claude-Code-Session am Mac nutzen.")
+        finally:
+            done.set()
+            t.join(timeout=5)
+            self.set_typing(False)
+
+    # ---------- Loop ----------
+    def run(self):
+        try:
+            since = self.api("/_matrix/client/v3/sync?timeout=0&filter=%7B%22room%22%3A%7B%22timeline%22%3A%7B%22limit%22%3A1%7D%7D%7D")["next_batch"]
+        except Exception as e:
+            log(f"[{self.bot_name}] Start-Sync fehlgeschlagen: {e} — Thread endet")
+            return
+        log(f"[{self.bot_name}] Listener gestartet, Raum {self.room}")
+        while not self.stop_event.is_set():
+            try:
+                data = self.api(f"/_matrix/client/v3/sync?since={urllib.parse.quote(since)}&timeout=30000",
+                                timeout=45)
+                since = data["next_batch"]
+                events = (data.get("rooms", {}).get("join", {}).get(self.room, {})
+                          .get("timeline", {}).get("events", []))
+                new = [e for e in events
+                       if e.get("type") == "m.room.message"
+                       and e.get("sender") == OWNER
+                       and e["content"].get("body")]
+                if new:
+                    self.answer([e["content"]["body"] for e in new], new[-1]["event_id"])
+            except urllib.error.HTTPError as e:
+                if e.code == 401:
+                    log(f"[{self.bot_name}] Token ungültig (401) — 5 min Pause")
+                    self.stop_event.wait(300)
+                else:
+                    log(f"[{self.bot_name}] HTTP {e.code} — 10s Pause")
+                    self.stop_event.wait(10)
+            except Exception as e:
+                log(f"[{self.bot_name}] Fehler: {e} — 10s Pause")
+                self.stop_event.wait(10)
+        log(f"[{self.bot_name}] Thread gestoppt")
+
+
+def load_bot_sessions():
+    sessions = {}
     try:
-        r = subprocess.run(
-            [CLAUDE, "-p", prompt, "--allowedTools", *ALLOWED_TOOLS],
-            capture_output=True, text=True, timeout=600, cwd=WORKSPACE,
-        )
-        log(f"Claude fertig (rc={r.returncode}): {r.stdout[-300:]}")
-        if r.returncode != 0:
-            out = (r.stdout + r.stderr).lower()
-            if "401" in out or "authenticate" in out or "oauth" in out:
-                send_message(
-                    "⚠️ Ich kann gerade nicht antworten: Mein Claude-CLI-Login ist "
-                    "abgelaufen. Bitte am Mac im Terminal `claude /login` ausführen — "
-                    "danach beantworte ich deine Nachricht gern nochmal."
-                )
-            else:
-                send_message(
-                    "⚠️ Beim Bearbeiten deiner Nachricht ist ein Fehler aufgetreten "
-                    "(Details im listener.log am Mac). Probier's gleich nochmal oder "
-                    "schau in einer Claude-Code-Session nach."
-                )
-    except subprocess.TimeoutExpired:
-        log("Claude-Lauf abgebrochen (Timeout 600s)")
-        send_message(
-            "⚠️ Die Aufgabe hat länger als 10 Minuten gedauert — ich habe abgebrochen. "
-            "Für so große Sachen besser eine Claude-Code-Session am Mac nutzen."
-        )
-    finally:
-        done.set()
-        t.join(timeout=5)
-        set_typing(False)
+        bots = json.load(open(BOTS_FILE)).get("bots", [])
+    except (OSError, ValueError):
+        bots = []
+    for b in bots:
+        if b.get("enabled"):
+            sessions[b["agent"]] = BotSession(
+                "agent", b["agent"], CREDS["homeserver"], b["access_token"],
+                b["room_id"], b["user_id"])
+    return sessions
 
 
 def main():
-    # Frischer since-Token: nur Nachrichten ab jetzt beantworten
-    since = api("/_matrix/client/v3/sync?timeout=0&filter={\"room\":{\"timeline\":{\"limit\":1}}}")["next_batch"]
-    log(f"Listener gestartet, Raum {ROOM}")
+    owner = BotSession("owner", "owner", CREDS["homeserver"], CREDS["access_token"],
+                       CREDS["room_id"], CREDS["user_id"])
+    owner.start()
+    agents = load_bot_sessions()
+    for s in agents.values():
+        s.start()
+    last_mtime = 0
+    try:
+        import os
+        last_mtime = os.path.getmtime(BOTS_FILE)
+    except OSError:
+        pass
     while True:
+        time.sleep(5)
         try:
-            data = api(
-                f"/_matrix/client/v3/sync?since={urllib.parse.quote(since)}&timeout=30000",
-                timeout=45,
-            )
-            since = data["next_batch"]
-            events = (
-                data.get("rooms", {}).get("join", {}).get(ROOM, {})
-                .get("timeline", {}).get("events", [])
-            )
-            new = [
-                e
-                for e in events
-                if e.get("type") == "m.room.message"
-                and e.get("sender") == MICHI
-                and e["content"].get("body")
-            ]
-            if new:
-                answer([e["content"]["body"] for e in new], new[-1]["event_id"])
-        except urllib.error.HTTPError as e:
-            if e.code == 401:
-                log("FEHLER: Token ungültig (401) — 5 min Pause")
-                time.sleep(300)
-            else:
-                log(f"HTTP {e.code} — 10s Pause")
-                time.sleep(10)
-        except Exception as e:  # Netz weg, Timeout etc.
-            log(f"Fehler: {e} — 10s Pause")
-            time.sleep(10)
+            import os
+            m = os.path.getmtime(BOTS_FILE)
+        except OSError:
+            m = 0
+        if m != last_mtime:
+            last_mtime = m
+            log("bots.json geändert — Agenten-Threads werden neu aufgebaut")
+            for s in agents.values():
+                s.stop_event.set()
+            agents = load_bot_sessions()
+            for s in agents.values():
+                s.start()
 
 
 if __name__ == "__main__":
