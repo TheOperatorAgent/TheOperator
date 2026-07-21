@@ -251,6 +251,7 @@ async function m365Apply(connected) {
     const log = $("#m365-log");
     log.classList.remove("hidden");
     log.textContent = "Einrichtung läuft…\n";
+    document.querySelectorAll(".ascii-banner").forEach((b) => b.remove());
     const r = await fetch("/api/m365/setup/run", {
       method: "POST",
       headers: { "Authorization": "Bearer " + TOKEN, "Content-Type": "application/json" },
@@ -258,17 +259,24 @@ async function m365Apply(connected) {
     });
     const reader = r.body.getReader();
     const dec = new TextDecoder();
-    let buf = "";
+    let buf = "", failed = false, finished = false;
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += dec.decode(value, { stream: true });
       for (const line of buf.split("\n\n")) {
         if (!line.startsWith("data: ")) continue;
-        try { const e = JSON.parse(line.slice(6)); log.textContent += `[${e.status}] ${e.step}: ${e.detail}\n`; } catch {}
+        try {
+          const e = JSON.parse(line.slice(6));
+          log.textContent += `[${e.status}] ${e.step}: ${e.detail}\n`;
+          if (e.status === "error") failed = true;
+          if (e.step === "finish" && e.status === "done") finished = true;
+        } catch {}
       }
       buf = buf.slice(buf.lastIndexOf("\n\n") + 2);
     }
+    log.insertAdjacentHTML("afterend", asciiBanner(finished && !failed));
+    if (finished && !failed) { toast("Microsoft 365 ist verbunden ✓"); }
     loadM365();
   } else {
     try { const r = await api("PUT", "/api/m365/permissions", { permissions }); toast(`Rechte aktualisiert (+${r.added} / −${r.removed})`); loadM365(); }
@@ -406,6 +414,34 @@ async function runCron(id) {
 async function deleteCron(id) {
   if (!confirm("Automation löschen?")) return;
   try { await api("DELETE", "/api/cron/" + id); loadCron(); } catch (e) { toast(e.message, 1); }
+}
+
+/* ---------- Retro-Statusbanner (Pixel-Art) ---------- */
+const SKULL = String.raw`
+      ▄▄▄▄▄▄▄▄▄▄▄
+     █████████████
+    ██▀▀▀█████▀▀▀██
+    ██   █████   ██
+    ███▄▄█████▄▄███
+     █████▀▀▀█████
+      ███ █▄█ ███
+       ▀█▀▀▀▀▀█▀
+       ▄█▄▄▄▄▄█▄
+
+  A C C E S S   D E N I E D`;
+const GRANTED = String.raw`
+                  ▄██
+                 ▄██▀
+      ██▄       ▄██▀
+       ▀██▄    ▄██▀
+        ▀██▄  ▄██▀
+         ▀██▄▄██▀
+          ▀████▀
+           ▀██▀
+
+  A C C E S S   G R A N T E D`;
+function asciiBanner(ok) {
+  return `<div class="ascii-banner ${ok ? "ok" : "err"}"><pre>${ok ? GRANTED : SKULL}</pre><span class="cursor">█</span></div>`;
 }
 
 /* ---------- Nutzung (A4) ---------- */
