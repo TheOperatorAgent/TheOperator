@@ -44,6 +44,7 @@ async function loadStatus() {
     <div class="tile ${STATUS.listener_running ? "ok" : "err"}"><div class="k">${STATUS.listener_running ? "aktiv" : "aus"}</div><div class="l">Listener · <a href="#" onclick="restartListener();return false">neu starten</a></div></div>
     <div class="tile"><div class="k">${STATUS.agents.length}</div><div class="l">Agenten (${Object.keys(STATUS.published).length} veröffentlicht)</div></div>
     <div class="tile"><div class="k">${STATUS.memory_count}</div><div class="l">Fakten im Gedächtnis</div></div>
+    <div class="tile ${STATUS.skill_proposals ? "warn" : ""}"><div class="k">${STATUS.skills_count}</div><div class="l">Skills${STATUS.skill_proposals ? ` · ${STATUS.skill_proposals} Vorschlag${STATUS.skill_proposals > 1 ? "e" : ""} 💡` : ""}</div></div>
     <div class="tile ${STATUS.m365.connected ? "ok" : ""}"><div class="k">${STATUS.m365.connected ? "✓" : "—"}</div><div class="l">Microsoft 365</div></div>
     <div class="tile ${STATUS.google.connected ? "ok" : ""}"><div class="k">${STATUS.google.connected ? "✓" : "—"}</div><div class="l">Google Drive</div></div>
     <div class="tile ${STATUS.health.synapse_ok ? "ok" : "err"}"><div class="k">${STATUS.health.synapse_ok ? "ok" : "down"}</div><div class="l">Matrix-Server</div></div>
@@ -56,7 +57,7 @@ async function loadStatus() {
 async function restartListener() { try { await api("POST", "/api/listener/restart"); toast("Listener neu gestartet"); loadStatus(); } catch (e) { toast(e.message, 1); } }
 
 /* ---------- Agenten ---------- */
-const ALL_TOOLS = ["Bash", "Read", "Write", "WebFetch", "WebSearch", "Agent"];
+const ALL_TOOLS = ["Bash", "Read", "Write", "WebFetch", "WebSearch", "Agent", "Skill"];
 async function loadAgents() {
   const d = await api("GET", "/api/agents");
   $("#agent-list").innerHTML = d.agents.map((a) => `
@@ -143,6 +144,87 @@ async function unpublishAgent(name) {
   if (!confirm(`Bot von "${name}" entfernen? Der Matrix-Zugang wird invalidiert.`)) return;
   try { await api("DELETE", `/api/agents/${name}/publish`); toast("Bot entfernt"); loadAgents(); }
   catch (e) { toast(e.message, 1); }
+}
+
+/* ---------- Skills ---------- */
+const SKILL_SOURCE = { dashboard: "von dir gepflegt", bot: "vom Operator gelernt", scout: "Scout-Vorschlag" };
+async function loadSkills() {
+  const d = await api("GET", "/api/skills");
+  $("#skill-proposals").innerHTML = d.proposals.length ? `
+    <div class="card" style="border-color:var(--amber)">
+      <h2>💡 Vorschläge deines Operators (${d.proposals.length})</h2>
+      <p class="hint">Diese Muster hat dein Operator in deinen Aufgaben erkannt. Annehmen = wird
+      sofort ein Skill. Ablehnen = Vorschlag verschwindet.</p>
+      ${d.proposals.map((p) => `
+        <div class="agent-row">
+          <div><strong>${esc(p.name)}</strong> <span class="pill">${esc(p.created)}</span>
+            <div class="meta">${esc(p.description)}</div>
+            ${p.reason ? `<div class="small">Warum: ${esc(p.reason)}</div>` : ""}
+            <details class="small"><summary>Anleitung ansehen</summary><pre class="mono small">${esc(p.content)}</pre></details></div>
+          <div style="display:flex;gap:8px">
+            <button class="primary" onclick="skillProposal('${p.id}','accept')">Annehmen</button>
+            <button class="danger" onclick="skillProposal('${p.id}','reject')">Ablehnen</button>
+          </div></div>`).join("")}
+    </div>` : "";
+  $("#skill-list").innerHTML = d.skills.map((s) => `
+    <div class="agent-row">
+      <div><strong>${esc(s.name)}</strong>
+        <span class="pill ${s.source === "bot" ? "model" : ""}">${SKILL_SOURCE[s.source] || esc(s.source)}</span>
+        <div class="meta">${esc(s.description)}</div>
+        <div class="small">Zuletzt geändert: ${esc(s.modified)}</div></div>
+      <div style="display:flex;gap:8px">
+        <button class="ghost" onclick="editSkill('${s.name}')">Bearbeiten</button>
+        <button class="danger" onclick="deleteSkill('${s.name}')">Löschen</button>
+      </div></div>`).join("") || "<p class='hint'>Noch keine Skills. Leg einen an — oder warte, bis dein Operator ein Muster erkennt.</p>";
+}
+
+async function editSkill(name) {
+  let s = { name: "", description: "", body: "" };
+  if (name) s = await api("GET", "/api/skills/" + name);
+  $("#skill-editor").classList.remove("hidden");
+  $("#skill-editor").innerHTML = `
+    <h2>${name ? "Skill bearbeiten: " + esc(name) : "Neuer Skill"}</h2>
+    <label>Name (klein, a-z 0-9 -, z. B. pi-status)</label>
+    <input type="text" id="sk-name" value="${esc(s.name)}" ${name ? "disabled" : ""}>
+    <label>Beschreibung — WANN soll der Operator diesen Skill nutzen? (das liest er zuerst)</label>
+    <input type="text" id="sk-desc" value="${esc(s.description)}">
+    <label>Anleitung — WIE geht die Aufgabe, Schritt für Schritt? (Markdown, Befehle in \`\`\`bash-Blöcken)</label>
+    <textarea id="sk-body" rows="12" class="mono">${esc(s.body)}</textarea>
+    <div style="display:flex;gap:10px">
+      <button class="primary" onclick="saveSkill(${name ? `'${name}'` : "null"})">Speichern</button>
+      <button class="ghost" onclick="$('#skill-editor').classList.add('hidden')">Abbrechen</button>
+    </div>
+    <p class="hint" style="margin-top:8px">Nach dem Speichern ist der Skill ab der nächsten
+    Nachricht aktiv — du kannst ihn im Chat auch direkt ansprechen („Nutze den Skill ${name ? esc(name) : "…"}").
+    Bearbeitest du hier einen gelernten Skill, gehört er ab jetzt dir — der Operator ändert ihn dann nie mehr selbst.</p>`;
+}
+
+async function saveSkill(existing) {
+  const payload = {
+    name: existing || $("#sk-name").value.trim(),
+    description: $("#sk-desc").value.trim(),
+    body: $("#sk-body").value,
+  };
+  try {
+    await api(existing ? "PUT" : "POST", "/api/skills" + (existing ? "/" + existing : ""), payload);
+    $("#skill-editor").classList.add("hidden");
+    toast("Gespeichert — ab der nächsten Nachricht einsatzbereit");
+    loadSkills();
+  } catch (e) { toast(e.message, 1); }
+}
+
+async function deleteSkill(name) {
+  if (!confirm(`Skill "${name}" wirklich löschen?`)) return;
+  try { await api("DELETE", "/api/skills/" + name); $("#skill-editor").classList.add("hidden"); toast("Gelöscht"); loadSkills(); }
+  catch (e) { toast(e.message, 1); }
+}
+
+async function skillProposal(id, action) {
+  try {
+    await api("POST", `/api/skills/proposals/${id}/${action}`);
+    toast(action === "accept" ? "Angenommen — der Skill ist ab sofort aktiv" : "Abgelehnt");
+    loadSkills();
+  } catch (e) { toast(e.message, 1); }
 }
 
 /* ---------- M365 ---------- */
@@ -562,6 +644,7 @@ async function refresh() {
   try {
     if (active === "overview") await loadStatus();
     if (active === "agents") await loadAgents();
+    if (active === "skills") await loadSkills();
     if (active === "sessions") await loadSessions();
     if (active === "cron") await loadCron();
     if (active === "usage") await loadUsage();
