@@ -158,8 +158,13 @@ def ensure_pipeline(perm_matrix: dict):
     conn = _load_conn()
 
     yield ev("resolve", "running", "Graph-Berechtigungs-IDs im Tenant auflösen")
-    graph_sp_id, roles = _graph_sp_roles(g)
     values = matrix_to_values(perm_matrix)
+    if not values:
+        yield ev("resolve", "error",
+                 "Kein Dienst ausgewählt — bitte zuerst mindestens einen Regler "
+                 "aktivieren (z. B. Mail › Lesen) und dann erneut starten.")
+        return
+    graph_sp_id, roles = _graph_sp_roles(g)
     missing = [v for v in values if v not in roles]
     if missing:
         yield ev("resolve", "error", f"Unbekannte Permissions im Tenant: {missing}")
@@ -239,7 +244,8 @@ def update_permissions(new_matrix: dict):
 
     graph_sp_id, roles = _graph_sp_roles(g)
     values = matrix_to_values(new_matrix)
-    rra = [{"resourceAppId": GRAPH_APP_ID,
+    # Leere Auswahl ist hier ERLAUBT: bedeutet „alle Rechte entziehen"
+    rra = [] if not values else [{"resourceAppId": GRAPH_APP_ID,
             "resourceAccess": [{"id": roles[v], "type": "Role"} for v in values]}]
     g.req("PATCH", f"/applications/{conn['app_object_id']}", {"requiredResourceAccess": rra})
 
