@@ -42,6 +42,16 @@ SCRYPT_MAXMEM = 192 * 1024 * 1024
 AAD_DEK = b"operator-vault-dek-v1"
 AAD_DATA = b"operator-vault-data-v1"
 
+# FIDO2 (hmac-secret) — feste, lokale Relying-Party-Kennung (kein echter WebAuthn-Server)
+FIDO_RP_ID = "operator.local"
+FIDO_ORIGIN = "https://operator.local"
+FIDO_TIMEOUT = 25
+# Testhaken: überschreibbar für Krypto-Tests ohne Hardware.
+#   _FIDO_MAKE_HOOK(salt) -> (credential_id: bytes, secret32: bytes)
+#   _FIDO_GET_HOOK(credential_ids: list[bytes], salt: bytes) -> (credential_id, secret32)
+_FIDO_MAKE_HOOK = None
+_FIDO_GET_HOOK = None
+
 # Crockford Base32 (ohne I, L, O, U)
 B32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 CHECK = B32 + "*~$=U"  # mod-37-Prüfalphabet nach Crockford
@@ -229,8 +239,10 @@ def status() -> dict:
             n = len(_entries(dek, _read_vault()))
         except Exception:
             n = None
+    fido_keys = len(_read_vault().get("fido", [])) if exists else 0
     return {"exists": exists, "locked": dek is None,
             "entries": n, "autolock_minutes": _autolock_minutes(),
+            "fido_keys": fido_keys,
             "updated": _read_vault().get("updated") if exists else None}
 
 
@@ -321,6 +333,132 @@ def recover(recovery_key: str, new_master_pw: str) -> str:
     _write_vault(v)
     _store_dek(dek)
     return new_recovery
+
+
+# ---------------------------------------------------------------- FIDO2 (hmac-secret) --
+def _fido_client():
+    """Fido2Client für den ersten angesteckten Sicherheitsschlüssel (roher hmac-secret-Modus)."""
+    from fido2.hid import CtapHidDevice
+    from fido2.client import Fido2Client, DefaultClientDataCollector
+    from fido2.ctap2.extensions import HmacSecretExtension
+    devs = list(CtapHidDevice.list_devices())
+    if not devs:
+        raise RuntimeError("Kein Sicherheitsschlüssel erkannt — steck ihn ein und versuche es erneut.")
+    return Fido2Client(
+        devs[0],
+        client_data_collector=DefaultClientDataCollector(FIDO_ORIGIN, verify=lambda rp, o: True),
+        extensions=[HmacSecretExtension(allow_hmac_secret=True)])
+
+
+def _fido_make(salt: bytes):
+    """Neuen Schlüssel registrieren; liefert (credential_id, secret32) für dieses Salt.
+    Zwei Berührungen (Registrieren + erstes Ableiten) — nur beim Hinzufügen."""
+    if _FIDO_MAKE_HOOK:
+        return _FIDO_MAKE_HOOK(salt)
+    from fido2.webauthn import (PublicKeyCredentialCreationOptions, PublicKeyCredentialRpEntity,
+                                PublicKeyCredentialUserEntity, PublicKeyCredentialParameters,
+                                PublicKeyCredentialType, ResidentKeyRequirement,
+                                AuthenticatorSelectionCriteria, UserVerificationRequirement)
+    client = _fido_client()
+    opts = PublicKeyCredentialCreationOptions(
+        rp=PublicKeyCredentialRpEntity(name="Operator Tresor", id=FIDO_RP_ID),
+        user=PublicKeyCredentialUserEntity(name="operator", id=b"operator-vault"),
+        challenge=os.urandom(32),
+        pub_key_cred_params=[PublicKeyCredentialParameters(type=PublicKeyCredentialType.PUBLIC_KEY, alg=-7),
+                             PublicKeyCredentialParameters(type=PublicKeyCredentialType.PUBLIC_KEY, alg=-257)],
+        authenticator_selection=AuthenticatorSelectionCriteria(
+            resident_key=ResidentKeyRequirement.DISCOURAGED,
+            user_verification=UserVerificationRequirement.DISCOURAGED),
+        timeout=FIDO_TIMEOUT * 1000,
+        extensions={"hmacCreateSecret": True})
+    reg = client.make_credential(opts)
+    cred_id = reg.response.attestation_object.auth_data.credential_data.credential_id
+    _, secret = _fido_get([cred_id], salt)
+    return cred_id, secret
+
+
+def _fido_get(credential_ids, salt: bytes):
+    """hmac-secret für einen angesteckten, registrierten Schlüssel abrufen (eine Berührung).
+    Liefert (verwendete credential_id, secret32)."""
+    if _FIDO_GET_HOOK:
+        return _FIDO_GET_HOOK(credential_ids, salt)
+    from fido2.webauthn import (PublicKeyCredentialRequestOptions, PublicKeyCredentialDescriptor,
+                                PublicKeyCredentialType, UserVerificationRequirement)
+    client = _fido_client()
+    opts = PublicKeyCredentialRequestOptions(
+        challenge=os.urandom(32), rp_id=FIDO_RP_ID,
+        allow_credentials=[PublicKeyCredentialDescriptor(type=PublicKeyCredentialType.PUBLIC_KEY, id=c)
+                           for c in credential_ids],
+        user_verification=UserVerificationRequirement.DISCOURAGED,
+        timeout=FIDO_TIMEOUT * 1000,
+        extensions={"hmacGetSecret": {"salt1": salt}})
+    assertion = client.get_assertion(opts)
+    res = assertion.get_response(0)
+    used = res.raw_id
+    secret = res.client_extension_results.hmac_get_secret.output1
+    return used, secret
+
+
+def fido_list() -> list:
+    """Registrierte Schlüssel (Label + Datum), auch bei gesperrtem Tresor lesbar."""
+    if not os.path.exists(VAULT_FILE):
+        return []
+    return [{"label": w["label"], "added": w.get("added", "")}
+            for w in _read_vault().get("fido", [])]
+
+
+def fido_enroll(label: str) -> str:
+    """Sicherheitsschlüssel hinzufügen (Tresor muss entsperrt sein). Registriert einen
+    weiteren DEK-Wrap. Alle Schlüssel teilen ein gemeinsames Salt (ein Antippen beim Öffnen)."""
+    label = (label or "").strip()
+    if not label:
+        raise ValueError("Bitte einen Namen für den Schlüssel angeben")
+    dek, v = _require_dek()
+    if any(w["label"] == label for w in v.get("fido", [])):
+        raise ValueError(f"Ein Schlüssel namens „{label}“ ist bereits registriert")
+    salt = base64.b64decode(v["fido_salt"]) if v.get("fido_salt") else os.urandom(32)
+    cred_id, secret = _fido_make(salt)
+    v.setdefault("fido", []).append({
+        "label": label, "credential_id": base64.b64encode(cred_id).decode(),
+        "added": time.strftime("%Y-%m-%dT%H:%M:%S"), **_wrap(secret, dek)})
+    v["fido_salt"] = base64.b64encode(salt).decode()
+    _write_vault(v)
+    return label
+
+
+def fido_unlock() -> None:
+    """Tresor per Sicherheitsschlüssel öffnen (ein Antippen) — ohne Master-Passwort."""
+    v = _read_vault()
+    wraps = v.get("fido", [])
+    if not wraps or not v.get("fido_salt"):
+        raise RuntimeError("Für diesen Tresor ist kein Sicherheitsschlüssel registriert")
+    salt = base64.b64decode(v["fido_salt"])
+    cred_ids = [base64.b64decode(w["credential_id"]) for w in wraps]
+    used, secret = _fido_get(cred_ids, salt)
+    wrap = next((w for w in wraps if base64.b64decode(w["credential_id"]) == used), None)
+    if not wrap:
+        # Manche Authenticator liefern die raw_id nicht zurück — dann alle Wraps durchprobieren
+        for w in wraps:
+            try:
+                _store_dek(_unwrap(secret, w))
+                return
+            except ValueError:
+                continue
+        raise ValueError("Dieser Schlüssel ist für den Tresor nicht registriert")
+    _store_dek(_unwrap(secret, wrap))
+
+
+def fido_remove(label: str) -> None:
+    """Einen registrierten Schlüssel entfernen (Tresor muss entsperrt sein)."""
+    _require_dek()
+    v = _read_vault()
+    wraps = v.get("fido", [])
+    if not any(w["label"] == label for w in wraps):
+        raise KeyError("Schlüssel nicht gefunden")
+    v["fido"] = [w for w in wraps if w["label"] != label]
+    if not v["fido"]:
+        v.pop("fido_salt", None)
+    _write_vault(v)
 
 
 # ---------------------------------------------------------------- run (Injection) --
@@ -421,8 +559,23 @@ def main() -> int:
             print("Tresor angelegt. Dein Wiederherstellungsschlüssel (JETZT sicher aufbewahren,"
                   " wird NIE wieder angezeigt):\n\n  " + rk + "\n")
         elif cmd == "unlock":
-            unlock(getpass.getpass("Master-Passwort: "))
+            if "--fido" in a:
+                print("Tippe jetzt deinen Sicherheitsschlüssel an…", file=sys.stderr)
+                fido_unlock()
+            else:
+                unlock(getpass.getpass("Master-Passwort: "))
             print("Tresor entsperrt")
+        elif cmd == "fido-add" and len(a) > 1:
+            print("Registriere Schlüssel — tippe ihn zweimal an, wenn er blinkt…", file=sys.stderr)
+            print(f"Schlüssel „{fido_enroll(a[1])}“ hinzugefügt")
+            _audit("vault.fido.add", a[1])
+        elif cmd == "fido-list":
+            for k in fido_list():
+                print(f"{k['label']} (hinzugefügt {k['added']})")
+        elif cmd == "fido-remove" and len(a) > 1:
+            fido_remove(a[1])
+            print("Schlüssel entfernt")
+            _audit("vault.fido.remove", a[1])
         elif cmd == "lock":
             lock()
             print("Tresor gesperrt")
