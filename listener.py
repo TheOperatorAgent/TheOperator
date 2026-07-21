@@ -14,8 +14,9 @@ HS = CREDS["homeserver"]
 TOKEN = CREDS["access_token"]
 ROOM = CREDS["room_id"]
 MICHI = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
-ALLOWED_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch"])
+ALLOWED_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent"])
 CLAUDE = CREDS.get("claude_bin", "/Users/michi/.npm-global/bin/claude")
+WORKSPACE = f"{BOT_DIR}/workspace"
 
 RESPONDER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest stehen hier \
 (strikt befolgen):
@@ -23,12 +24,27 @@ RESPONDER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antworte
 {verhalten}
 
 ---
-
+{memories}
 Michi hat dir soeben im Matrix-Chat geschrieben:
 
 {messages}
 
-Erledige/beantworte das jetzt gemäß den Regeln oben und sende die Antwort per curl in den Raum."""
+Erledige/beantworte das jetzt gemäß den Regeln oben und sende die Antwort in den Raum."""
+
+
+def recall(text, k=5):
+    """Top-k relevante Gedächtnis-Einträge zur eingehenden Nachricht (tokensparend)."""
+    try:
+        r = subprocess.run(
+            ["python3", f"{BOT_DIR}/memory.py", "search", text, "-k", str(k)],
+            capture_output=True, text=True, timeout=15,
+        )
+        hits = r.stdout.strip()
+        if hits:
+            return f"Relevante Einträge aus deinem Gedächtnis:\n{hits}\n\n"
+    except Exception as e:
+        log(f"Gedächtnis-Abruf fehlgeschlagen: {e}")
+    return ""
 
 
 def api(path, timeout=90, method="GET", body=None):
@@ -89,8 +105,10 @@ def answer(bodies, last_event_id):
     try:
         verhalten = open(f"{BOT_DIR}/VERHALTEN.md").read()
     except OSError:
-        verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende die Antwort per curl mit den Daten aus credentials.json in den Raum.)"
-    prompt = RESPONDER_PROMPT.format(verhalten=verhalten, messages=messages)
+        verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende die Antwort per python3 ~/.claude/matrix-bot/send.py in den Raum.)"
+    prompt = RESPONDER_PROMPT.format(
+        verhalten=verhalten, messages=messages, memories=recall(" ".join(bodies))
+    )
     log(f"Claude wird geweckt für {len(bodies)} Nachricht(en)")
     # Sofort sichtbar machen, dass gearbeitet wird: gelesen + "tippt..."
     mark_read(last_event_id)
@@ -106,7 +124,7 @@ def answer(bodies, last_event_id):
     try:
         r = subprocess.run(
             [CLAUDE, "-p", prompt, "--allowedTools", *ALLOWED_TOOLS],
-            capture_output=True, text=True, timeout=600,
+            capture_output=True, text=True, timeout=600, cwd=WORKSPACE,
         )
         log(f"Claude fertig (rc={r.returncode}): {r.stdout[-300:]}")
         if r.returncode != 0:
