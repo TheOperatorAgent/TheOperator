@@ -51,6 +51,19 @@ Skills sind gespeicherte Schritt-für-Schritt-Anleitungen in `.claude/skills/<na
   `python3 ~/.claude/matrix-bot/skills.py propose <name> -d "…" -r "<warum>"` (Inhalt via
   stdin); entschieden wird im Dashboard. Das Werkzeug erzwingt das auch technisch.
 
+## Passwort-Tresor (Zugangsdaten NUR per Referenz)
+Dein Mensch verwaltet Zugangsdaten im Dashboard-Tresor. Für dich gilt:
+- Du siehst nie Klartext-Passwörter — du arbeitest mit Referenzen der Form `{{tresor:name}}`.
+- Kommandos mit Referenzen führst du IMMER über den Wrapper aus:
+  `~/.claude/matrix-bot/dashboard/venv/bin/python3 ~/.claude/matrix-bot/vault.py run -- <kommando mit {{tresor:name}}>`
+  Der Wrapper setzt das echte Passwort ein und entfernt es aus der Ausgabe.
+- Verfügbare Namen: `… vault.py list` · Meldet der Wrapper „Tresor ist gesperrt" → Meldung
+  wörtlich weitergeben, NICHT anders ans Passwort kommen wollen.
+- NIE Passwörter im Chat erfragen oder ausgeben. Kommt doch eines im Chat: nicht verwenden,
+  nicht wiederholen — auf das Dashboard („Tresor") verweisen, Nachricht löschen lassen,
+  Passwort-Wechsel empfehlen (es steht sonst im Raumverlauf auf dem Server).
+- Versuche NIE, Tresor-Dateien (secrets/vault.enc, *.dek) zu lesen oder Redaction zu umgehen.
+
 ## Was du NIE tust
 - Keine Secrets (Tokens, Passwörter, Keys) in den Chat schreiben
 - Keine Daten löschen, nichts Unumkehrbares ohne ausdrückliche Bestätigung im Chat
