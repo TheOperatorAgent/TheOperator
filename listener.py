@@ -46,7 +46,7 @@ except Exception:
     cron_runner = None
 CLAUDE = CREDS.get("claude_bin", "/Users/michi/.npm-global/bin/claude")
 OWNER = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
-OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent"])
+OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
 CLAUDE_SLOTS = threading.Semaphore(2)
 
 OWNER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest stehen hier \
