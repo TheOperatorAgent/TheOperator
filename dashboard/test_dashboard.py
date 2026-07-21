@@ -169,3 +169,200 @@ def test_listener_agent_md_parser():
     assert a and a["model"] == "haiku"
     assert "WebSearch" in a["tools"]
     assert "Recherche-Agent" in a["body"]
+
+
+# ---------------------------------------------------------------- Skills --
+def test_skills_crud_and_protection(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import skills
+    monkeypatch.setattr(skills, "SKILLS_DIR", str(tmp_path / "skills"))
+    monkeypatch.setattr(skills, "PROPOSALS_FILE", str(tmp_path / "props.json"))
+    # Validierung
+    assert not skills.save("Böser Name!", "d", "b")[0]
+    assert not skills.save("ok-name", "", "b")[0]
+    # Bot legt an, Bot darf eigene überschreiben
+    assert skills.save("auto", "Beschr", "Anleitung", source="bot")[0]
+    assert skills.save("auto", "Beschr2", "Anleitung2", source="bot")[0]
+    # Dashboard übernimmt -> Bot darf NICHT mehr überschreiben (Hermes-Lektion)
+    assert skills.save("auto", "Beschr3", "Anleitung3", source="dashboard")[0]
+    ok, msg = skills.save("auto", "hijack", "x", source="bot")
+    assert not ok and "geschützt" in msg
+    s = skills.get("auto")
+    assert s["description"] == "Beschr3" and s["source"] == "dashboard"
+    # Frontmatter-Roundtrip
+    assert "Anleitung3" in s["body"]
+    assert len(skills.list_skills()) == 1
+    assert skills.delete("auto") and not skills.get("auto")
+
+
+def test_skills_proposals_flow(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import skills
+    monkeypatch.setattr(skills, "SKILLS_DIR", str(tmp_path / "skills"))
+    monkeypatch.setattr(skills, "PROPOSALS_FILE", str(tmp_path / "props.json"))
+    assert skills.propose("brief", "Briefing", "Schritte", reason="3x gefragt")[0]
+    # Dedup: gleicher Name ersetzt
+    assert skills.propose("brief", "Briefing v2", "Schritte v2")[0]
+    props = skills.load_proposals()
+    assert len(props) == 1 and props[0]["description"] == "Briefing v2"
+    # Ablehnen
+    assert skills.reject(props[0]["id"])[0] and not skills.load_proposals()
+    # Annehmen -> Skill mit source=dashboard (gehört ab da Michi)
+    skills.propose("brief", "Briefing", "Schritte")
+    pid = skills.load_proposals()[0]["id"]
+    assert skills.accept(pid)[0]
+    assert not skills.load_proposals()
+    assert skills.get("brief")["source"] == "dashboard"
+    assert not skills.accept("gibtsnicht")[0]
+
+
+def test_skills_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/skills.py")).read()
+    imports = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert not (imports & {"fastapi", "uvicorn", "msal", "cryptography", "requests"})
+
+
+# ---------------------------------------------------------------- Tresor --
+def _vault(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import vault
+    monkeypatch.setattr(vault, "VAULT_FILE", str(tmp_path / "vault.enc"))
+    monkeypatch.setattr(vault, "DEK_PATH_OVERRIDE", str(tmp_path / "s.dek"))
+    monkeypatch.setattr(vault, "SCRYPT_N", 2 ** 14)  # Testtempo
+    return vault
+
+
+def test_vault_roundtrip(tmp_path, monkeypatch):
+    vault = _vault(tmp_path, monkeypatch)
+    rk = vault.init("master-passwort-test")
+    vault.add_entry("gitea-admin", "SuperGeheim123", description="Gitea root")
+    entries = vault.list_entries()
+    assert [e["name"] for e in entries] == ["gitea-admin"]
+    assert "value" not in entries[0]                      # write-only-Garantie
+    blob = open(str(tmp_path / "vault.enc"), "rb").read()
+    assert b"SuperGeheim123" not in blob and b"gitea-admin" not in blob
+    vault.remove_entry("gitea-admin")
+    assert vault.list_entries() == []
+    assert vault.status() == {"exists": True, "locked": False, "entries": 0,
+                              "autolock_minutes": vault.status()["autolock_minutes"],
+                              "updated": vault.status()["updated"]}
+    assert vault.normalize_recovery_key(rk) == rk
+
+
+def test_vault_unlock_paths(tmp_path, monkeypatch):
+    import pytest
+    vault = _vault(tmp_path, monkeypatch)
+    rk = vault.init("master-passwort-test")
+    vault.lock()
+    assert vault.status()["locked"]
+    with pytest.raises(PermissionError):
+        vault.list_entries()
+    with pytest.raises(ValueError):
+        vault.unlock("falsches-passwort")
+    vault.unlock("master-passwort-test")
+    assert not vault.status()["locked"]
+    # Recovery-Pfad entsperrt ebenfalls (setzt neues PW)
+    vault.lock()
+    rk2 = vault.recover(rk, "neues-master-passwort")
+    assert not vault.status()["locked"] and rk2 != rk
+
+
+def test_vault_rotate_and_recover_semantics(tmp_path, monkeypatch):
+    import pytest
+    vault = _vault(tmp_path, monkeypatch)
+    rk = vault.init("master-passwort-test")
+    vault.add_entry("eintrag", "wert1234")
+    vault.rotate_master("master-passwort-test", "zweites-passwort-x")
+    vault.lock()
+    with pytest.raises(ValueError):
+        vault.unlock("master-passwort-test")               # altes PW tot
+    vault.unlock("zweites-passwort-x")
+    assert len(vault.list_entries()) == 1                  # Einträge unangetastet
+    # recover: alter Recovery-Key verfällt, neuer gilt
+    rk2 = vault.recover(rk, "drittes-passwort-x")
+    with pytest.raises(ValueError):
+        vault.recover(rk, "viertes-passwort-x")
+    assert vault.recover(rk2, "viertes-passwort-x")
+
+
+def test_recovery_key_format(tmp_path, monkeypatch):
+    vault = _vault(tmp_path, monkeypatch)
+    rk = vault._gen_recovery_key()
+    groups = rk.split("-")
+    assert len(groups) == 6 and all(len(g) == 5 for g in groups)
+    assert all(c in vault.B32 + "-" + vault.CHECK for c in rk)
+    # Normalisierung: Kleinschreibung, Leerzeichen, i/l→1, o→0
+    assert vault.normalize_recovery_key(rk.lower().replace("-", " ")) == rk
+    messy = rk.replace("1", "l", 1) if "1" in rk else rk.replace("0", "O", 1) if "0" in rk else rk
+    assert vault.normalize_recovery_key(messy) == rk
+    # Zeichen-Verfälschung → Prüfsymbol schlägt an
+    c0 = rk[0]
+    swapped = ("9" if c0 != "9" else "3") + rk[1:]
+    assert vault.normalize_recovery_key(swapped) is None
+    assert vault.normalize_recovery_key("zu-kurz") is None
+
+
+def test_vault_run_injection(tmp_path, monkeypatch, capsys):
+    vault = _vault(tmp_path, monkeypatch)
+    vault.init("master-passwort-test")
+    vault.add_entry("demo", "Str3ngGeheim!")
+    rc = vault.run(["sh", "-c", "echo Wert: {{tresor:demo}}; env | grep -c OP_SECRET_DEMO"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Str3ngGeheim!" not in out and "«tresor:demo»" in out
+    assert "1" in out                                       # env-Variable war im Kind gesetzt
+    rc2 = vault.run(["echo", "{{tresor:gibtsnicht}}"])
+    assert rc2 == 3
+    vault.lock()
+    rc3 = vault.run(["echo", "{{tresor:demo}}"])
+    assert rc3 == 2 and "gesperrt" in capsys.readouterr().err
+
+
+def test_redact_patterns():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import redact
+    t = redact.redact(
+        "Bearer abcdefghij1234567890ABCD und syt_bWljaGk_AbCdEfGhIjKlMnOpQrSt und "
+        "AKIAABCDEFGHIJKLMNOP und ghp_abcdefghij1234567890 und "
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.abc12345 und password: SehrGeheim99",
+        extra_values=("MeinTresorWert",))
+    for leak in ("abcdefghij1234567890ABCD", "syt_", "AKIA", "ghp_", "SehrGeheim99"):
+        assert leak not in t, leak
+    assert redact.redact("x MeinTresorWert y", ("MeinTresorWert",)) == "x [REDACTED:tresor] y"
+    assert redact.redact("harmloser Text 123") == "harmloser Text 123"
+
+
+def test_sessions_record_redacts(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import sessions
+    monkeypatch.setattr(sessions, "DB", str(tmp_path / "s.db"))
+    sessions.record("owner", "hier mein Token syt_abcdefghijklmnopqrstuvwx",
+                    "ok, Bearer abcdefghij1234567890XYZAB genutzt", 0, 10)
+    s = sessions.list_sessions()[0]
+    assert "syt_" not in s["messages"] and "abcdefghij1234567890XYZAB" not in s["result"]
+    assert sessions.search("syt_abcdefghijklmnopqrstuvwx") == []
+
+
+def test_redact_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/redact.py")).read()
+    imports = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert not (imports & {"fastapi", "uvicorn", "msal", "cryptography", "requests"})
+
+
+def test_scrypt_production_params():
+    import hashlib
+    key = hashlib.scrypt(b"pw", salt=b"x" * 16, n=2 ** 17, r=8, p=1,
+                         maxmem=192 * 1024 * 1024, dklen=32)
+    assert len(key) == 32
