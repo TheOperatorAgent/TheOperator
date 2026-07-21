@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+<canvas id="rain"></canvas>
 <header>
   <div class="brand">
     <span class="logo">📞</span>
@@ -41,6 +42,11 @@
       <h2>Agenten</h2>
       <button class="primary" onclick="editAgent(null)">+ Neuer Agent</button>
     </div>
+    <p class="hint">Agenten sind Spezial-Helfer deines Operators — einer recherchiert, einer
+    schreibt Texte, einer kümmert sich um Server. Der Operator gibt Aufgaben automatisch an
+    den passenden Helfer weiter. Mit <strong>„Als Bot veröffentlichen"</strong> bekommt ein
+    Agent eine eigene Nummer im Matrix: Du kannst ihm dann direkt schreiben, wie einem
+    eigenen Kontakt.</p>
     <div id="agent-list"></div>
     <div id="agent-editor" class="card hidden"></div>
   </section>
@@ -58,21 +64,32 @@
 
   <section id="tab-sessions" class="tab">
     <h2>Verlauf</h2>
-    <input type="text" id="sess-q" placeholder="Volltextsuche über Nachrichten und Antworten…" oninput="loadSessions()">
+    <p class="hint">Jede Antwort deines Operators wird hier gespeichert — mit Dauer und
+    Verbrauch. Tippe einfach ein Wort ins Suchfeld, um alte Gespräche wiederzufinden.</p>
+    <input type="text" id="sess-q" placeholder="Suche… (z. B. „Backup“ oder „Mail“)" oninput="loadSessions()">
     <div id="sess-list"></div>
   </section>
 
   <section id="tab-cron" class="tab">
     <div class="row-between"><h2>Automationen</h2>
       <button class="primary" onclick="editCron(null)">+ Neue Automation</button></div>
-    <p class="hint">Zeitgesteuerte Aufträge an deinen Operator — z. B. „Jeden Morgen 7 Uhr: fasse meine ungelesenen Mails zusammen". Zeitplan im 5-Feld-Cron-Format (Min Std Tag Monat Wochentag).</p>
+    <p class="hint">Dein Operator kann Dinge von allein tun — jeden Tag, jede Woche, wann du
+    willst. Beispiel: „Jeden Morgen um 7: Fasse meine neuen Mails zusammen." Die Antwort
+    kommt wie immer in deinen Matrix-Chat.<br>
+    <span class="small">Der Zeitplan hat 5 Felder: Minute, Stunde, Tag, Monat, Wochentag.
+    <span class="mono">0 7 * * *</span> heißt „jeden Tag um 7:00" ·
+    <span class="mono">0 7 * * 1-5</span> heißt „Montag bis Freitag um 7:00" ·
+    <span class="mono">*</span> heißt „egal/immer".</span></p>
     <div id="cron-list"></div>
     <div id="cron-editor" class="card hidden"></div>
   </section>
 
   <section id="tab-usage" class="tab">
     <h2>Nutzung</h2>
-    <p class="hint">Dein Eigenverbrauch über das Claude-Abo (keine Extra-Kosten — aber Abo-Limits gelten im ~5-Stunden-Fenster).</p>
+    <p class="hint">Dein Operator läuft über dein Claude-Abo — es kostet also <strong>nie extra
+    Geld</strong>. Aber das Abo hat eine Mengen-Grenze, die sich etwa alle 5 Stunden erneuert.
+    Hier siehst du, wie viel dein Operator davon verbraucht. Sind die Balken sehr hoch und
+    Claude antwortet auch dir selbst langsamer, hilft: kurz warten.</p>
     <div class="tiles" id="usage-tiles"></div>
     <div class="card"><h2>Letzte 24 Stunden (Läufe je Stunde)</h2><div id="usage-24h"></div></div>
     <div class="card"><h2>Letzte 7 Tage (Läufe je Tag)</h2><div id="usage-7d"></div></div>
@@ -80,8 +97,12 @@
 
   <section id="tab-memory" class="tab">
     <div class="row-between"><h2>Gedächtnis</h2></div>
+    <p class="hint">Hier merkt sich dein Operator Fakten über dich — dauerhaft. Wenn du ihm
+    im Chat etwas Wichtiges erzählst, speichert er es hier selbst ab. Du kannst auch direkt
+    etwas eintragen oder Falsches löschen. Bei jeder Frage sucht er automatisch die
+    passenden Fakten heraus.</p>
     <div class="card">
-      <label>Neuen Fakt speichern (ein Satz, eigenständig verständlich)</label>
+      <label>Neuen Fakt speichern (ein ganzer Satz, der für sich allein verständlich ist)</label>
       <input type="text" id="mem-new" placeholder="z. B.: Michis Lieblings-Editor ist VS Code">
       <button class="primary" onclick="addMemory()">Speichern</button>
     </div>
