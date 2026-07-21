@@ -140,10 +140,10 @@ echo "  (Mächtig — Serververwaltung etc. —, aber jede Chat-Nachricht von di
 echo "  Kommandos auslösen. Ohne Freigabe kann er nur lesen und im Web recherchieren.)"
 ask BASH_OPTIN "Shell-Zugriff erlauben? (ja/nein)" "nein"
 if [ "$BASH_OPTIN" = "ja" ]; then
-  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "mcp__m365"]'
+  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365"]'
   TOOLS_TEXT="Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Kleine Aufgaben direkt erledigen; Unumkehrbares nur nach Rückfrage im Chat."
 else
-  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "mcp__m365"]'
+  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365"]'
   TOOLS_TEXT="Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben — wenn eine Aufgabe das bräuchte, sag das ehrlich. (Hinweis: Ohne Shell kannst du dein Gedächtnis nicht selbst beschreiben.)"
 fi
 
@@ -190,7 +190,7 @@ fi
 bold "Phase 5/7 — Dateien einrichten"
 mkdir -p "$BOT_DIR"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
-for F in listener.py send.py memory.py; do
+for F in listener.py send.py memory.py skills.py; do
   if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
   else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
   ok "$F installiert"
@@ -222,6 +222,36 @@ data.setdefault("mcpServers", {})["m365"] = {
 open(p, "w").write(json.dumps(data, indent=1))
 PYMCP
 ok "Standard-MCP m365 registriert"
+# Skills-Verzeichnis (SKILL.md-Fähigkeiten) + wöchentlicher Skill-Scout:
+# erkennt wiederkehrende Aufgaben im Verlauf und legt VORSCHLÄGE an (nie fertige
+# Skills — der Nutzer nimmt sie im Dashboard an oder lehnt ab; Hermes-Lektion)
+mkdir -p "$BOT_DIR/workspace/.claude/skills"
+python3 - "$BOT_DIR" <<'PYSCOUT'
+import hashlib, json, os, sys
+bot = sys.argv[1]
+p = os.path.join(bot, "cron.json")
+jobs = []
+if os.path.exists(p):
+    try: jobs = json.load(open(p)).get("jobs", [])
+    except ValueError: pass
+if not any(j.get("name") == "Skill-Scout" for j in jobs):
+    prompt = ("Du bist jetzt der Skill-Scout des Operators. Aufgabe: "
+              "(1) Lies die Aufgaben der letzten 7 Tage: python3 ~/.claude/matrix-bot/skills.py history 7 "
+              "(2) Lies die vorhandenen Skills: python3 ~/.claude/matrix-bot/skills.py list "
+              "(3) Erkenne WIEDERKEHRENDE Muster: sinngemaess gleiche Bitten, die mindestens 3x vorkamen "
+              "und noch von keinem Skill abgedeckt sind. "
+              "(4) Lege fuer jedes Muster (maximal 3) einen Vorschlag an: "
+              "python3 ~/.claude/matrix-bot/skills.py propose <name> -d \"<wann nutzen>\" -r \"<z.B. 4x diese Woche gefragt>\" "
+              "mit der Schritt-fuer-Schritt-Anleitung via stdin (Heredoc). "
+              "(5) Melde in EINER kurzen Nachricht, welche Vorschlaege es gibt (im Dashboard unter "
+              "Skills annehmen) — oder dass es nichts Neues gab. Lege KEINE Skills direkt an.")
+    jobs.append({"id": hashlib.sha256(os.urandom(8)).hexdigest()[:8], "name": "Skill-Scout",
+                 "schedule": "30 18 * * 0", "prompt": prompt, "target": "owner", "enabled": True})
+    fd = os.open(p + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f: json.dump({"jobs": jobs}, f, indent=1)
+    os.replace(p + ".tmp", p)
+PYSCOUT
+ok "Skills aktiviert (Ordner + wöchentlicher Skill-Scout, So 18:30)"
 # VERHALTEN.md aus Template personalisieren (bestehende Datei wird nie überschrieben)
 if [ -f "$BOT_DIR/VERHALTEN.md" ]; then
   ok "VERHALTEN.md existiert — bleibt unverändert"
