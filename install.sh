@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# install.sh — Matrix-Claude-Assistent für macOS
+# install.sh — Operator: dein Claude-Assistent im Matrix-Chat (macOS)
 # Geführte Installation in 7 Phasen (siehe MACHBARKEITSSTUDIE.md).
 # Idempotent: erneuter Lauf repariert/aktualisiert. Kein sudo nötig.
 #
@@ -11,10 +11,10 @@
 set -uo pipefail
 
 BOT_DIR="$HOME/.claude/matrix-bot"
-PLIST_LABEL="com.matrix-claude.listener"
+PLIST_LABEL="com.the-operator.listener"
 PLIST_PATH="$HOME/Library/LaunchAgents/$PLIST_LABEL.plist"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
-REPO_RAW="${REPO_RAW:-http://192.168.178.53:3000/root/matrix-claude-assistant/raw/branch/main}"
+REPO_RAW="${REPO_RAW:-http://192.168.178.53:3000/root/the-operator/raw/branch/main}"
 GUI_DOMAIN="gui/$(id -u)"
 
 bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
@@ -56,6 +56,7 @@ if [ "${1:-}" = "--uninstall" ]; then
 fi
 
 # ------------------------------------------------------------ Phase 1: PRÜFEN
+bold "Operator-Installation — your operator inside the Matrix"
 bold "Phase 1/7 — Voraussetzungen prüfen"
 [ "$(uname)" = "Darwin" ] || die "Dieses Skript ist für macOS (für Windows/Linux siehe MACHBARKEITSSTUDIE.md)"
 command -v python3 >/dev/null || die "python3 fehlt (Xcode Command Line Tools installieren: xcode-select --install)"
@@ -224,7 +225,7 @@ tail -1 "$BOT_DIR/listener.log" 2>/dev/null | grep -q "Listener gestartet" \
 
 # -------------------------------------------------------------- Phase 7: TEST
 bold "Phase 7/7 — Funktionstest"
-python3 "$BOT_DIR/send.py" "✅ Installation abgeschlossen! Ich bin dein Matrix-Claude auf diesem Mac. Schreib mir einfach — ich antworte in Sekunden. (Verhalten anpassen: $BOT_DIR/VERHALTEN.md)" >/dev/null \
+python3 "$BOT_DIR/send.py" "✅ Operator einsatzbereit! Ich bin dein Operator auf diesem Mac. Schreib mir einfach — ich antworte in Sekunden. (Verhalten anpassen: $BOT_DIR/VERHALTEN.md)" >/dev/null \
   && ok "Testnachricht im Raum — auf dem Handy prüfen!" \
   || warn "Testnachricht fehlgeschlagen — Log prüfen"
 bold "Fertig! 🎉  Log: tail -f $BOT_DIR/listener.log  ·  Deinstallation: bash install.sh --uninstall"
