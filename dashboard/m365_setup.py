@@ -22,6 +22,10 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 GRAPH_APP_ID = "00000003-0000-0000-c000-000000000000"
 APP_DISPLAY_NAME = "Operator M365 Connector"
 SETUP_SCOPES = ["Application.ReadWrite.All", "AppRoleAssignment.ReadWrite.All"]
+# Die Setup-App ("The Operator Setup") ist eine EINMALIGE Hersteller-Voraussetzung:
+# eine Multi-Tenant-App im Hersteller-Tenant, deren Name auf dem Microsoft-Consent-
+# Screen erscheint. Bewusst KEINE fremde/first-party Client-ID als Default —
+# der Admin muss beim Consent sehen, WEM er Rechte gibt (Security by Design).
 PLACEHOLDER_CLIENT_ID = "ERSETZEN-DURCH-THE-OPERATOR-SETUP-CLIENT-ID"
 
 # Dienst + Regler -> Graph-Application-Permission-VALUES (Schreiben impliziert Lesen)
