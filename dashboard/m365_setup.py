@@ -291,4 +291,11 @@ def status() -> dict:
         "secret_expires": conn.get("secret_expires"),
         "permissions": conn.get("permissions", {}),
         "active_values": matrix_to_values(conn.get("permissions", {})),
+        "primary_user": conn.get("primary_user", ""),
     }
+
+
+def set_primary_user(upn: str) -> None:
+    conn = _load_conn()
+    conn["primary_user"] = upn.strip()
+    _save_conn(conn)
