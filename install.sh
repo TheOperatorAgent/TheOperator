@@ -1,34 +1,45 @@
 #!/bin/bash
 # =============================================================================
 # install.sh — Operator: dein Claude-Assistent im Matrix-Chat (macOS + Linux)
-# Geführte Installation in 7 Phasen. Idempotent: erneuter Lauf repariert/aktualisiert.
-# Kein sudo nötig. Für Windows gibt es install.ps1 (PowerShell).
+# Geführte Installation in 7 Phasen. Idempotent: erneuter Lauf repariert/aktualisiert
+# und merkt sich deine bisherigen Antworten. Kein sudo nötig.
+# Für Windows gibt es install.ps1 (PowerShell).
 #
 # Aufruf:  bash install.sh                                  (aus geklontem Repo)
 #          curl -fsSL <RAW-URL>/install.sh | bash           (Remote-Ein-Zeiler)
 #          bash install.sh --uninstall                      (alles entfernen)
+#
+# Robustheit: Der gesamte Ablauf steckt in main() und wird erst in der LETZTEN
+# Zeile aufgerufen — ein abgebrochener Download führt nie halbe Aktionen aus.
+# Jede Frage validiert die Eingabe und fragt bei Fehlern erneut (nie Sackgasse).
+# Geheimnisse (Passwörter/Tokens) laufen NIE als Prozess-Argument (ps-sicher).
 # =============================================================================
 set -uo pipefail
 
 OS="$(uname)"                       # Darwin (macOS) | Linux
 BOT_DIR="$HOME/.claude/matrix-bot"
+STATE_FILE="$BOT_DIR/.install-state.json"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-http://192.168.178.53:3000/root/the-operator/raw/branch/main}"
 
-# curl|bash-Härtung: Bei Pipe-Start ist stdin die Pipe, nicht das Terminal — interaktive
-# Tools (claude) würden den restlichen Skript-Text aus der Pipe „aufessen" und der Lauf bräche
-# lautlos ab. Darum: ohne TTY das Skript in eine Datei laden und mit /dev/tty neu ausführen.
+# curl|bash-Härtung: Bei Pipe-Start ist stdin die Pipe — interaktive Tools würden den
+# restlichen Skript-Text „aufessen". Darum: ohne TTY das Skript vollständig in eine
+# Datei laden und mit /dev/tty neu ausführen. Ohne mktemp: sauberer Abbruch (kein
+# vorhersagbarer /tmp-Pfad → kein Symlink-Risiko).
 if [ ! -t 0 ] && [ -z "${OPERATOR_REEXEC:-}" ] && [ -e /dev/tty ]; then
-  _self="$(mktemp 2>/dev/null || echo /tmp/operator-install.$$.sh)"
+  _self="$(mktemp)" || { echo "mktemp nicht verfügbar — bitte Skript herunterladen und mit 'bash install.sh' starten." >&2; exit 1; }
   if curl -fsSL "$REPO_RAW/install.sh" -o "$_self" 2>/dev/null && [ -s "$_self" ]; then
     OPERATOR_REEXEC=1 exec bash "$_self" "$@" < /dev/tty
   fi
 fi
 
+# ---------------------------------------------------------------- Ausgabe/Eingabe --
 bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
 ok()    { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn()  { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()   { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
+say()   { printf '%s\n' "$*" > /dev/tty; }
+
 ask()   { local __var=$1 __prompt=$2 __default=${3:-}; local __in
           printf '  %s%s: ' "$__prompt" "${__default:+ [$__default]}" > /dev/tty
           IFS= read -r __in < /dev/tty || true
@@ -38,23 +49,138 @@ ask_secret() { local __var=$1 __prompt=$2; local __in
           IFS= read -rs __in < /dev/tty || true; printf '\n' > /dev/tty
           printf -v "$__var" '%s' "$__in"; }
 
+# ask_loop VAR "Frage" "Default" validator — fragt, bis der Validator die Eingabe
+# akzeptiert. Der Validator druckt bei Erfolg den (ggf. normalisierten) Wert auf
+# stdout und gibt 0 zurück; bei Fehler erklärt er auf /dev/tty, was falsch ist.
+ask_loop() {
+  local __var=$1 __prompt=$2 __default=$3 __validate=$4 __in __norm
+  while true; do
+    printf '  %s%s: ' "$__prompt" "${__default:+ [$__default]}" > /dev/tty
+    IFS= read -r __in < /dev/tty || true
+    __in="${__in:-$__default}"
+    if __norm=$("$__validate" "$__in"); then
+      printf -v "$__var" '%s' "$__norm"; return 0
+    fi
+  done
+}
+
+# Ja/Nein tolerant: j/ja/y/yes bzw. n/nein/no (beliebige Groß-/Kleinschreibung);
+# Unklares wird erneut gefragt. Ergebnis: "ja" oder "nein" in VAR.
+ask_yesno() {
+  local __var=$1 __prompt=$2 __default=$3 __in
+  while true; do
+    printf '  %s (ja/nein) [%s]: ' "$__prompt" "$__default" > /dev/tty
+    IFS= read -r __in < /dev/tty || true
+    __in="${__in:-$__default}"
+    case "$(printf '%s' "$__in" | tr '[:upper:]' '[:lower:]')" in
+      j|ja|y|yes) printf -v "$__var" 'ja'; return 0;;
+      n|nein|no)  printf -v "$__var" 'nein'; return 0;;
+      *) say "  ✗ Bitte mit ja oder nein antworten.";;
+    esac
+  done
+}
+
+# ---------------------------------------------------------------- HTTP/JSON --
 mx() { local method=$1 url=$2 body=${3:-} token=${4:-}
-  curl -sS -X "$method" "$url" \
+  curl -sS -m 20 -X "$method" "$url" \
     ${token:+-H "Authorization: Bearer $token"} \
     -H 'Content-Type: application/json' ${body:+-d "$body"}; }
+# mx2 METHOD URL BODY TOKEN OUTFILE → druckt HTTP-Code, Body liegt in OUTFILE
+mx2() { local method=$1 url=$2 body=${3:-} token=${4:-} out=$5
+  curl -sS -m 20 -o "$out" -w '%{http_code}' -X "$method" "$url" \
+    ${token:+-H "Authorization: Bearer $token"} \
+    -H 'Content-Type: application/json' ${body:+-d "$body"} 2>/dev/null || echo 000; }
 jget() { python3 -c "import json,sys;d=json.load(sys.stdin);print(d$1)" 2>/dev/null; }
+# JSON-String sicher erzeugen — Wert via ENV, nie argv (ps-sicher)
+pw_json() { OP_V="$1" python3 -c 'import json,os;print(json.dumps(os.environ["OP_V"]))'; }
 
-# ---------------------------------------------------------------- Plattform-Helfer --
-# Secret-Store (macOS Keychain / Linux Secret-Service / Datei-Fallback) über secretstore.py
-secret_set() {  # secret_set <account> <value>
-  python3 -c "import sys;sys.path.insert(0,'$BOT_DIR');import secretstore;secretstore.set(sys.argv[1],sys.argv[2])" "$1" "$2" 2>/dev/null; }
-secret_has() {  # returncode 0 = vorhanden
-  python3 -c "import sys;sys.path.insert(0,'$BOT_DIR');import secretstore;sys.exit(0 if secretstore.get(sys.argv[1]) else 1)" "$1" 2>/dev/null; }
-secret_del() {
-  python3 -c "import sys;sys.path.insert(0,'$BOT_DIR');import secretstore;secretstore.delete(sys.argv[1])" "$1" 2>/dev/null; }
+# ---------------------------------------------------------------- Secret-Store --
+# Werte laufen via ENV an python (nie argv → nicht in ps sichtbar)
+secret_set() { OP_SS_ACC="$1" OP_SS_VAL="$2" python3 -c "import sys,os;sys.path.insert(0,'$BOT_DIR');import secretstore;secretstore.set(os.environ['OP_SS_ACC'],os.environ['OP_SS_VAL'])" 2>/dev/null; }
+secret_has() { python3 -c "import sys;sys.path.insert(0,'$BOT_DIR');import secretstore;sys.exit(0 if secretstore.get(sys.argv[1]) else 1)" "$1" 2>/dev/null; }
+secret_del() { python3 -c "import sys;sys.path.insert(0,'$BOT_DIR');import secretstore;secretstore.delete(sys.argv[1])" "$1" 2>/dev/null; }
 rand_hex()   { python3 -c "import secrets;print(secrets.token_hex(32))"; }
 
-# Dienst installieren+starten. install_service <name> <exec> [args…]  (name: listener|dashboard|pseudonym)
+# ---------------------------------------------------------------- Antwort-Cache --
+# Nicht-geheime Antworten überleben einen Abbruch: beim nächsten Lauf sind sie die
+# Defaults („Enter = übernehmen"). Passwörter werden NIE gespeichert.
+state_get() { python3 -c "import json;print(json.load(open('$STATE_FILE')).get('$1',''))" 2>/dev/null; }
+state_save() {
+  mkdir -p "$BOT_DIR"
+  OP_HS="${HS:-}" OP_BU="${BOT_USER:-}" OP_HU="${HUMAN:-}" OP_BO="${BASH_OPTIN:-}" OP_DO="${DASH_OPTIN:-}" \
+  python3 -c "
+import json, os
+p = '$STATE_FILE'
+d = {'hs': os.environ['OP_HS'], 'bot_user': os.environ['OP_BU'], 'human': os.environ['OP_HU'],
+     'bash_optin': os.environ['OP_BO'], 'dash_optin': os.environ['OP_DO']}
+fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+with os.fdopen(fd, 'w') as f: json.dump(d, f)
+" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------- Validatoren --
+v_homeserver() {
+  local u="$1"
+  [ -n "$u" ] || { say "  ✗ Bitte eine Server-Adresse eingeben — Beispiel: https://matrix.org"; return 1; }
+  case "$u" in
+    @*) say "  ✗ Das sieht wie eine Matrix-ID aus, nicht wie eine Server-Adresse. Beispiel: https://matrix.org"; return 1;;
+    *" "*) say "  ✗ Adressen enthalten keine Leerzeichen. Beispiel: https://matrix.org"; return 1;;
+  esac
+  case "$u" in http://*|https://*) ;; *) u="https://$u";; esac
+  u=${u%/}
+  if curl -fsS -m 10 "$u/_matrix/client/versions" 2>/dev/null | grep -q '"versions"'; then
+    printf '%s' "$u"; return 0
+  fi
+  say "  ✗ Unter $u antwortet kein Matrix-Server. Tippfehler in der Adresse? (Beispiel: https://matrix.org)"
+  say "    Falls dein Server gerade offline ist: erst starten, dann hier Enter mit derselben Adresse."
+  return 1
+}
+
+v_localpart() {
+  local u="$1"
+  u="${u#@}"; u="${u%%:*}"                       # @bot:server → bot (freundlich normalisieren)
+  u="$(printf '%s' "$u" | tr '[:upper:]' '[:lower:]')"
+  [ -n "$u" ] || { say "  ✗ Bitte einen Benutzernamen eingeben (nur der Name, z. B. operator-bot)"; return 1; }
+  case "$u" in
+    *[!a-z0-9._=/-]*) say "  ✗ Erlaubt sind nur Kleinbuchstaben, Zahlen und . _ = - /  (z. B. operator-bot)"; return 1;;
+  esac
+  printf '%s' "$u"
+}
+
+# Eigene Matrix-ID: Format prüfen + LIVE verifizieren, dass es sie wirklich gibt.
+# Gleicher Server wie der Bot → Profil-Lookup (404 = gibt es nicht → erneut fragen).
+# Anderer Server → prüfen, dass dieser Server überhaupt existiert/antwortet
+# (fängt Tippfehler wie vmatrix.… ab, bevor später die Einladung ins Leere geht).
+v_mxid() {
+  local m="$1"
+  case "$m" in
+    @*:*) ;;
+    "") say "  ✗ Bitte deine vollständige Matrix-ID eingeben, z. B. @ich:matrix.org"; return 1;;
+    *) say "  ✗ Eine Matrix-ID beginnt mit @ und enthält einen Server: @ich:matrix.org (du hast »$m« getippt)"; return 1;;
+  esac
+  local mserver="${m#*:}"
+  local enc; enc=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$m")
+  local tmp code; tmp=$(mktemp)
+  if [ "$mserver" = "$SERVER_NAME" ]; then
+    code=$(mx2 GET "$HS/_matrix/client/v3/profile/$enc" "" "" "$tmp")
+    rm -f "$tmp"
+    if [ "$code" = "404" ]; then
+      say "  ✗ Die Matrix-ID $m gibt es auf diesem Server nicht — Tippfehler? Prüfe sie in deiner Matrix-App (Einstellungen → Profil)."
+      return 1
+    fi
+    printf '%s' "$m"; return 0
+  fi
+  # anderer Server: existiert er überhaupt?
+  if curl -fsS -m 10 "https://$mserver/_matrix/client/versions" >/dev/null 2>&1 \
+     || curl -fsS -m 10 "https://$mserver/.well-known/matrix/client" >/dev/null 2>&1; then
+    rm -f "$tmp"; printf '%s' "$m"; return 0
+  fi
+  rm -f "$tmp"
+  say "  ✗ Den Server »$mserver« aus deiner Matrix-ID gibt es nicht oder er antwortet nicht — Tippfehler? (du hast $m getippt)"
+  return 1
+}
+
+# ---------------------------------------------------------------- Dienste --
 install_service() {
   local name=$1; shift
   local logf="$BOT_DIR/$name.log"
@@ -79,7 +205,7 @@ install_service() {
       printf '</dict></plist>\n'; } > "$plist"
     launchctl bootout "gui/$(id -u)" "$plist" 2>/dev/null || true
     launchctl bootstrap "gui/$(id -u)" "$plist"
-  else  # Linux: systemd user service
+  else
     local unit="operator-$name"
     mkdir -p "$HOME/.config/systemd/user"
     { printf '[Unit]\nDescription=Operator %s\nAfter=network-online.target\n\n' "$name"
@@ -96,7 +222,7 @@ install_service() {
 }
 
 # ---------------------------------------------------------------- Uninstall --
-if [ "${1:-}" = "--uninstall" ]; then
+uninstall() {
   bold "Deinstallation"
   for name in listener dashboard pseudonym; do
     if [ "$OS" = Darwin ]; then
@@ -109,7 +235,6 @@ if [ "${1:-}" = "--uninstall" ]; then
     fi
   done
   [ "$OS" = Linux ] && systemctl --user daemon-reload 2>/dev/null || true
-  # Laufzeit-/Sitzungsdateien entfernen (plattformübergreifend über platform_compat)
   python3 -c "import sys;sys.path.insert(0,'$BOT_DIR')
 try:
     import platform_compat as p, os
@@ -144,130 +269,249 @@ import google_auth; google_auth.disconnect()" 2>/dev/null && ok "Google-Token wi
   fi
   secret_del "token-key" && ok "Secret-Store-Schlüssel gelöscht" || true
   [ -f "$BOT_DIR/connections/m365.json" ] && warn "Hinweis: Die Entra-App 'Operator M365 Connector' im M365-Tenant ggf. manuell löschen"
-  ask CONFIRM "Verzeichnis $BOT_DIR komplett löschen (inkl. Gedächtnis + Tokens)? (ja/nein)" "nein"
+  local CONFIRM; ask_yesno CONFIRM "Verzeichnis $BOT_DIR komplett löschen (inkl. Gedächtnis + Tokens)?" "nein"
   [ "$CONFIRM" = "ja" ] && rm -rf "$BOT_DIR" && ok "Dateien gelöscht" || warn "Dateien behalten"
-  bold "Fertig."; exit 0
-fi
+  bold "Fertig."
+}
 
-# ------------------------------------------------------------ Phase 1: PRÜFEN
-bold "Operator-Installation — your operator inside the Matrix"
-bold "Phase 1/7 — Voraussetzungen prüfen"
-case "$OS" in
-  Darwin) command -v python3 >/dev/null || die "python3 fehlt (xcode-select --install)";
-          ok "macOS $(sw_vers -productVersion 2>/dev/null), python3 $(python3 -V | cut -d' ' -f2)";;
-  Linux)  command -v python3 >/dev/null || die "python3 fehlt (z. B. apt install python3 python3-venv)";
-          python3 -c "import venv" 2>/dev/null || warn "python3-venv fehlt evtl. (apt install python3-venv)";
-          ok "Linux $(uname -r), python3 $(python3 -V | cut -d' ' -f2)";;
-  *)      die "Nicht unterstütztes OS '$OS' — Windows: install.ps1 (PowerShell) verwenden";;
-esac
-command -v curl >/dev/null || die "curl fehlt"
+# ---------------------------------------------------------------- Phasen --
+phase1_check() {
+  bold "Operator-Installation — your operator inside the Matrix"
+  bold "Phase 1/7 — Voraussetzungen prüfen"
+  case "$OS" in
+    Darwin) command -v python3 >/dev/null || die "python3 fehlt (xcode-select --install)";
+            ok "macOS $(sw_vers -productVersion 2>/dev/null), python3 $(python3 -V | cut -d' ' -f2)";;
+    Linux)  command -v python3 >/dev/null || die "python3 fehlt (z. B. apt install python3 python3-venv)";
+            python3 -c "import venv" 2>/dev/null || warn "python3-venv fehlt evtl. (apt install python3-venv)";
+            ok "Linux $(uname -r), python3 $(python3 -V | cut -d' ' -f2)";;
+    *)      die "Nicht unterstütztes OS '$OS' — Windows: install.ps1 (PowerShell) verwenden";;
+  esac
+  command -v curl >/dev/null || die "curl fehlt"
+}
 
-# ------------------------------------------------------------ Phase 2: CLAUDE
-bold "Phase 2/7 — Claude CLI"
-if ! command -v claude >/dev/null; then
-  warn "Claude CLI nicht gefunden — installiere…"
-  curl -fsSL https://claude.ai/install.sh | bash \
-    || { command -v npm >/dev/null && npm install -g @anthropic-ai/claude-code; } \
-    || die "Installation fehlgeschlagen (weder Installer noch npm verfügbar)"
-  export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
-  command -v claude >/dev/null || die "claude nicht im PATH — Terminal neu öffnen und Skript erneut ausführen"
-fi
-CLAUDE_BIN=$(command -v claude)
-ok "Claude CLI: $CLAUDE_BIN ($(claude --version 2>/dev/null | head -1))"
-if ! claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; then
-  echo ""; bold "  Anmeldung bei Claude"
-  echo "  Gleich öffnet sich dein Browser. Melde dich mit deinem Claude-Konto an."
-  ask _ENTER "Weiter mit Enter" ""
-  ATTEMPT=0
-  until claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; do
-    ATTEMPT=$((ATTEMPT+1))
-    [ $ATTEMPT -gt 3 ] && die "Anmeldung nach 3 Versuchen nicht erfolgreich. 'claude /login' manuell ausführen und Skript erneut starten."
-    claude /login < /dev/tty > /dev/tty 2>&1 || true
+phase2_claude() {
+  bold "Phase 2/7 — Claude CLI"
+  CLAUDE_READY=1
+  if ! command -v claude >/dev/null; then
+    warn "Claude CLI nicht gefunden — installiere…"
+    curl -fsSL https://claude.ai/install.sh | bash \
+      || { command -v npm >/dev/null && npm install -g @anthropic-ai/claude-code; } \
+      || die "Installation fehlgeschlagen (weder Installer noch npm verfügbar)"
+    export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+    command -v claude >/dev/null || die "claude nicht im PATH — Terminal neu öffnen und Skript erneut ausführen"
+  fi
+  CLAUDE_BIN=$(command -v claude)
+  ok "Claude CLI: $CLAUDE_BIN ($(claude --version </dev/null 2>/dev/null | head -1))"
+  # Probe IMMER mit stdin=/dev/null — claude darf nie in den interaktiven Modus kippen
+  if ! claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; then
+    echo ""; bold "  Anmeldung bei Claude"
+    echo "  Gleich öffnet sich dein Browser. Melde dich mit deinem Claude-Konto an."
+    echo "  Danach im Claude-Fenster /exit eingeben (oder Strg+C) — hier geht es automatisch weiter."
+    local _ENTER ATTEMPT=0
+    ask _ENTER "Weiter mit Enter" ""
+    until claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; do
+      ATTEMPT=$((ATTEMPT+1))
+      if [ $ATTEMPT -gt 3 ]; then
+        # WEICH statt Abbruch: Bot wird fertig installiert, Anmeldung kann nachgeholt werden
+        CLAUDE_READY=0
+        warn "Claude-Anmeldung noch nicht bestätigt — die Installation läuft trotzdem weiter."
+        warn "Nachholen: im Terminal 'claude /login' ausführen, dann antwortet dein Operator."
+        break
+      fi
+      claude /login < /dev/tty > /dev/tty 2>&1 || true
+    done
+  fi
+  [ "$CLAUDE_READY" = 1 ] && ok "Claude CLI angemeldet und antwortet"
+}
+
+phase3_questions() {
+  bold "Phase 3/7 — Konfiguration"
+  echo "  Dein Bot braucht einen EIGENEN Matrix-Account (nicht deinen persönlichen!)."
+  echo "  Noch keinen? Eigener Server: der Wizard kann ihn gleich anlegen (Admin nötig)."
+  echo "  Fremder Server (z. B. matrix.org): Account vorher in der Matrix-App registrieren."
+  # Defaults aus dem letzten (ggf. abgebrochenen) Lauf
+  local d_hs d_bu d_hu d_bo d_do
+  d_hs=$(state_get hs); d_bu=$(state_get bot_user); d_hu=$(state_get human)
+  d_bo=$(state_get bash_optin); d_do=$(state_get dash_optin)
+  while true; do
+    ask_loop HS "Matrix-Homeserver-URL des Bot-Accounts" "${d_hs:-https://matrix.org}" v_homeserver
+    ok "Homeserver erreichbar: $HS"
+    SERVER_NAME=${HS#https://}; SERVER_NAME=${SERVER_NAME#http://}; SERVER_NAME=${SERVER_NAME%%/*}
+    ask_loop BOT_USER "Bot-Benutzername (nur der Name, ohne @ und Server)" "${d_bu:-}" v_localpart
+    ask_secret BOT_PW "Passwort für @$BOT_USER:$SERVER_NAME"
+    ask_loop HUMAN "Deine eigene Matrix-ID (nur diese wird beantwortet)" "${d_hu:-}" v_mxid
+    echo ""
+    echo "  Werkzeug-Freigabe: Darf dein Bot Shell-Kommandos auf DIESEM Rechner ausführen?"
+    ask_yesno BASH_OPTIN "Shell-Zugriff erlauben?" "${d_bo:-nein}"
+    ask_yesno DASH_OPTIN "Web-Dashboard installieren (Agenten-GUI, Tresor, Google/M365)?" "${d_do:-ja}"
+    # Zusammenfassung + Bestätigung (rustup-Muster): ein Blick, bevor etwas passiert
+    echo ""
+    bold "  Zusammenfassung"
+    echo "    Homeserver      : $HS"
+    echo "    Bot-Account     : @$BOT_USER:$SERVER_NAME"
+    echo "    Deine Matrix-ID : $HUMAN"
+    echo "    Shell-Zugriff   : $BASH_OPTIN"
+    echo "    Dashboard       : $DASH_OPTIN"
+    local OKGO; ask_yesno OKGO "Stimmt alles?" "ja"
+    if [ "$OKGO" = "ja" ]; then break; fi
+    d_hs="$HS"; d_bu="$BOT_USER"; d_hu="$HUMAN"; d_bo="$BASH_OPTIN"; d_do="$DASH_OPTIN"
+    echo "  Okay — nochmal von vorn (Enter übernimmt den bisherigen Wert)."
   done
-fi
-ok "Claude CLI angemeldet und antwortet"
+  if [ "$BASH_OPTIN" = "ja" ]; then
+    ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
+    TOOLS_TEXT="Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Kleine Aufgaben direkt erledigen; Unumkehrbares nur nach Rückfrage im Chat."
+  else
+    ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
+    TOOLS_TEXT="Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben."
+  fi
+  state_save   # Antworten (ohne Passwort) sichern — ein Abbruch kostet keine Neueingabe
+}
 
-# ------------------------------------------------------------ Phase 3: FRAGEN
-bold "Phase 3/7 — Konfiguration"
-echo "  Dein Bot braucht einen EIGENEN Matrix-Account (nicht deinen persönlichen!)."
-ask HS "Matrix-Homeserver-URL des Bot-Accounts" "https://matrix.org"
-HS=${HS%/}
-mx GET "$HS/_matrix/client/versions" | grep -q versions || die "Homeserver $HS nicht erreichbar"
-ok "Homeserver erreichbar"
-SERVER_NAME=${HS#https://}; SERVER_NAME=${SERVER_NAME#http://}
-ask BOT_USER "Bot-Benutzername (localpart, ohne @ und Server)" ""
-[ -n "$BOT_USER" ] || die "Bot-Benutzername wird benötigt"
-ask_secret BOT_PW "Passwort für @$BOT_USER:$SERVER_NAME"
-ask HUMAN "Deine eigene Matrix-ID (nur diese wird beantwortet, z. B. @ich:matrix.org)" ""
-case "$HUMAN" in @*:*) ;; *) die "Bitte vollständige Matrix-ID angeben (@name:server)";; esac
-echo ""
-echo "  Werkzeug-Freigabe: Darf dein Bot Shell-Kommandos auf DIESEM Rechner ausführen?"
-ask BASH_OPTIN "Shell-Zugriff erlauben? (ja/nein)" "nein"
-if [ "$BASH_OPTIN" = "ja" ]; then
-  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
-  TOOLS_TEXT="Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Kleine Aufgaben direkt erledigen; Unumkehrbares nur nach Rückfrage im Chat."
-else
-  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
-  TOOLS_TEXT="Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben."
-fi
+# Ein Login-Versuch: setzt TOKEN oder LOGIN_ERRCODE/LOGIN_ERRMSG/LOGIN_RETRY_MS
+try_login() {
+  local tmp code body
+  tmp=$(mktemp)
+  body="{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"$BOT_USER\"},\"password\":$(pw_json "$BOT_PW"),\"initial_device_display_name\":\"Operator Listener\"}"
+  code=$(mx2 POST "$HS/_matrix/client/v3/login" "$body" "" "$tmp")
+  TOKEN=$(jget "['access_token']" < "$tmp")
+  LOGIN_ERRCODE=$(jget "['errcode']" < "$tmp")
+  LOGIN_ERRMSG=$(jget "['error']" < "$tmp")
+  LOGIN_RETRY_MS=$(jget "['retry_after_ms']" < "$tmp")
+  rm -f "$tmp"
+}
 
-# ------------------------------------------------------------ Phase 4: MATRIX
-bold "Phase 4/7 — Matrix-Anbindung"
-DEV_NAME="Operator Listener"
-LOGIN=$(mx POST "$HS/_matrix/client/v3/login" \
-  "{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"$BOT_USER\"},\"password\":$(python3 -c "import json,sys;print(json.dumps(sys.argv[1]))" "$BOT_PW"),\"initial_device_display_name\":\"$DEV_NAME\"}")
-TOKEN=$(printf '%s' "$LOGIN" | jget "['access_token']")
-if [ -z "$TOKEN" ]; then
-  warn "Login als @$BOT_USER fehlgeschlagen: $(printf '%s' "$LOGIN" | jget "['error']")"
-  ask ADMIN_USER "Admin-Benutzername (localpart, leer = abbrechen)" ""
-  [ -n "$ADMIN_USER" ] || die "Ohne Bot-User geht es nicht weiter"
-  ask_secret ADMIN_PW "Passwort für @$ADMIN_USER:$SERVER_NAME"
-  ADMIN_TOKEN=$(mx POST "$HS/_matrix/client/v3/login" \
-    "{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"$ADMIN_USER\"},\"password\":$(python3 -c "import json,sys;print(json.dumps(sys.argv[1]))" "$ADMIN_PW")}" | jget "['access_token']")
-  [ -n "$ADMIN_TOKEN" ] || die "Admin-Login fehlgeschlagen"
-  mx PUT "$HS/_synapse/admin/v2/users/@$BOT_USER:$SERVER_NAME" \
-    "{\"password\":$(python3 -c "import json,sys;print(json.dumps(sys.argv[1]))" "$BOT_PW"),\"admin\":false}" "$ADMIN_TOKEN" >/dev/null \
-    || die "Bot-User konnte nicht angelegt werden (ist @$ADMIN_USER Server-Admin?)"
-  ok "Bot-User @$BOT_USER:$SERVER_NAME angelegt"
-  TOKEN=$(mx POST "$HS/_matrix/client/v3/login" \
-    "{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"$BOT_USER\"},\"password\":$(python3 -c "import json,sys;print(json.dumps(sys.argv[1]))" "$BOT_PW"),\"initial_device_display_name\":\"$DEV_NAME\"}" | jget "['access_token']")
-  [ -n "$TOKEN" ] || die "Login nach Anlage weiterhin fehlgeschlagen"
-fi
-ok "Matrix-Token erzeugt"
-ROOM=""
-for R in $(mx GET "$HS/_matrix/client/v3/joined_rooms" "" "$TOKEN" | python3 -c "import json,sys;[print(r) for r in json.load(sys.stdin).get('joined_rooms',[])]"); do
-  ENC=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$R")
-  if mx GET "$HS/_matrix/client/v3/rooms/$ENC/joined_members" "" "$TOKEN" | grep -q "$HUMAN"; then ROOM=$R; break; fi
-done
-if [ -n "$ROOM" ]; then ok "Bestehender gemeinsamer Raum gefunden: $ROOM"
-else
-  ROOM=$(mx POST "$HS/_matrix/client/v3/createRoom" \
-    "{\"is_direct\":true,\"invite\":[\"$HUMAN\"],\"preset\":\"trusted_private_chat\",\"name\":\"Claude\"}" "$TOKEN" | jget "['room_id']")
-  [ -n "$ROOM" ] || die "Raum konnte nicht erstellt werden"
-  ok "Neuer Raum erstellt: $ROOM — Einladung in deiner Matrix-App annehmen!"
-fi
+# Bot-User über einen Admin-Account anlegen (Synapse). 0 = ok, 1 = zurück zur Eingabe.
+admin_create_user() {
+  local ADMIN_USER ADMIN_PW ADMIN_TOKEN tries=0 tmp code
+  echo "  Zum Anlegen brauche ich einmalig einen Server-Admin-Account deines Homeservers."
+  ask ADMIN_USER "Admin-Benutzername (nur der Name; leer = zurück)" ""
+  [ -n "$ADMIN_USER" ] || return 1
+  while true; do
+    ask_secret ADMIN_PW "Passwort für @$ADMIN_USER:$SERVER_NAME"
+    tmp=$(mktemp)
+    code=$(mx2 POST "$HS/_matrix/client/v3/login" \
+      "{\"type\":\"m.login.password\",\"identifier\":{\"type\":\"m.id.user\",\"user\":\"$ADMIN_USER\"},\"password\":$(pw_json "$ADMIN_PW")}" "" "$tmp")
+    ADMIN_TOKEN=$(jget "['access_token']" < "$tmp"); rm -f "$tmp"
+    [ -n "$ADMIN_TOKEN" ] && break
+    tries=$((tries+1))
+    if [ $tries -ge 3 ]; then warn "Admin-Anmeldung 3× fehlgeschlagen — zurück zur Bot-Eingabe."; return 1; fi
+    warn "Admin-Passwort stimmt nicht — bitte erneut."
+  done
+  tmp=$(mktemp)
+  code=$(mx2 PUT "$HS/_synapse/admin/v2/users/@$BOT_USER:$SERVER_NAME" \
+    "{\"password\":$(pw_json "$BOT_PW"),\"admin\":false}" "$ADMIN_TOKEN" "$tmp")
+  local emsg; emsg=$(jget "['error']" < "$tmp"); rm -f "$tmp"
+  case "$code" in
+    200|201) ok "Bot-User @$BOT_USER:$SERVER_NAME angelegt"; return 0;;
+    404) warn "Dein Homeserver ist kein Synapse (oder die Admin-API ist aus) — automatisches Anlegen geht hier nicht."
+         warn "Bitte den Bot-Account manuell anlegen (z. B. in der Matrix-App registrieren) und dann hier fortfahren."
+         return 1;;
+    403) warn "Der Account @$ADMIN_USER ist kein Server-Admin — bitte mit einem Admin-Account versuchen."; return 1;;
+    *)   warn "Anlegen fehlgeschlagen (HTTP $code${emsg:+ — $emsg})."; return 1;;
+  esac
+}
 
-# ----------------------------------------------------------- Phase 5: DATEIEN
-bold "Phase 5/7 — Dateien einrichten"
-mkdir -p "$BOT_DIR"
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
-for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
-         migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py; do
-  if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
-  else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
-  ok "$F installiert"
-done
-mkdir -p "$BOT_DIR/workspace/.claude/agents"
-AGENTS="recherche schreiber"
-[ "$BASH_OPTIN" = "ja" ] && AGENTS="$AGENTS sysadmin"
-for A in $AGENTS; do
-  DEST="$BOT_DIR/workspace/.claude/agents/$A.md"
-  if [ -f "$DEST" ]; then ok "Agent $A existiert — bleibt unverändert"; continue; fi
-  if [ -f "$SCRIPT_DIR/agents/$A.md" ]; then cp "$SCRIPT_DIR/agents/$A.md" "$DEST"
-  else curl -fsSL "$REPO_RAW/agents/$A.md" -o "$DEST" || die "Agent-Vorlage $A.md nicht gefunden"; fi
-  ok "Agent $A installiert"
-done
-python3 - "$BOT_DIR" <<'PYMCP'
+phase4_matrix() {
+  bold "Phase 4/7 — Matrix-Anbindung"
+  local pw_tries=0
+  while true; do
+    try_login
+    [ -n "$TOKEN" ] && break
+    case "${LOGIN_ERRCODE:-}" in
+      M_LIMIT_EXCEEDED)
+        local wait_s=$(( ${LOGIN_RETRY_MS:-2000} / 1000 + 1 ))
+        warn "Zu viele Anmeldeversuche — der Server bittet um ${wait_s}s Pause. Ich warte…"
+        sleep "$wait_s";;
+      M_USER_DEACTIVATED)
+        warn "Der Account @$BOT_USER:$SERVER_NAME wurde deaktiviert und kann sich nicht anmelden."
+        local NEU; ask_yesno NEU "Anderen Bot-Benutzernamen eingeben?" "ja"
+        [ "$NEU" = "ja" ] || die "Ohne funktionierenden Bot-Account geht es nicht weiter."
+        ask_loop BOT_USER "Bot-Benutzername (nur der Name)" "" v_localpart
+        ask_secret BOT_PW "Passwort für @$BOT_USER:$SERVER_NAME"
+        pw_tries=0;;
+      *)
+        pw_tries=$((pw_tries+1))
+        if [ $pw_tries -lt 3 ]; then
+          warn "Anmeldung fehlgeschlagen (${LOGIN_ERRMSG:-Benutzername oder Passwort falsch})."
+          echo "  Tipp: Passwort in Ruhe neu eintippen — Groß/Klein beachten."
+          ask_secret BOT_PW "Passwort für @$BOT_USER:$SERVER_NAME (erneut)"
+        else
+          warn "3× fehlgeschlagen. Entweder ist das Passwort falsch — oder den Account gibt es noch nicht."
+          local WEG
+          ask_yesno WEG "Existiert der Bot-Account noch NICHT und soll jetzt angelegt werden?" "nein"
+          if [ "$WEG" = "ja" ]; then
+            admin_create_user && pw_tries=0 || {
+              ask_loop BOT_USER "Bot-Benutzername (nur der Name)" "$BOT_USER" v_localpart
+              ask_secret BOT_PW "Passwort für @$BOT_USER:$SERVER_NAME"
+              pw_tries=0
+            }
+          else
+            ask_loop BOT_USER "Bot-Benutzername (nur der Name)" "$BOT_USER" v_localpart
+            ask_secret BOT_PW "Passwort für @$BOT_USER:$SERVER_NAME"
+            pw_tries=0
+          fi
+        fi;;
+    esac
+  done
+  # Token-Verifikation (whoami): erst jetzt gilt die Anmeldung als bestanden
+  local WHO; WHO=$(mx GET "$HS/_matrix/client/v3/account/whoami" "" "$TOKEN" | jget "['user_id']")
+  [ -n "$WHO" ] || die "Anmeldung unerwartet ungültig (whoami leer) — bitte erneut ausführen."
+  ok "Angemeldet als $WHO — Zugang geprüft"
+
+  # Bestehenden gemeinsamen Raum suchen (exakter Mitglieds-Abgleich, kein Substring)
+  ROOM=""
+  local R ENC
+  for R in $(mx GET "$HS/_matrix/client/v3/joined_rooms" "" "$TOKEN" | python3 -c "import json,sys;[print(r) for r in json.load(sys.stdin).get('joined_rooms',[])]"); do
+    ENC=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$R")
+    if mx GET "$HS/_matrix/client/v3/rooms/$ENC/joined_members" "" "$TOKEN" \
+       | python3 -c "import json,sys;d=json.load(sys.stdin);sys.exit(0 if sys.argv[1] in d.get('joined',{}) else 1)" "$HUMAN" 2>/dev/null; then
+      ROOM=$R; break
+    fi
+  done
+  if [ -n "$ROOM" ]; then
+    ok "Bestehender gemeinsamer Raum gefunden: $ROOM"
+  else
+    ROOM=$(mx POST "$HS/_matrix/client/v3/createRoom" \
+      "{\"is_direct\":true,\"invite\":[\"$HUMAN\"],\"preset\":\"trusted_private_chat\",\"name\":\"Claude\"}" "$TOKEN" | jget "['room_id']")
+    [ -n "$ROOM" ] || die "Raum konnte nicht erstellt werden — Log/Verbindung prüfen und Skript erneut starten (deine Antworten bleiben gespeichert)."
+    # Einladung wirklich zugestellt? (fängt kaputte Föderation/falsche ID ab)
+    local ENCR ENCH MEMB tmp code
+    ENCR=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$ROOM")
+    ENCH=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$HUMAN")
+    tmp=$(mktemp)
+    code=$(mx2 GET "$HS/_matrix/client/v3/rooms/$ENCR/state/m.room.member/$ENCH" "" "$TOKEN" "$tmp")
+    MEMB=$(jget "['membership']" < "$tmp"); rm -f "$tmp"
+    if [ "$MEMB" = "invite" ] || [ "$MEMB" = "join" ]; then
+      ok "Neuer Raum erstellt und Einladung an $HUMAN zugestellt — in deiner Matrix-App annehmen!"
+    else
+      warn "Raum wurde erstellt, aber die Einladung an $HUMAN konnte nicht bestätigt werden."
+      warn "Prüfe: Ist die Matrix-ID korrekt? Ist der Server von $HS aus erreichbar (Föderation)?"
+    fi
+  fi
+}
+
+phase5_files() {
+  bold "Phase 5/7 — Dateien einrichten"
+  mkdir -p "$BOT_DIR"
+  SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
+  local F A DEST
+  for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
+           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py; do
+    if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
+    else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
+    ok "$F installiert"
+  done
+  mkdir -p "$BOT_DIR/workspace/.claude/agents"
+  local AGENTS="recherche schreiber"
+  [ "$BASH_OPTIN" = "ja" ] && AGENTS="$AGENTS sysadmin"
+  for A in $AGENTS; do
+    DEST="$BOT_DIR/workspace/.claude/agents/$A.md"
+    if [ -f "$DEST" ]; then ok "Agent $A existiert — bleibt unverändert"; continue; fi
+    if [ -f "$SCRIPT_DIR/agents/$A.md" ]; then cp "$SCRIPT_DIR/agents/$A.md" "$DEST"
+    else curl -fsSL "$REPO_RAW/agents/$A.md" -o "$DEST" || die "Agent-Vorlage $A.md nicht gefunden"; fi
+    ok "Agent $A installiert"
+  done
+  python3 - "$BOT_DIR" <<'PYMCP'
 import json, os, sys
 bot = sys.argv[1]
 venv_py = os.path.join(bot, "dashboard", "venv",
@@ -282,9 +526,9 @@ data.setdefault("mcpServers", {})["m365"] = {"command": venv_py, "args": [os.pat
 data["mcpServers"]["n8n"] = {"command": venv_py, "args": [os.path.join(bot, "mcp_n8n.py")]}
 open(p, "w").write(json.dumps(data, indent=1))
 PYMCP
-ok "Standard-MCPs m365 + n8n registriert"
-mkdir -p "$BOT_DIR/workspace/.claude/skills"
-python3 - "$BOT_DIR" <<'PYSCOUT'
+  ok "Standard-MCPs m365 + n8n registriert"
+  mkdir -p "$BOT_DIR/workspace/.claude/skills"
+  python3 - "$BOT_DIR" <<'PYSCOUT'
 import hashlib, json, os, sys
 bot = sys.argv[1]; p = os.path.join(bot, "cron.json"); jobs = []
 if os.path.exists(p):
@@ -302,51 +546,55 @@ if not any(j.get("name") == "Skill-Scout" for j in jobs):
     with os.fdopen(fd, "w") as f: json.dump({"jobs": jobs}, f, indent=1)
     os.replace(p + ".tmp", p)
 PYSCOUT
-ok "Skills aktiviert (Ordner + wöchentlicher Skill-Scout, So 18:30)"
-if [ -f "$BOT_DIR/VERHALTEN.md" ]; then ok "VERHALTEN.md existiert — bleibt unverändert"
-else
-  if [ -f "$SCRIPT_DIR/VERHALTEN.template.md" ]; then cp "$SCRIPT_DIR/VERHALTEN.template.md" "$BOT_DIR/.template.tmp"
-  else curl -fsSL "$REPO_RAW/VERHALTEN.template.md" -o "$BOT_DIR/.template.tmp" || die "VERHALTEN.template.md nicht gefunden"; fi
-  python3 - "$BOT_DIR/.template.tmp" "$BOT_DIR/VERHALTEN.md" "@$BOT_USER:$SERVER_NAME" "$HUMAN" "$TOOLS_TEXT" <<'PY'
+  ok "Skills aktiviert (Ordner + wöchentlicher Skill-Scout, So 18:30)"
+  if [ -f "$BOT_DIR/VERHALTEN.md" ]; then ok "VERHALTEN.md existiert — bleibt unverändert"
+  else
+    if [ -f "$SCRIPT_DIR/VERHALTEN.template.md" ]; then cp "$SCRIPT_DIR/VERHALTEN.template.md" "$BOT_DIR/.template.tmp"
+    else curl -fsSL "$REPO_RAW/VERHALTEN.template.md" -o "$BOT_DIR/.template.tmp" || die "VERHALTEN.template.md nicht gefunden"; fi
+    python3 - "$BOT_DIR/.template.tmp" "$BOT_DIR/VERHALTEN.md" "@$BOT_USER:$SERVER_NAME" "$HUMAN" "$TOOLS_TEXT" <<'PY'
 import sys
 t = open(sys.argv[1]).read()
 t = t.replace("{{BOT_MXID}}", sys.argv[3]).replace("{{HUMAN_MXID}}", sys.argv[4]).replace("{{TOOLS_SECTION}}", sys.argv[5])
 open(sys.argv[2], "w").write(t)
 PY
-  rm -f "$BOT_DIR/.template.tmp"; ok "VERHALTEN.md aus Template erstellt"
-fi
-# Matrix-Token in den OS-Secret-Store (Härtung); Datei enthält nur den Marker
-TOKEN_REF="keychain"
-secret_set "matrix-owner" "$TOKEN"; secret_has "matrix-owner" \
-  || { warn "Secret-Store nicht verfügbar — Token bleibt in der Datei (0600)"; TOKEN_REF="$TOKEN"; }
-python3 - "$BOT_DIR/credentials.json" "$HS" "@$BOT_USER:$SERVER_NAME" "$TOKEN_REF" "$ROOM" "$HUMAN" "$ALLOWED_TOOLS" "$CLAUDE_BIN" <<'PY'
-import json, os, sys
-open(sys.argv[1], "w").write(json.dumps({
-    "homeserver": sys.argv[2], "user_id": sys.argv[3], "access_token": sys.argv[4],
-    "room_id": sys.argv[5], "owner_id": sys.argv[6], "allowed_tools": json.loads(sys.argv[7]),
-    "claude_bin": sys.argv[8]}, indent=1))
-os.chmod(sys.argv[1], 0o600)
+    rm -f "$BOT_DIR/.template.tmp"; ok "VERHALTEN.md aus Template erstellt"
+  fi
+  # Matrix-Token in den OS-Secret-Store; Datei enthält nur den Marker.
+  # Token + Referenz laufen via ENV (nie argv → nicht in ps sichtbar).
+  TOKEN_REF="keychain"
+  secret_set "matrix-owner" "$TOKEN"; secret_has "matrix-owner" \
+    || { warn "Secret-Store nicht verfügbar — Token bleibt in der Datei (0600)"; TOKEN_REF="$TOKEN"; }
+  OP_CRED_PATH="$BOT_DIR/credentials.json" OP_HS="$HS" OP_UID="@$BOT_USER:$SERVER_NAME" \
+  OP_TOKEN_REF="$TOKEN_REF" OP_ROOM="$ROOM" OP_HUMAN="$HUMAN" OP_TOOLS="$ALLOWED_TOOLS" OP_CLAUDE="$CLAUDE_BIN" \
+  python3 <<'PY'
+import json, os
+e = os.environ
+open(e["OP_CRED_PATH"], "w").write(json.dumps({
+    "homeserver": e["OP_HS"], "user_id": e["OP_UID"], "access_token": e["OP_TOKEN_REF"],
+    "room_id": e["OP_ROOM"], "owner_id": e["OP_HUMAN"], "allowed_tools": json.loads(e["OP_TOOLS"]),
+    "claude_bin": e["OP_CLAUDE"]}, indent=1))
+os.chmod(e["OP_CRED_PATH"], 0o600)
 PY
-ok "credentials.json geschrieben"
-python3 "$BOT_DIR/migrate_tokens.py" 2>/dev/null || true
+  ok "credentials.json geschrieben"
+  python3 "$BOT_DIR/migrate_tokens.py" 2>/dev/null || true
+}
 
-# ------------------------------------------------------------- Phase 6: START
-bold "Phase 6/7 — Listener-Dienst starten"
-install_service listener "$(command -v python3)" "$BOT_DIR/listener.py" \
-  && ok "Listener-Dienst eingerichtet und gestartet" || die "Dienststart fehlgeschlagen — siehe $BOT_DIR/listener.log"
-sleep 3
-tail -1 "$BOT_DIR/listener.log" 2>/dev/null | grep -q "Listener gestartet" \
-  && ok "Daemon läuft und lauscht" || warn "Daemon gestartet, Log noch leer — später prüfen: tail -f $BOT_DIR/listener.log"
+phase6_start() {
+  bold "Phase 6/7 — Listener-Dienst starten"
+  install_service listener "$(command -v python3)" "$BOT_DIR/listener.py" \
+    && ok "Listener-Dienst eingerichtet und gestartet" || die "Dienststart fehlgeschlagen — siehe $BOT_DIR/listener.log"
+  sleep 3
+  tail -1 "$BOT_DIR/listener.log" 2>/dev/null | grep -q "Listener gestartet" \
+    && ok "Daemon läuft und lauscht" || warn "Daemon gestartet, Log noch leer — später prüfen: tail -f $BOT_DIR/listener.log"
+}
 
-# -------------------------------------------------------- Phase 8: DASHBOARD (optional)
-bold "Phase 8 — Web-Dashboard (optional)"
-ask DASH_OPTIN "Web-Dashboard installieren (Agenten-GUI, Tresor, Google/M365-Anbindung)? (ja/nein)" "ja"
-if [ "$DASH_OPTIN" = "ja" ]; then
+phase8_dashboard() {
+  bold "Phase 8 — Web-Dashboard"
+  [ "$DASH_OPTIN" = "ja" ] || { warn "Dashboard übersprungen (in Phase 3 abgewählt)"; return 0; }
   DASH_DIR="$BOT_DIR/dashboard"
   mkdir -p "$DASH_DIR/static" "$BOT_DIR/connections" "$BOT_DIR/secrets"
   chmod 700 "$BOT_DIR/secrets"
-  VENV_PY="$DASH_DIR/venv/bin/python3"
-  DASH_OK=1
+  local VENV_PY="$DASH_DIR/venv/bin/python3" DASH_OK=1 F
   if [ ! -x "$VENV_PY" ]; then python3 -m venv "$DASH_DIR/venv" || DASH_OK=0; fi
   if [ "$DASH_OK" = "1" ]; then
     "$DASH_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
@@ -374,10 +622,10 @@ if [ "$DASH_OPTIN" = "ja" ]; then
   if [ "$DASH_OK" = "1" ]; then
     secret_has "token-key" || secret_set "token-key" "$(rand_hex)"
     if [ ! -f "$BOT_DIR/dashboard.json" ]; then
-      DTOK=$(rand_hex); secret_set "dashboard-token" "$DTOK"
-      python3 - "$DTOK" "$BOT_DIR" <<'PY'
-import hashlib, json, os, sys
-tok, bot = sys.argv[1], sys.argv[2]
+      local DTOK; DTOK=$(rand_hex); secret_set "dashboard-token" "$DTOK"
+      OP_DTOK="$DTOK" OP_BOT="$BOT_DIR" python3 <<'PY'
+import hashlib, json, os
+tok, bot = os.environ["OP_DTOK"], os.environ["OP_BOT"]
 open(os.path.join(bot, "dashboard.json"), "w").write(json.dumps(
     {"port": 8737, "token_sha256": hashlib.sha256(tok.encode()).hexdigest(), "version": 1}, indent=1))
 os.chmod(os.path.join(bot, "dashboard.json"), 0o600)
@@ -389,7 +637,6 @@ PY
     install_service pseudonym "$VENV_PY" "$BOT_DIR/pseudonym_daemon.py" \
       && ok "Pseudonymisierungs-Daemon läuft (schnelle PII-Ersetzung)" \
       || warn "Pseudonym-Daemon-Start fehlgeschlagen — Listener nutzt den Fallback"
-    # Linux: FIDO-Sicherheitsschlüssel brauchen eine udev-Regel für HID-Zugriff (optional)
     if [ "$OS" = Linux ] && [ ! -f /etc/udev/rules.d/70-operator-fido.rules ]; then
       warn "Für Sicherheitsschlüssel-Entsperrung (optional) einmalig als root:"
       echo "        sudo tee /etc/udev/rules.d/70-operator-fido.rules >/dev/null <<'RULE'"
@@ -400,11 +647,34 @@ PY
   else
     warn "Dashboard-Installation unvollständig — der Chat-Bot läuft davon unabhängig weiter"
   fi
-fi
+}
 
-# -------------------------------------------------------------- Phase 7: TEST
-bold "Phase 7 — Funktionstest"
-python3 "$BOT_DIR/send.py" "✅ Operator einsatzbereit! Schreib mir einfach — ich antworte in Sekunden. (Verhalten anpassen: $BOT_DIR/VERHALTEN.md)" >/dev/null \
-  && ok "Testnachricht im Raum — auf dem Handy prüfen!" \
-  || warn "Testnachricht fehlgeschlagen — Log prüfen"
-bold "Fertig! 🎉  Log: tail -f $BOT_DIR/listener.log  ·  Deinstallation: bash install.sh --uninstall"
+phase7_test() {
+  bold "Phase 7 — Funktionstest"
+  python3 "$BOT_DIR/send.py" "✅ Operator einsatzbereit! Schreib mir einfach — ich antworte in Sekunden. (Verhalten anpassen: $BOT_DIR/VERHALTEN.md)" >/dev/null \
+    && ok "Testnachricht im Raum — auf dem Handy prüfen!" \
+    || warn "Testnachricht fehlgeschlagen — Log prüfen: $BOT_DIR/listener.log"
+  if [ "${CLAUDE_READY:-1}" = 0 ]; then
+    warn "WICHTIG: Die Claude-Anmeldung fehlt noch — dein Operator antwortet erst danach."
+    warn "Nachholen: 'claude /login' im Terminal, dann Dienst neu starten (oder Rechner neu anmelden)."
+  fi
+  rm -f "$STATE_FILE" 2>/dev/null || true   # Erfolg → gemerkte Antworten aufräumen
+  bold "Fertig! 🎉  Log: tail -f $BOT_DIR/listener.log  ·  Deinstallation: bash install.sh --uninstall"
+}
+
+# ---------------------------------------------------------------- main --
+main() {
+  if [ "${1:-}" = "--uninstall" ]; then uninstall; exit 0; fi
+  phase1_check
+  phase2_claude
+  phase3_questions
+  phase4_matrix
+  phase5_files
+  phase6_start
+  phase8_dashboard
+  phase7_test
+}
+
+# Einzige ausführende Zeile — schützt gegen teilweise heruntergeladene Skripte:
+# bricht der Download vorher ab, wurde nur definiert, nie ausgeführt.
+main "$@"
