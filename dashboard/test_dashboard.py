@@ -498,3 +498,44 @@ def test_reid_is_stdlib_only():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module.split(".")[0])
     assert not (imports & {"fastapi", "presidio_analyzer", "spacy", "faker", "cryptography"})
+
+
+# ---------------------------------------------------------------- #35/#20 --
+def test_pseudonym_gender_from_anrede():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import pseudonym
+    from faker.providers.person.de_DE import Provider
+    fem, mal = set(Provider.first_names_female), set(Provider.first_names_male)
+    m = {}
+    pf, m, _ = pseudonym.pseudonymize("Schreib an Frau Wagner.", m)
+    m2 = {}
+    pm, m2, _ = pseudonym.pseudonymize("Schreib an Herrn Berger.", m2)
+    ff = [k for k, v in m["s2r"].items() if v == "Wagner"][0].split()[0]
+    fm = [k for k, v in m2["s2r"].items() if v == "Berger"][0].split()[0]
+    assert ff in fem and fm in mal
+
+
+def test_migrate_tokens_idempotent(tmp_path, monkeypatch):
+    import json as _j
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import migrate_tokens as MT
+    monkeypatch.setattr(MT, "BOT_DIR", str(tmp_path))
+    monkeypatch.setattr(MT, "_keychain_set", lambda a, v: True)
+    (tmp_path / "credentials.json").write_text(_j.dumps({"access_token": "syt_klartext_xyz"}))
+    (tmp_path / "bots.json").write_text(_j.dumps({"bots": [{"agent": "b1", "access_token": "syt_bot"}]}))
+    assert MT.migrate() == 2
+    assert _j.loads((tmp_path / "credentials.json").read_text())["access_token"] == "keychain"
+    assert _j.loads((tmp_path / "bots.json").read_text())["bots"][0]["access_token"] == "keychain"
+    assert MT.migrate() == 0    # idempotent
+
+
+def test_migrate_tokens_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/migrate_tokens.py")).read()
+    imports = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert not (imports & {"fastapi", "presidio_analyzer", "spacy", "faker", "cryptography"})
