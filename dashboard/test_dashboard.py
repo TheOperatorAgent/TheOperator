@@ -558,3 +558,154 @@ def test_migrate_tokens_is_stdlib_only():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module.split(".")[0])
     assert not (imports & {"fastapi", "presidio_analyzer", "spacy", "faker", "cryptography"})
+
+
+# ---------------------------------------------------------------- Vaultwarden-Backend --
+def _vw(tmp_path, monkeypatch):
+    """Vaultwarden-Modul mit tmp-Session/Conn und gemocktem bw laden."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import vaultwarden as vw
+    monkeypatch.setattr(vw, "CONN_FILE", str(tmp_path / "vaultwarden.json"))
+    monkeypatch.setattr(vw, "_session_path", lambda: str(tmp_path / "vw.session"))
+    monkeypatch.setattr(vw, "BOT_DIR", str(tmp_path))   # dashboard.json fehlt → autolock 0
+    return vw
+
+
+def test_vaultwarden_unlock_login_then_unlock(tmp_path, monkeypatch):
+    import json as _j
+    vw = _vw(tmp_path, monkeypatch)
+    (tmp_path / "vaultwarden.json").write_text(_j.dumps({"url": "https://vault.example"}))
+    calls = []
+
+    def fake_bw(args, session=None, stdin=None, pw=None, timeout=60):
+        calls.append((list(args), pw))
+        assert "geheim-master-pw" not in args           # Passwort NIE in argv
+        if args[:1] == ["status"]:
+            state = "unauthenticated" if len(calls) == 1 else "locked"
+            return 0, _j.dumps({"status": state}), ""
+        if args[:1] == ["login"]:
+            assert pw == "geheim-master-pw"              # Passwort nur per env/pw
+            return 0, "SESSIONTOKEN-A\n", ""
+        if args[:1] == ["unlock"]:
+            assert pw == "geheim-master-pw"
+            return 0, "SESSIONTOKEN-B\n", ""
+        return 1, "", "unerwartet"
+
+    monkeypatch.setattr(vw, "_bw", fake_bw)
+    # Erste Anmeldung: Login-Pfad (braucht E-Mail), Token wird gespeichert
+    assert vw.unlock("geheim-master-pw", "du@example.de") == "login"
+    assert vw.session() == "SESSIONTOKEN-A"
+    assert oct(os.stat(str(tmp_path / "vw.session")).st_mode)[-3:] == "600"
+    # Zweites Mal (schon angemeldet): Unlock-Pfad, ohne E-Mail
+    assert vw.unlock("geheim-master-pw") == "unlock"
+    assert vw.session() == "SESSIONTOKEN-B"
+
+
+def test_vaultwarden_unlock_wrong_pw_and_2fa(tmp_path, monkeypatch):
+    import json as _j
+    import pytest
+    vw = _vw(tmp_path, monkeypatch)
+    (tmp_path / "vaultwarden.json").write_text(_j.dumps({"url": "https://vault.example"}))
+
+    def fake_bw(args, session=None, stdin=None, pw=None, timeout=60):
+        if args[:1] == ["status"]:
+            return 0, _j.dumps({"status": "locked"}), ""
+        return 1, "", "Invalid master password."
+    monkeypatch.setattr(vw, "_bw", fake_bw)
+    with pytest.raises(ValueError, match="Master-Passwort"):
+        vw.unlock("falsch")
+    assert vw.session() is None                          # kein Token gespeichert
+
+    def fake_bw_2fa(args, session=None, stdin=None, pw=None, timeout=60):
+        if args[:1] == ["status"]:
+            return 0, _j.dumps({"status": "locked"}), ""
+        return 1, "", "Two-step login is enabled on this account."
+    monkeypatch.setattr(vw, "_bw", fake_bw_2fa)
+    with pytest.raises(ValueError, match="Zwei-Faktor"):
+        vw.unlock("egal")
+
+
+def test_vaultwarden_list_items_readonly(tmp_path, monkeypatch):
+    import json as _j
+    import pytest
+    vw = _vw(tmp_path, monkeypatch)
+    items = [
+        {"type": 1, "name": "gitea-admin", "login": {"username": "root",
+         "uris": [{"uri": "https://gitea.example"}]}},
+        {"type": 2, "name": "eine-notiz"},               # Secure Note → ignorieren
+        {"type": 1, "name": "smtp", "login": {"username": "", "uris": []}},
+    ]
+    monkeypatch.setattr(vw, "_bw",
+                        lambda a, session=None, stdin=None, pw=None, timeout=60:
+                        (0, _j.dumps(items), "") if a[:2] == ["list", "items"] else (1, "", ""))
+    out = vw.list_items("SESSIONTOKEN")
+    assert [x["name"] for x in out] == ["gitea-admin", "smtp"]     # nur Logins, sortiert
+    assert out[0]["username"] == "root" and out[0]["url"] == "https://gitea.example"
+    assert all("value" not in x and "password" not in x for x in out)   # keine Passwörter
+    # ohne Session → gesperrt
+    monkeypatch.setattr(vw, "SESSION_OVERRIDE", "")
+    with pytest.raises(PermissionError):
+        vw.list_items()
+
+
+def test_vaultwarden_get_password(tmp_path, monkeypatch):
+    vw = _vw(tmp_path, monkeypatch)
+    monkeypatch.setattr(vw, "_bw",
+                        lambda a, session=None, stdin=None, pw=None, timeout=60:
+                        (0, "Str3ngGeheim!\n", "") if a == ["get", "password", "demo"]
+                        else (1, "", "Not found."))
+    assert vw.get_password("demo", "TOK") == "Str3ngGeheim!"
+    assert vw.get_password("gibtsnicht", "TOK") is None
+    assert vw.get_password("demo", "") is None            # ohne Session
+
+
+def test_vault_backend_switch(tmp_path, monkeypatch):
+    import json as _j
+    vault = _vault(tmp_path, monkeypatch)
+    monkeypatch.setattr(vault, "BOT_DIR", str(tmp_path))
+    # keine dashboard.json → Default lokal
+    assert vault._backend() == "local"
+    (tmp_path / "dashboard.json").write_text(_j.dumps({}))
+    assert vault._backend() == "local"
+    (tmp_path / "dashboard.json").write_text(_j.dumps({"vault_backend": "vaultwarden"}))
+    assert vault._backend() == "vaultwarden"
+    (tmp_path / "dashboard.json").write_text(_j.dumps({"vault_backend": "quatsch"}))
+    assert vault._backend() == "local"                    # unbekannt → lokal
+
+
+def test_vault_run_via_vaultwarden(tmp_path, monkeypatch, capsys):
+    vault = _vault(tmp_path, monkeypatch)
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import vaultwarden as vw
+    monkeypatch.setattr(vault, "_backend", lambda: "vaultwarden")
+    monkeypatch.setattr(vw, "session", lambda: "SESSIONTOKEN")
+    monkeypatch.setattr(vw, "_session_path", lambda: str(tmp_path / "vw.session"))
+    open(str(tmp_path / "vw.session"), "w").close()        # für utime im Kern
+    secrets = {"demo": "Str3ngGeheim!"}
+    monkeypatch.setattr(vw, "get_password", lambda n, s: secrets.get(n))
+    monkeypatch.setattr(vault, "_run_allowlist", lambda: {"sh"})
+    rc = vault.run(["sh", "-c", "echo Wert: {{tresor:demo}}; env | grep -c OP_SECRET_DEMO"])
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "Str3ngGeheim!" not in out and "«tresor:demo»" in out     # aufgelöst + redacted
+    assert "1" in out                                     # env-Variable im Kind gesetzt
+    # unbekannter Eintrag → 3
+    assert vault.run(["sh", "-c", "echo {{tresor:gibtsnicht}}"]) == 3
+    # Allowlist greift auch bei Vaultwarden (echo mit Referenz → 5)
+    monkeypatch.setattr(vault, "_run_allowlist", lambda: vault.DEFAULT_RUN_ALLOWLIST)
+    assert vault.run(["echo", "{{tresor:demo}}"]) == 5
+    # gesperrt (keine Session) → 2
+    monkeypatch.setattr(vw, "session", lambda: None)
+    assert vault.run(["sh", "-c", "echo {{tresor:demo}}"]) == 2
+
+
+def test_vaultwarden_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/vaultwarden.py")).read()
+    imports = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert not (imports & {"fastapi", "presidio_analyzer", "spacy", "faker", "cryptography"})
