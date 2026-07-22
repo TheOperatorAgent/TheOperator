@@ -24,6 +24,8 @@ BOT_DIR = "/Users/michi/.claude/matrix-bot"
 def keychain_token(account, fallback):
     """Token aus dem macOS-Schlüsselbund; Datei-Wert nur als Fallback (Altbestand)."""
     if fallback != "keychain":
+        log(f"⚠ Klartext-Token in Datei ({account}) — 'python3 {BOT_DIR}/migrate_tokens.py' "
+            f"ausführen, um es in den Schlüsselbund zu verschieben.")
         return fallback
     r = subprocess.run(["security", "find-generic-password", "-s", "the-operator",
                         "-a", account, "-w"], capture_output=True, text=True)
@@ -81,25 +83,58 @@ def _pii_cfg():
             "allow": c.get("allow", []), "deny": c.get("deny", [])}
 
 
-def pseudonymize_segments(segments):
+PSEUDONYM_SOCK = os.path.join(os.environ.get("TMPDIR", "/tmp"),
+                              f"operator-pseudonym-{os.getuid()}.sock")
+
+
+def _pseudonym_via_daemon(req: str):
+    """Anfrage an den langlebigen Daemon (Modell schon geladen) — schnell. None = nicht erreichbar."""
+    import socket as _socket
+    if not os.path.exists(PSEUDONYM_SOCK):
+        return None
+    try:
+        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        s.settimeout(90)
+        s.connect(PSEUDONYM_SOCK)
+        s.sendall(req.encode() + b"\n")
+        buf = b""
+        while b"\n" not in buf:
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+        s.close()
+        return buf.split(b"\n", 1)[0].decode() if buf else None
+    except Exception:
+        return None
+
+
+def pseudonymize_segments(segments, conv=""):
     """Nutzerdaten-Segmente (Nachricht/Verlauf/Gedächtnis) pseudonymisieren — NICHT den
     System-Prompt (VERHALTEN/Infrastruktur bleibt echt). Gibt (segments', mapping) zurück.
+    Zuerst der Daemon (Modell schon geladen, schnell; führt pro Konversation `conv` das
+    Mapping fort → gleicher Kontakt behält seinen Platzhalter), sonst Einzel-Subprozess.
     fail-safe: bei Fehler None → Aufrufer bricht ab (maximale Sicherheit)."""
     cfg = _pii_cfg()
     if not cfg["enabled"] or not any(s.strip() for s in segments):
         return segments, {}
-    import os as _os
-    if not _os.path.exists(VENV_PY):
+    if not os.path.exists(VENV_PY):
         return None, None
-    req = json.dumps({"texts": segments, "mapping": {}, "mode": cfg["mode"],
-                      "allow": cfg["allow"], "deny": cfg["deny"]})
+    req = json.dumps({"texts": segments, "mapping": {}, "conversation": conv,
+                      "mode": cfg["mode"], "allow": cfg["allow"], "deny": cfg["deny"]})
     try:
-        r = subprocess.run([VENV_PY, f"{BOT_DIR}/pseudonym.py", "run"],
-                           input=req, capture_output=True, text=True, timeout=60)
-        if r.returncode != 0 or not r.stdout:
-            log(f"Pseudonymisierung fehlgeschlagen (rc={r.returncode}): {r.stderr[-200:]}")
+        raw = _pseudonym_via_daemon(req)
+        if raw is None:   # Daemon nicht da → Subprozess-Fallback (lädt Modell einmalig)
+            r = subprocess.run([VENV_PY, f"{BOT_DIR}/pseudonym.py", "run"],
+                               input=req, capture_output=True, text=True, timeout=60)
+            if r.returncode != 0 or not r.stdout:
+                log(f"Pseudonymisierung fehlgeschlagen (rc={r.returncode}): {r.stderr[-200:]}")
+                return None, None
+            raw = r.stdout
+        out = json.loads(raw)
+        if "error" in out:
+            log(f"Pseudonymisierung-Daemon-Fehler: {out['error'][:200]}")
             return None, None
-        out = json.loads(r.stdout)
         try:   # Transparenz-Zähler fürs Dashboard (nur Zahlen, keine Realwerte)
             with open(f"{BOT_DIR}/pseudonymize-stats.json", "w") as f:
                 json.dump({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -271,7 +306,7 @@ class BotSession(threading.Thread):
         # erst Secrets (stdlib), dann PII pseudonymisieren
         m_in = redact_mod.redact(messages) if redact_mod else messages
         mem_in = redact_mod.redact(memories) if redact_mod else memories
-        segs, mapping = pseudonymize_segments([m_in, mem_in])
+        segs, mapping = pseudonymize_segments([m_in, mem_in], conv=f"{self.bot_name}:{self.room}")
         if segs is None:
             return None, None, None, False, None      # fail-safe: Aufrufer bricht ab
         messages_p, memories_p = segs
