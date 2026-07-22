@@ -94,7 +94,17 @@ def _faker():
     return f
 
 
-def _make_surrogate(fake, entity_type: str) -> str:
+def _guess_gender(text: str, start: int) -> str:
+    """Geschlecht aus der Anrede unmittelbar vor dem Namen ableiten (für passende Fake-Vornamen)."""
+    prefix = text[max(0, start - 14):start].lower()
+    if "fräulein" in prefix or "frau" in prefix:
+        return "female"
+    if "herrn" in prefix or "herr" in prefix:
+        return "male"
+    return ""
+
+
+def _make_surrogate(fake, entity_type: str, gender: str = "") -> str:
     if entity_type == "EMAIL_ADDRESS":
         return fake.ascii_email()
     if entity_type == "PHONE_NUMBER":
@@ -106,7 +116,10 @@ def _make_surrogate(fake, entity_type: str) -> str:
     if entity_type == "IP_ADDRESS":
         return fake.ipv4()
     if entity_type == "PERSON":
-        return fake.first_name() + " " + fake.last_name()   # sauber, 2 Tokens
+        first = (fake.first_name_female() if gender == "female"
+                 else fake.first_name_male() if gender == "male"
+                 else fake.first_name())
+        return first + " " + fake.last_name()   # sauber, 2 Tokens
     if entity_type in ("LOCATION",):
         return fake.city()
     if entity_type in ("ORGANIZATION", "NRP"):
@@ -209,9 +222,10 @@ def pseudonymize(text: str, mapping: dict, mode: str = "standard",
         key = sp.entity_type + "\x1f" + low   # String-Key (JSON-serialisierbar)
         surrogat = mapping["r2s"].get(key)
         if not surrogat:
+            gender = _guess_gender(text, sp.start) if sp.entity_type == "PERSON" else ""
             # eindeutigen Surrogat erzeugen (keine Kollision mit vergebenen/echten)
             for _ in range(20):
-                cand = _make_surrogate(fake, sp.entity_type)
+                cand = _make_surrogate(fake, sp.entity_type, gender)
                 if cand != real and cand not in mapping["s2r"]:
                     surrogat = cand
                     break
