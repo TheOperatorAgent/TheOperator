@@ -242,7 +242,7 @@ def status() -> dict:
     fido_keys = len(_read_vault().get("fido", [])) if exists else 0
     return {"exists": exists, "locked": dek is None,
             "entries": n, "autolock_minutes": _autolock_minutes(),
-            "fido_keys": fido_keys,
+            "fido_keys": fido_keys, "backend": _backend(),
             "updated": _read_vault().get("updated") if exists else None}
 
 
@@ -481,25 +481,23 @@ def _run_allowlist() -> set:
         return DEFAULT_RUN_ALLOWLIST
 
 
-def run(argv: list, timeout: int = 120) -> int:
-    """Führt ein Kommando aus und ersetzt {{tresor:name}}-Referenzen durch env-Variablen.
-    Klartext landet nie in argv (ps!) und wird aus stdout/stderr redacted."""
+def _backend() -> str:
+    """Aktives Tresor-Backend: 'local' (Standard) oder 'vaultwarden' (aus dashboard.json)."""
     try:
-        dek, v = _require_dek()
-    except PermissionError:
-        print(LOCKED_MSG, file=sys.stderr)
-        return 2
-    except RuntimeError as e:
-        print(e, file=sys.stderr)
-        return 2
-    entries = _entries(dek, v)
+        b = json.load(open(os.path.join(BOT_DIR, "dashboard.json"))).get("vault_backend", "local")
+        return "vaultwarden" if b == "vaultwarden" else "local"
+    except Exception:
+        return "local"
+
+
+def _run_with_values(argv: list, values: dict, timeout: int, redact_all: list,
+                     audit_action: str, touch_path: str | None) -> int:
+    """Gemeinsamer Ausführungskern für beide Backends: Allowlist prüfen, aufgelöste Werte
+    als env-Variablen injizieren (nie argv → ps!), Ausgabe redacten, auditieren.
+    ``values`` bildet Referenznamen → Klartext ab; ``redact_all`` = [(wert, name)] zum
+    Schwärzen aller bekannten Werte in der Ausgabe."""
     cmd = shlex.join(argv)
     names = set(REF_RE.findall(cmd))
-    unknown = [n for n in names if n not in entries]
-    if unknown:
-        print(f"Unbekannte Tresor-Einträge: {', '.join(sorted(unknown))} — "
-              f"verfügbare Namen zeigt vault.py list", file=sys.stderr)
-        return 3
     # Härtung (Issue #22, Stufe 1): Tresor-Werte nur in Kommandos einsetzen, die sie
     # tatsächlich VERWENDEN (Netzwerk/DB/Deploy) — nicht in Ausgabe-/Kodier-/Shell-
     # Programmen (echo, cat, base64, sh -c …), die den Wert nur sichtbar machen würden.
@@ -515,7 +513,7 @@ def run(argv: list, timeout: int = 120) -> int:
     env = dict(os.environ)
     for n in names:
         var = "OP_SECRET_" + re.sub(r"[.-]", "_", n).upper()
-        env[var] = entries[n]["value"]
+        env[var] = values[n]
         cmd = re.sub(r"\{\{\s*tresor:" + re.escape(n) + r"\s*\}\}", f'"${var}"', cmd)
     try:
         r = subprocess.run(["/bin/bash", "-c", cmd], env=env, capture_output=True,
@@ -523,17 +521,67 @@ def run(argv: list, timeout: int = 120) -> int:
     except subprocess.TimeoutExpired:
         print(f"Kommando nach {timeout}s abgebrochen", file=sys.stderr)
         return 124
+    sys.stdout.write(_redact_known(r.stdout, redact_all))
+    sys.stderr.write(_redact_known(r.stderr, redact_all))
+    if touch_path:  # Idle-Reset für Auto-Lock
+        try:
+            os.utime(touch_path)
+        except OSError:
+            pass
+    _audit(audit_action, ", ".join(sorted(names)) or "(ohne Referenz)")
+    return r.returncode
+
+
+def run(argv: list, timeout: int = 120) -> int:
+    """Führt ein Kommando aus und ersetzt {{tresor:name}}-Referenzen durch env-Variablen.
+    Klartext landet nie in argv (ps!) und wird aus stdout/stderr redacted.
+    Backend-abhängig: lokaler Tresor (Standard) oder Vaultwarden."""
+    if _backend() == "vaultwarden":
+        return _run_vaultwarden(argv, timeout)
+    try:
+        dek, v = _require_dek()
+    except PermissionError:
+        print(LOCKED_MSG, file=sys.stderr)
+        return 2
+    except RuntimeError as e:
+        print(e, file=sys.stderr)
+        return 2
+    entries = _entries(dek, v)
+    names = set(REF_RE.findall(shlex.join(argv)))
+    unknown = [n for n in names if n not in entries]
+    if unknown:
+        print(f"Unbekannte Tresor-Einträge: {', '.join(sorted(unknown))} — "
+              f"verfügbare Namen zeigt vault.py list", file=sys.stderr)
+        return 3
+    values = {n: entries[n]["value"] for n in names}
     # ALLE Tresor-Werte redacten (nicht nur referenzierte) + generische Muster
     all_values = [(e["value"], k) for k, e in entries.items() if e.get("value")]
-    sys.stdout.write(_redact_known(r.stdout, all_values))
-    sys.stderr.write(_redact_known(r.stderr, all_values))
-    # Idle-Reset für Auto-Lock
-    try:
-        os.utime(_dek_path())
-    except OSError:
-        pass
-    _audit("vault.run", ", ".join(sorted(names)) or "(ohne Referenz)")
-    return r.returncode
+    return _run_with_values(argv, values, timeout, all_values, "vault.run", _dek_path())
+
+
+def _run_vaultwarden(argv: list, timeout: int) -> int:
+    """run()-Variante für das Vaultwarden-Backend: löst Referenzen per bw-CLI auf."""
+    import vaultwarden as vw
+    sess = vw.session()
+    if not sess:
+        print(vw.LOCKED_MSG, file=sys.stderr)
+        return 2
+    names = set(REF_RE.findall(shlex.join(argv)))
+    values, unknown = {}, []
+    for n in names:
+        val = vw.get_password(n, sess)
+        if val is None:
+            unknown.append(n)
+        else:
+            values[n] = val
+    if unknown:
+        print(f"Unbekannte Tresor-Einträge: {', '.join(sorted(unknown))} — "
+              f"verfügbare Namen zeigt das Dashboard (Vaultwarden-Tresor)", file=sys.stderr)
+        return 3
+    # Bei Vaultwarden nur die referenzierten Werte bekannt → nur diese schwärzen
+    redact_all = [(v, k) for k, v in values.items()]
+    return _run_with_values(argv, values, timeout, redact_all,
+                            "vault.run.vaultwarden", vw._session_path())
 
 
 def _redact_known(text: str, values: list) -> str:
