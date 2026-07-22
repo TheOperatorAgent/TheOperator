@@ -441,3 +441,60 @@ def test_fido_remove_and_backward_compat(tmp_path, monkeypatch):
     # Entsperren per Master-PW weiter möglich
     vault.lock(); vault.unlock("master-passwort-test")
     assert not vault.status()["locked"]
+
+
+# ---------------------------------------------------------------- Pseudonymisierung --
+def test_pseudonym_roundtrip_and_detection():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import pseudonym
+    m = {}
+    src = "Schreib an Thomas Müller (thomas@kanzlei.de) und ruf Frau Wagner an."
+    p, m, st = pseudonym.pseudonymize(src, m)
+    assert "Thomas Müller" not in p and "thomas@kanzlei.de" not in p and "Wagner" not in p
+    assert "Schreib" in p and "ruf" in p and "Frau" in p
+    assert pseudonym.reidentify(p, m) == src
+    assert st.get("PERSON", 0) >= 2 and st.get("EMAIL_ADDRESS", 0) == 1
+
+
+def test_pseudonym_consistency_and_allow():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import pseudonym
+    m = {}
+    p, m, _ = pseudonym.pseudonymize(
+        "Anna Klein und Anna Klein sind dieselbe. Michi bleibt.", m, allow=["Michi"])
+    fake = [k for k, v in m["s2r"].items() if v == "Anna Klein"][0]
+    assert p.count(fake) == 2 and "Anna Klein" not in p
+    assert "Michi" in p
+
+
+def test_pseudonym_deny_list():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import pseudonym
+    m = {}
+    p, m, _ = pseudonym.pseudonymize("Ruf bei Firma Delphin GmbH an.", m,
+                                     deny=["Firma Delphin GmbH"])
+    assert "Firma Delphin GmbH" not in p
+
+
+def test_reid_stdlib_and_env(tmp_path, monkeypatch):
+    import json as _j
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import reid
+    monkeypatch.delenv("OPERATOR_PII_MAP", raising=False)
+    assert reid.reidentify("Hallo Fake Name") == "Hallo Fake Name"
+    mp = tmp_path / "m.json"
+    mp.write_text(_j.dumps({"s2r": {"Fake Name": "Echt Person", "x@fake.de": "y@real.de"}}))
+    monkeypatch.setenv("OPERATOR_PII_MAP", str(mp))
+    assert reid.reidentify("Mail an Fake Name (x@fake.de)") == "Mail an Echt Person (y@real.de)"
+
+
+def test_reid_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/reid.py")).read()
+    imports = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert not (imports & {"fastapi", "presidio_analyzer", "spacy", "faker", "cryptography"})
