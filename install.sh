@@ -510,6 +510,10 @@ phase4_matrix() {
   local WHO; WHO=$(mx GET "$HS/_matrix/client/v3/account/whoami" "" "$TOKEN" | jget "['user_id']")
   [ -n "$WHO" ] || die "Anmeldung unerwartet ungültig (whoami leer) — bitte erneut ausführen."
   ok "Angemeldet als $WHO — Zugang geprüft"
+  # Branding: Der Bot heißt für den Nutzer IMMER „Operator" — egal wie der Account heißt.
+  local ENCW; ENCW=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$WHO")
+  mx PUT "$HS/_matrix/client/v3/profile/$ENCW/displayname" '{"displayname":"Operator"}' "$TOKEN" >/dev/null \
+    && ok "Anzeigename auf »Operator« gesetzt" || warn "Anzeigename konnte nicht gesetzt werden"
 
   # Bestehenden gemeinsamen Raum suchen (exakter Mitglieds-Abgleich, kein Substring)
   ROOM=""
@@ -523,9 +527,18 @@ phase4_matrix() {
   done
   if [ -n "$ROOM" ]; then
     ok "Bestehender gemeinsamer Raum gefunden: $ROOM"
+    # Branding nachziehen: hieß der Raum noch „Claude" (Altbestand) oder gar nichts,
+    # wird er auf „Operator" umbenannt. Einen eigenen Wunschnamen des Nutzers lassen wir stehen.
+    local ENCR CURNAME
+    ENCR=$(python3 -c "import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))" "$ROOM")
+    CURNAME=$(mx GET "$HS/_matrix/client/v3/rooms/$ENCR/state/m.room.name" "" "$TOKEN" | jget "['name']")
+    if [ -z "$CURNAME" ] || [ "$CURNAME" = "Claude" ]; then
+      mx PUT "$HS/_matrix/client/v3/rooms/$ENCR/state/m.room.name" '{"name":"Operator"}' "$TOKEN" >/dev/null \
+        && ok "Raum heißt jetzt »Operator«" || true
+    fi
   else
     ROOM=$(mx POST "$HS/_matrix/client/v3/createRoom" \
-      "{\"is_direct\":true,\"invite\":[\"$HUMAN\"],\"preset\":\"trusted_private_chat\",\"name\":\"Claude\"}" "$TOKEN" | jget "['room_id']")
+      "{\"is_direct\":true,\"invite\":[\"$HUMAN\"],\"preset\":\"trusted_private_chat\",\"name\":\"Operator\"}" "$TOKEN" | jget "['room_id']")
     [ -n "$ROOM" ] || die "Raum konnte nicht erstellt werden — Log/Verbindung prüfen und Skript erneut starten (deine Antworten bleiben gespeichert)."
     # Einladung wirklich zugestellt? (fängt kaputte Föderation/falsche ID ab)
     local ENCR ENCH MEMB tmp code
