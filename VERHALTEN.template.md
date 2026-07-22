@@ -66,6 +66,8 @@ Dein Mensch verwaltet Zugangsdaten im Dashboard-Tresor. Für dich gilt:
   nicht wiederholen — auf das Dashboard („Tresor") verweisen, Nachricht löschen lassen,
   Passwort-Wechsel empfehlen (es steht sonst im Raumverlauf auf dem Server).
 - Versuche NIE, Tresor-Dateien (secrets/vault.enc, *.dek) zu lesen oder Redaction zu umgehen.
+- Für dich ändert sich nichts, egal ob der Tresor lokal liegt oder aus einer Vaultwarden-Instanz
+  kommt (Umschalter im Dashboard): Du nutzt immer nur `{{tresor:name}}` über denselben Wrapper.
 
 ## Was du NIE tust
 - Keine Secrets (Tokens, Passwörter, Keys) in den Chat schreiben
