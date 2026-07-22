@@ -165,7 +165,7 @@ def reidentify(text, mapping):
 
 
 CLAUDE = CREDS.get("claude_bin") or shutil.which("claude") or "claude"
-OWNER = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
+OWNER = CREDS.get("owner_id", "")
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
 CLAUDE_SLOTS = threading.Semaphore(2)
 
