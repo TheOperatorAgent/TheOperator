@@ -230,8 +230,124 @@ async function skillProposal(id, action) {
 
 /* ---------- Tresor ---------- */
 async function loadVault() {
-  const s = await api("GET", "/api/vault/status");
   const c = $("#vault-content");
+  let bk;
+  try { bk = await api("GET", "/api/vault/backend"); } catch (e) { bk = { backend: "local" }; }
+  const backend = bk.backend || "local";
+  c.innerHTML = `
+    <div class="card">
+      <h2>Wo liegen die Passwörter?</h2>
+      <p class="hint">Standard: <strong>lokal auf deinem Mac</strong> — empfohlen, keine weitere
+      Software nötig. Alternativ nutzt du deine eigene <strong>Vaultwarden-Instanz</strong> als
+      Quelle. Für deinen Operator ändert sich nichts: Er benutzt in beiden Fällen nur Platzhalter
+      wie <span class="mono">{{tresor:name}}</span> und sieht das Passwort nie.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        <button class="${backend === "local" ? "primary" : "ghost"}" onclick="setVaultBackend('local')">🖥️ Lokal (Standard)</button>
+        <button class="${backend === "vaultwarden" ? "primary" : "ghost"}" onclick="setVaultBackend('vaultwarden')">🗄️ Vaultwarden</button>
+      </div>
+    </div>
+    <div id="vault-mode"></div>`;
+  if (backend === "vaultwarden") return renderVaultwarden(bk.vaultwarden || {});
+  return renderLocalVault();
+}
+
+async function setVaultBackend(backend) {
+  try { await api("PUT", "/api/vault/backend", { backend }); } catch (e) { return toast(e.message, 1); }
+  loadVault(); loadStatus().catch(() => {});
+}
+
+async function renderVaultwarden(vw) {
+  const c = $("#vault-mode");
+  if (!vw.bw_installed) {
+    c.innerHTML = `<div class="card warn">
+      <h2>Vaultwarden braucht die <span class="mono">bw</span>-App</h2>
+      <p class="hint">Damit dein Operator Passwörter aus Vaultwarden holen kann, muss einmalig die
+      offizielle Bitwarden-Kommandozeile installiert werden. Im Terminal:</p>
+      <pre class="mono" style="user-select:all">brew install bitwarden-cli</pre>
+      <p class="small">Danach diese Seite neu laden. (Alternativ <span class="mono">npm install -g @bitwarden/cli</span>.)</p>
+    </div>`;
+    return;
+  }
+  if (!vw.configured || !vw.url) {
+    c.innerHTML = `<div class="card">
+      <h2>Mit deiner Vaultwarden-Instanz verbinden</h2>
+      <p class="hint">Trag die Adresse deiner Vaultwarden-Instanz ein (die, unter der du dich im
+      Browser anmeldest).</p>
+      <label>Server-Adresse</label>
+      <input type="text" id="vw-url" placeholder="https://vault.deine-domain.de" value="${esc(vw.url || "")}">
+      <button class="primary" onclick="vwSaveServer()">Server speichern</button>
+    </div>`;
+    return;
+  }
+  if (!vw.unlocked) {
+    c.innerHTML = `<div class="card">
+      <h2>🔒 Vaultwarden entsperren</h2>
+      <p class="hint">Verbunden mit <span class="mono">${esc(vw.url)}</span>. Zum Öffnen dein
+      Vaultwarden-Master-Passwort eingeben (nach jedem Mac-Neustart einmal). Beim allerersten Mal
+      auch deine E-Mail — danach genügt das Passwort.</p>
+      <label>E-Mail (nur beim ersten Anmelden nötig)</label>
+      <input type="text" id="vw-email" autocomplete="username" placeholder="du@deine-domain.de">
+      <label>Vaultwarden Master-Passwort</label>
+      <input type="password" id="vw-pw" autocomplete="current-password"
+        onkeydown="if(event.key==='Enter')vwUnlock()">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px">
+        <button class="primary" onclick="vwUnlock()">Entsperren</button>
+        <button class="ghost" onclick="vwDisconnect()">Verbindung trennen</button>
+      </div>
+      <div id="vw-status" class="small" style="margin-top:8px"></div>
+    </div>`;
+    return;
+  }
+  let items = { items: [] };
+  try { items = await api("GET", "/api/vault/vaultwarden/items"); } catch (e) { /* gesperrt/Fehler */ }
+  c.innerHTML = `<div class="card">
+    <div class="row-between"><h2>🔓 Vaultwarden entsperrt${vw.items != null ? ` · ${vw.items} ${vw.items === 1 ? "Eintrag" : "Einträge"}` : ""}</h2>
+      <div style="display:flex;gap:8px">
+        <button class="ghost" onclick="vwLock()">Jetzt sperren</button>
+        <button class="ghost" onclick="vwDisconnect()">Trennen</button>
+      </div></div>
+    <p class="hint">Diese Einträge kommen aus deiner Vaultwarden-Instanz und werden <strong>dort</strong>
+    gepflegt (hier nur zur Ansicht, ohne Passwörter). Im Chat nutzt du sie über den Namen:
+    <span class="mono">{{tresor:Name}}</span>.</p>
+    ${(items.items || []).map((e) => `
+      <div class="agent-row">
+        <div><strong>${esc(e.name)}</strong>
+          <span class="pill mono">{{tresor:${esc(e.name)}}}</span>
+          ${e.username ? `<span class="pill">${esc(e.username)}</span>` : ""}
+          ${e.url ? `<div class="meta">${esc(e.url)}</div>` : ""}</div>
+      </div>`).join("") || "<p class='hint'>Keine Login-Einträge gefunden.</p>"}
+  </div>`;
+}
+
+async function vwSaveServer() {
+  try { await api("PUT", "/api/vault/vaultwarden/config", { url: $("#vw-url").value.trim() }); }
+  catch (e) { return toast(e.message, 1); }
+  toast("Server gespeichert"); loadVault();
+}
+
+async function vwUnlock() {
+  const st = $("#vw-status"); if (st) st.textContent = "Melde bei Vaultwarden an…";
+  try {
+    await api("POST", "/api/vault/vaultwarden/unlock",
+      { master_pw: $("#vw-pw").value, email: ($("#vw-email").value || "").trim() });
+  } catch (e) { if (st) st.textContent = ""; return toast(e.message, 1); }
+  toast("Vaultwarden entsperrt"); loadVault(); loadStatus().catch(() => {});
+}
+
+async function vwLock() {
+  try { await api("POST", "/api/vault/vaultwarden/lock"); } catch (e) { return toast(e.message, 1); }
+  toast("Vaultwarden gesperrt"); loadVault(); loadStatus().catch(() => {});
+}
+
+async function vwDisconnect() {
+  if (!confirm("Vaultwarden-Verbindung trennen? Der Operator nutzt dann wieder den lokalen Tresor, sobald du oben umschaltest.")) return;
+  try { await api("DELETE", "/api/vault/vaultwarden"); } catch (e) { return toast(e.message, 1); }
+  toast("Getrennt"); loadVault();
+}
+
+async function renderLocalVault() {
+  const s = await api("GET", "/api/vault/status");
+  const c = $("#vault-mode");
   if (!s.exists) {
     c.innerHTML = `<div class="card">
       <h2>Tresor anlegen — dauert 1 Minute</h2>
