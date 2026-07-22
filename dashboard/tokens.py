@@ -1,24 +1,24 @@
 """Operator Dashboard — Token-Tresor.
 
-Master-Key liegt im macOS-Keychain (Service 'the-operator', Account 'token-key').
-Nutzdaten (OAuth-Tokens, Secrets) werden AES-256-GCM-verschlüsselt als *.enc in
-~/.claude/matrix-bot/secrets/ abgelegt (0600).
+Master-Key liegt im OS-Secret-Store (macOS Keychain / Windows DPAPI / Linux Secret-Service,
+Service 'the-operator', Account 'token-key'). Nutzdaten (OAuth-Tokens, Secrets) werden
+AES-256-GCM-verschlüsselt als *.enc in ~/.claude/matrix-bot/secrets/ abgelegt (0600).
 """
 import json
 import os
-import subprocess
+import sys
+
+sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+import secretstore  # noqa: E402  (stdlib-Modul aus BOT_DIR)
 
 SECRETS_DIR = os.path.expanduser("~/.claude/matrix-bot/secrets")
 
 
 def _master_key() -> bytes:
-    r = subprocess.run(
-        ["security", "find-generic-password", "-s", "the-operator", "-a", "token-key", "-w"],
-        capture_output=True, text=True,
-    )
-    if r.returncode != 0:
-        raise RuntimeError("Master-Key nicht im Keychain — install.sh erneut ausführen")
-    return bytes.fromhex(r.stdout.strip())
+    v = secretstore.get("token-key")
+    if not v:
+        raise RuntimeError("Master-Key nicht im Secret-Store — Installer erneut ausführen")
+    return bytes.fromhex(v)
 
 
 def save(name: str, data: dict | str) -> None:
