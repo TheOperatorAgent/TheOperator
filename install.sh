@@ -327,6 +327,17 @@ phase1_check() {
   fi
 }
 
+# ~/.local/bin dauerhaft in den PATH der Nutzer-Shell (dort liegen claude UND operator).
+# Idempotent; wichtig für frische Konten — sonst findet ein neues Terminal beides nicht.
+persist_local_bin_path() {
+  local rc
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    if ! grep -qs '\.local/bin' "$rc" 2>/dev/null; then
+      printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
+    fi
+  done
+}
+
 phase2_claude() {
   bold "Phase 2/7 — Claude CLI"
   CLAUDE_READY=1
@@ -339,26 +350,28 @@ phase2_claude() {
     command -v claude >/dev/null || die "claude nicht im PATH — Terminal neu öffnen und Skript erneut ausführen"
   fi
   CLAUDE_BIN=$(command -v claude)
+  persist_local_bin_path   # ab jetzt findet auch ein NEUES Terminal-Fenster den Befehl claude
   ok "Claude CLI: $CLAUDE_BIN ($(claude --version </dev/null 2>/dev/null | head -1))"
-  # Probe IMMER mit stdin=/dev/null — claude darf nie in den interaktiven Modus kippen
+  # Probe IMMER mit stdin=/dev/null — claude darf nie in den interaktiven Modus kippen.
+  # Die Anmeldung läuft bewusst NICHT hier im Installer (verschachtelte Terminal-UI hängt,
+  # live gesehen), sondern in einem eigenen Fenster — wir warten und machen automatisch weiter.
   if ! claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; then
-    echo ""; bold "  Anmeldung bei Claude"
-    echo "  Gleich öffnet sich dein Browser. Melde dich mit deinem Claude-Konto an."
-    echo "  Danach im Claude-Fenster /exit eingeben (oder Strg+C) — hier geht es automatisch weiter."
-    local _ENTER ATTEMPT=0
-    ask _ENTER "Weiter mit Enter" ""
-    until claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; do
-      ATTEMPT=$((ATTEMPT+1))
-      if [ $ATTEMPT -gt 3 ]; then
-        # WEICH statt Abbruch: Bot wird fertig installiert, Anmeldung kann nachgeholt werden
-        CLAUDE_READY=0
-        warn "Claude-Anmeldung noch nicht bestätigt — die Installation läuft trotzdem weiter."
-        warn "Nachholen: im Terminal 'claude /login' ausführen, dann antwortet dein Operator."
+    echo ""; bold "  Anmeldung bei Claude — bitte in einem NEUEN Terminal-Fenster"
+    echo "  1. Neues Terminal-Fenster öffnen (Cmd+N bzw. Strg+Shift+N)"
+    echo "  2. Dort eingeben:  claude"
+    echo "     → beim ersten Start: Farbschema mit Enter bestätigen, dann anmelden (Browser)"
+    echo "  3. Danach dort /exit eingeben — HIER geht es automatisch weiter, sobald die"
+    echo "     Anmeldung erkannt wird. (Enter hier = ohne Anmeldung fortfahren)"
+    local i _skip
+    CLAUDE_READY=0
+    for i in $(seq 1 120); do    # wartet bis zu ~10 Minuten
+      if claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; then
+        CLAUDE_READY=1; break
+      fi
+      if IFS= read -t 5 -r _skip < /dev/tty; then
+        warn "Okay — Installation läuft ohne Claude-Anmeldung weiter. Nachholen: claude /login"
         break
       fi
-      # Nur stdin ans Terminal binden — zusätzliche stdout/stderr-Umleitungen auf
-      # /dev/tty lassen den Bun-basierten CLI crashen (kqueue/EINVAL, live gesehen)
-      claude /login < /dev/tty || true
     done
   fi
   [ "$CLAUDE_READY" = 1 ] && ok "Claude CLI angemeldet und antwortet"
@@ -737,14 +750,7 @@ case "\${1:-dashboard}" in
 esac
 LAUNCH
   chmod +x "$HOME/.local/bin/operator"
-  # ~/.local/bin DAUERHAFT in den PATH der Nutzer-Shell (frische Konten haben das nicht;
-  # dort liegen »operator« UND der Claude CLI). Idempotent für zsh + bash.
-  local rc
-  for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
-    if ! grep -qs '\.local/bin' "$rc" 2>/dev/null; then
-      printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
-    fi
-  done
+  persist_local_bin_path
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) ok "Kurzbefehl »operator« eingerichtet";;
     *) ok "Kurzbefehl »operator« eingerichtet (neues Terminal-Fenster öffnen, dann »operator« tippen)";;
