@@ -28,6 +28,10 @@ try:
     import providers              # noqa: E402  (stdlib; Multi-LLM-Registry)
 except Exception:
     providers = None
+try:
+    import verify_loop            # noqa: E402  (stdlib; A1 Verifikations-Schleife #46)
+except Exception:
+    verify_loop = None
 
 
 def keychain_token(account, fallback):
@@ -234,6 +238,24 @@ Erledige/beantworte das jetzt. Sende deine Antwort am Ende zwingend per Bash:
 (mehrzeilig: Text per stdin an send.py --bot {name}). Keine Secrets in den Chat — \
 Zugangsdaten existieren nur als Referenz {{{{tresor:name}}}} über den Tresor-Wrapper."""
 
+# Variante für verifizierte Agenten (#46): der Worker SENDET NICHT selbst, sondern gibt
+# seine finale Antwort als Text zurück — der Listener prüft sie und liefert sie dann aus.
+AGENT_PROMPT_VERIFY = """Du bist der Agent „{name}" und läufst als eigenständiger Matrix-Bot. \
+Dein Auftraggeber ist {owner}. Dein Verhalten:
+
+{body}
+
+---
+{history}
+{owner_short} hat dir soeben geschrieben:
+
+{messages}
+
+Erledige/beantworte das jetzt. WICHTIG: Sende NICHTS selbst (kein send.py) — gib deine \
+FINALE Antwort einfach als letzten Text aus. Sie wird von einem zweiten Modell geprüft und \
+danach in den Chat gestellt. Keine Meta-Kommentare über dich, nur die eigentliche Antwort. \
+Keine Secrets im Klartext — Zugangsdaten nur als Referenz {{{{tresor:name}}}}."""
+
 
 def log(msg):
     print(f"[{time.strftime('%F %T')}] {msg}", flush=True)
@@ -254,7 +276,8 @@ def parse_agent_md(name):
             k, v = line.split(":", 1)
             fm[k.strip()] = v.strip()
     tools = [t.strip() for t in fm.get("tools", "").split(",") if t.strip()]
-    return {"tools": tools, "model": fm.get("model"), "body": m.group(2).strip()}
+    return {"tools": tools, "model": fm.get("model"), "body": m.group(2).strip(),
+            "verify": fm.get("verify"), "verify_with": fm.get("verify_with")}
 
 
 class BotSession(threading.Thread):
@@ -349,7 +372,7 @@ class BotSession(threading.Thread):
         mem_in = redact_mod.redact(memories) if redact_mod else memories
         segs, mapping = pseudonymize_segments([m_in, mem_in], conv=f"{self.bot_name}:{self.room}")
         if segs is None:
-            return None, None, None, False, None      # fail-safe: Aufrufer bricht ab
+            return None, None, None, False, None, None, None   # fail-safe: Aufrufer bricht ab
         messages_p, memories_p = segs
         history = self.history_block()                # bereits pseudonymisiert in der DB
         if self.kind == "owner":
@@ -359,9 +382,12 @@ class BotSession(threading.Thread):
                 verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende per python3 ~/.claude/matrix-bot/send.py)"
             prompt = OWNER_PROMPT.format(verhalten=verhalten, messages=messages_p,
                                          history=history, memories=memories_p)
-            return prompt, OWNER_TOOLS, None, mapping, messages_p, None
+            return prompt, OWNER_TOOLS, None, mapping, messages_p, None, None
         agent = parse_agent_md(self.bot_name) or {"tools": [], "model": None,
                                                   "body": "(Agenten-Datei fehlt)"}
+        # A1 (#46): Verifikations-Schleife per Frontmatter (verify / verify_with)?
+        v_on, v_model = verify_loop.verify_config(agent) if verify_loop else (False, None)
+        verify = (v_on, v_model) if v_on else None
         # Fremd-Modell (Ollama/OpenAI/Azure)? → text-orientierter Prompt OHNE Werkzeuge.
         plan = providers.resolve(agent.get("model")) if providers else {"kind": "claude"}
         if plan.get("kind") == "foreign":
@@ -370,21 +396,28 @@ class BotSession(threading.Thread):
                       "Matrix-Chat gesendet. Keine Erklärungen über dich selbst.")
             user = ((history + "\n") if history else "") \
                 + f"{OWNER.split(':')[0]} schreibt dir:\n{messages_p}"
-            return user, [], agent.get("model"), mapping, messages_p, system
+            return user, [], agent.get("model"), mapping, messages_p, system, verify
         # Claude-Agent (voller Werkzeugkasten)
         tools = [t for t in agent["tools"] if t in OWNER_TOOLS or t == "Read"]
+        model = agent["model"]   # roh; providers.resolve() in execute() macht Claude-Aliase/-IDs/None
+        if verify:
+            # Verifizierter Worker gibt Text zurück (sendet NICHT selbst) → Listener liefert aus.
+            prompt = AGENT_PROMPT_VERIFY.format(name=self.bot_name, owner=OWNER,
+                                                owner_short=OWNER.split(":")[0],
+                                                body=agent["body"], messages=messages_p,
+                                                history=history)
+            return prompt, tools, model, mapping, messages_p, None, verify
         if "Bash" not in tools:
             tools.append("Bash")  # noetig fuer send.py; Agent-Frontmatter bleibt die inhaltliche Leitplanke
-        model = agent["model"]   # roh; providers.resolve() in execute() macht Claude-Aliase/-IDs/None
         prompt = AGENT_PROMPT.format(name=self.bot_name, owner=OWNER,
                                      owner_short=OWNER.split(":")[0],
                                      body=agent["body"], messages=messages_p,
                                      history=history, bot_dir=BOT_DIR, py=sys.executable)
-        return prompt, tools, model, mapping, messages_p, None
+        return prompt, tools, model, mapping, messages_p, None, None
 
     # ---------- Claude ----------
     def answer(self, bodies, last_event_id):
-        prompt, tools, model, mapping, msg_rec, system = self.build(bodies)
+        prompt, tools, model, mapping, msg_rec, system, verify = self.build(bodies)
         self.mark_read(last_event_id)
         if mapping is False:
             self.send_message("⚠️ Der Pseudonymisierungs-Dienst ist gerade nicht verfügbar. "
@@ -393,18 +426,21 @@ class BotSession(threading.Thread):
                               f"{dashboard_link()} — Einmal-Link, 10 Min gültig, funktioniert "
                               "auf dem Rechner, auf dem dein Operator läuft.")
             return
-        self.execute(prompt, tools, model, msg_rec, kind="chat", mapping=mapping, system=system)
+        self.execute(prompt, tools, model, msg_rec, kind="chat", mapping=mapping,
+                     system=system, verify=verify)
 
     def run_automation(self, job):
         framing = f"[Automation „{job['name']}“ wurde planmäßig ausgelöst] {job['prompt']}"
-        prompt, tools, model, mapping, msg_rec, system = self.build([framing])
+        prompt, tools, model, mapping, msg_rec, system, verify = self.build([framing])
         if mapping is False:
             log(f"[{self.bot_name}] Automation '{job['name']}' abgebrochen (Pseudonymisierung aus)")
             return
         log(f"[{self.bot_name}] Automation '{job['name']}' startet")
-        self.execute(prompt, tools, model, msg_rec, kind="cron", mapping=mapping, system=system)
+        self.execute(prompt, tools, model, msg_rec, kind="cron", mapping=mapping,
+                     system=system, verify=verify)
 
-    def execute(self, prompt, tools, model, messages_label, kind, mapping=None, system=None):
+    def execute(self, prompt, tools, model, messages_label, kind, mapping=None, system=None,
+                verify=None):
         plan = providers.resolve(model) if (providers and model) else {"kind": "claude", "model": None}
         log(f"[{self.bot_name}] Modell erwacht ({kind}) [{plan.get('kind')}:{model or 'inherit'}]")
         done = threading.Event()
@@ -419,7 +455,7 @@ class BotSession(threading.Thread):
         map_path = None
         try:
             if plan.get("kind") == "foreign":
-                self._run_foreign(plan, prompt, system, messages_label, kind, mapping)
+                self._run_foreign(plan, prompt, system, messages_label, kind, mapping, verify)
                 return
             # ---------- Claude (voller Werkzeugkasten) ----------
             cmd = [CLAUDE, "-p", prompt, "--output-format", "json", "--allowedTools", *tools]
@@ -498,6 +534,9 @@ class BotSession(threading.Thread):
                     self.send_message(
                         "⚠️ Beim Bearbeiten ist ein Fehler aufgetreten (Details im "
                         "listener.log am Mac). Probier's gleich nochmal.")
+            elif verify and verify_loop:
+                # A1 (#46): der Worker hat NICHT selbst gesendet — Antwort prüfen und ausliefern.
+                self._verify_and_send(verify, messages_label, result, mapping, used_fallback)
             elif used_fallback:
                 self.send_message("ℹ️ (Lief über deinen Claude-API-Key, weil das Abo gerade am Limit war.)")
         except subprocess.TimeoutExpired:
@@ -520,7 +559,7 @@ class BotSession(threading.Thread):
                 except OSError:
                     pass
 
-    def _run_foreign(self, plan, prompt, system, messages_label, kind, mapping):
+    def _run_foreign(self, plan, prompt, system, messages_label, kind, mapping, verify=None):
         """Fremd-Modell (Ollama/OpenAI/Azure) über llm_runner (venv): Text holen,
         Surrogate zurückübersetzen, in den Chat senden. Keine lokalen Werkzeuge."""
         label = f"{plan['provider']}/{plan['model_id']}"
@@ -540,7 +579,12 @@ class BotSession(threading.Thread):
         except ValueError:
             out = {"error": (r.stderr or r.stdout or "unbekannter Fehler")[-200:]}
         if "text" in out:
-            text = redact_text(reidentify(out["text"], mapping))   # Surrogate→echt, dann Secrets maskieren
+            raw, foot = out["text"], ""     # raw bleibt vorerst im Surrogat-Raum
+            if verify and verify_loop:       # A1 (#46): zweites Modell prüft, bevor gesendet wird
+                v_model = verify[1]
+                raw, revised = self._verify_text(v_model, redact_text(messages_label), redact_text(raw))
+                foot = verify_loop.footer(v_model, revised)
+            text = redact_text(reidentify(raw, mapping)) + foot   # Surrogate→echt, dann Secrets maskieren
             self.send_message(text)
             log(f"[{self.bot_name}] {label} fertig ({dur}ms): {text[:120]}")
             rc, rec = 0, text[:4000]
@@ -555,6 +599,51 @@ class BotSession(threading.Thread):
                                    dur, 0, 0, kind, label)
             except Exception:
                 pass
+
+    # ---------- A1 (#46) Verifikations-Schleife ----------
+    def _call_model_text(self, plan, system, user):
+        """Ruft ein Modell (Claude ODER Fremd) mit system+user auf und gibt reinen Text
+        zurück — OHNE Werkzeuge, OHNE Re-ID (läuft im Surrogat-Raum). fail-open: None bei
+        jedem Fehler, damit die Prüfung die Antwort nie verschluckt."""
+        try:
+            if plan.get("kind") == "foreign":
+                req = json.dumps({"provider": plan["provider"], "base_url": plan["base_url"],
+                                  "key": plan.get("key", ""), "model_id": plan["model_id"],
+                                  "prompt": user, "system": system, "max_tokens": 1024})
+                r = subprocess.run([VENV_PY, f"{BOT_DIR}/llm_runner.py"], input=req,
+                                   capture_output=True, text=True, timeout=180,
+                                   env=dict(os.environ))
+                return json.loads(r.stdout).get("text")
+            # Claude als Prüfer: headless, keine Werkzeuge
+            cmd = [CLAUDE, "-p", f"{system}\n\n{user}", "--output-format", "json"]
+            if plan.get("model"):
+                cmd += ["--model", plan["model"]]
+            with CLAUDE_SLOTS:
+                r = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
+                                   cwd=WORKSPACE, env=dict(os.environ))
+            return str(json.loads(r.stdout).get("result", "")) or None
+        except Exception as e:
+            log(f"[{self.bot_name}] Verifier-Aufruf fehlgeschlagen (fail-open): {e}")
+            return None
+
+    def _verify_text(self, v_model, question, answer):
+        """Prüferlauf im Surrogat-Raum. Rückgabe: (final_text, revised: bool)."""
+        v_plan = providers.resolve(v_model) if (providers and v_model) else {"kind": "claude", "model": None}
+        system, user = verify_loop.verifier_prompts(question, answer)
+        vout = self._call_model_text(v_plan, system, user)
+        final, revised = verify_loop.interpret(vout, answer)
+        log(f"[{self.bot_name}] verifiziert von {v_model or 'claude'} "
+            f"({'überarbeitet' if revised else 'ok'})")
+        return final, revised
+
+    def _verify_and_send(self, verify, question, answer, mapping, used_fallback):
+        """Claude-Worker-Pfad: Antwort prüfen, re-identifizieren, senden (+ Fußzeile)."""
+        v_model = verify[1]
+        final, revised = self._verify_text(v_model, question, answer)   # question/answer: Surrogat
+        text = redact_text(reidentify(final, mapping)) + verify_loop.footer(v_model, revised)
+        if used_fallback:
+            text += "\n(lief über deinen Claude-API-Key)"
+        self.send_message(text)
 
     # ---------- Loop ----------
     def run(self):
