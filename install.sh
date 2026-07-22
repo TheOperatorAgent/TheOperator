@@ -654,11 +654,16 @@ phase8_dashboard() {
   mkdir -p "$DASH_DIR/static" "$BOT_DIR/connections" "$BOT_DIR/secrets"
   chmod 700 "$BOT_DIR/secrets"
   local VENV_PY="$DASH_DIR/venv/bin/python3" DASH_OK=1 F
-  # Selbstheilung: eine halb-angelegte venv (z. B. Abbruch weil python3-venv fehlte —
-  # dann existiert bin/python3, aber KEIN pip) wird erkannt und komplett neu gebaut.
-  if [ -d "$DASH_DIR/venv" ] && [ ! -x "$DASH_DIR/venv/bin/pip" ]; then
-    warn "Unvollständige Python-Umgebung vom letzten Versuch gefunden — baue sie neu."
-    rm -rf "$DASH_DIR/venv"
+  # Selbstheilung: eine venv vom letzten Versuch wird neu gebaut, wenn sie unvollständig
+  # ist (kein pip) ODER mit einem zu alten Python (<3.10) erstellt wurde — sonst schlagen
+  # die Paket-Installationen (mcp/fastapi brauchen 3.10+) jedes Mal wieder fehl.
+  if [ -d "$DASH_DIR/venv" ]; then
+    local vver
+    vver=$("$DASH_DIR/venv/bin/python3" -c 'import sys;print(sys.version_info[0]*100+sys.version_info[1])' 2>/dev/null || echo 0)
+    if [ ! -x "$DASH_DIR/venv/bin/pip" ] || [ "${vver:-0}" -lt 310 ]; then
+      warn "Python-Umgebung vom letzten Versuch ist unvollständig oder zu alt — baue sie neu."
+      rm -rf "$DASH_DIR/venv"
+    fi
   fi
   if [ ! -x "$VENV_PY" ]; then
     if ! "${PY_VENV:-python3}" -m venv "$DASH_DIR/venv" 2>/dev/null; then
