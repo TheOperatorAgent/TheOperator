@@ -93,6 +93,18 @@ def _pii_cfg():
             "allow": c.get("allow", []), "deny": c.get("deny", [])}
 
 
+def owner_verify_cfg():
+    """Owner-Verify (#46) aus dashboard.json — frisch pro Nachricht, damit der
+    Dashboard-Umschalter sofort wirkt. Default AUS. Rückgabe: (enabled, model|None)."""
+    try:
+        c = json.load(open(f"{BOT_DIR}/dashboard.json")).get("owner_verify", {})
+    except Exception:
+        return False, None
+    if not isinstance(c, dict):
+        return False, None
+    return bool(c.get("enabled")), (c.get("model") or None)
+
+
 def _pseudonym_via_daemon(req: str):
     """Anfrage an den langlebigen Daemon (Modell schon geladen) — schnell. None = nicht erreichbar.
     IPC plattformübergreifend: POSIX AF_UNIX, Windows TCP-Loopback + Token (via platform_compat)."""
@@ -206,12 +218,7 @@ def reidentify(text, mapping):
 CLAUDE = CREDS.get("claude_bin") or shutil.which("claude") or "claude"
 OWNER = CREDS.get("owner_id", "")
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
-# Owner-Verify (#46, opt-in): jede Owner-Antwort wird von einem zweiten Modell geprüft.
-# Standard AUS (kostet Latenz/Token je Nachricht). owner_verify_with wählt den Prüfer (sonst Claude).
-OWNER_VERIFY, OWNER_VERIFY_WITH = (
-    verify_loop.verify_config({"verify": CREDS.get("owner_verify"),
-                               "verify_with": CREDS.get("owner_verify_with")})
-    if verify_loop else (False, None))
+# Owner-Verify (#46): opt-in, live umschaltbar über dashboard.json (owner_verify_cfg() liest frisch).
 CLAUDE_SLOTS = threading.Semaphore(2)
 
 OWNER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest stehen hier \
@@ -406,11 +413,12 @@ class BotSession(threading.Thread):
                 verhalten = open(f"{BOT_DIR}/VERHALTEN.md").read()
             except OSError:
                 verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende per python3 ~/.claude/matrix-bot/send.py)"
-            if OWNER_VERIFY and verify_loop:
+            ov_on, ov_model = owner_verify_cfg() if verify_loop else (False, None)
+            if ov_on:
                 # Owner erledigt alles mit Werkzeugen, gibt Text zurück (sendet nicht) → Prüfer.
                 prompt = OWNER_PROMPT_VERIFY.format(verhalten=verhalten, messages=messages_p,
                                                     history=history, memories=memories_p)
-                return prompt, OWNER_TOOLS, None, mapping, messages_p, None, (True, OWNER_VERIFY_WITH)
+                return prompt, OWNER_TOOLS, None, mapping, messages_p, None, (True, ov_model)
             prompt = OWNER_PROMPT.format(verhalten=verhalten, messages=messages_p,
                                          history=history, memories=memories_p)
             return prompt, OWNER_TOOLS, None, mapping, messages_p, None, None
