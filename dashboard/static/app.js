@@ -103,6 +103,16 @@ async function loadAgents() {
 async function editAgent(name) {
   let a = { name: "", description: "", tools: ["Read"], model: "haiku", body: "" };
   if (name) a = await api("GET", "/api/agents/" + name);
+  // Modell-Liste dynamisch: Claude-Modelle + konfigurierte Fremd-Provider
+  let models = [{ value: "inherit", label: "Claude · Standard" }, { value: "haiku", label: "Claude · haiku" },
+                { value: "sonnet", label: "Claude · sonnet" }, { value: "opus", label: "Claude · opus" }];
+  let foreign = false;
+  try {
+    const md = await api("GET", "/api/models");
+    if (md.models && md.models.length) models = md.models;
+    foreign = models.some((m) => m.kind === "foreign");
+  } catch (e) { /* Fallback: nur Claude */ }
+  if (a.model && !models.some((m) => m.value === a.model)) models.push({ value: a.model, label: a.model });
   $("#agent-editor").classList.remove("hidden");
   $("#agent-editor").innerHTML = `
     <h2>${name ? "Agent bearbeiten: " + esc(name) : "Neuer Agent"}</h2>
@@ -111,8 +121,9 @@ async function editAgent(name) {
     <label>Beschreibung (wann soll der Operator an diesen Agenten delegieren?)</label>
     <input type="text" id="ag-desc" value="${esc(a.description)}">
     <label>Sprachmodell</label>
-    <select id="ag-model">${["haiku", "sonnet", "opus", "inherit"].map((m) =>
-      `<option ${m === a.model ? "selected" : ""}>${m}</option>`).join("")}</select>
+    <select id="ag-model">${models.map((m) =>
+      `<option value="${esc(m.value)}" ${m.value === a.model ? "selected" : ""}>${esc(m.label)}</option>`).join("")}</select>
+    ${foreign ? `<p class="small" style="margin:4px 0">Fremd-Modelle (Ollama/OpenAI/Azure) antworten nur mit <strong>Text</strong> — ohne Werkzeuge (Bash/Dateien). Konfigurieren im Tab System → Modelle & Provider.</p>` : ""}
     <label>Werkzeuge</label>
     <div style="margin:6px 0 12px">${ALL_TOOLS.map((t) =>
       `<label class="switch" style="display:inline-flex;margin-right:14px"><input type="checkbox" data-tool="${t}" ${a.tools.includes(t) ? "checked" : ""}>${t}</label>`).join("")}</div>
@@ -975,6 +986,65 @@ async function loadLogs() {
 }
 
 /* ---------- n8n ---------- */
+async function loadModels() {
+  const d = await api("GET", "/api/models");
+  const p = d.providers;
+  const card = (id, label, needsKey) => `
+    <div class="agent-row" style="display:block;padding:12px 14px">
+      <strong>${label}</strong>
+      ${p[id].enabled ? '<span class="pill">aktiv</span>' : '<span class="pill">aus</span>'}
+      ${needsKey ? (p[id].has_key ? '<span class="pill">Key ✓</span>' : '<span class="pill">kein Key</span>') : '<span class="pill">ohne Key</span>'}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <div><label>Server-Adresse</label><input id="mp-${id}-url" value="${esc(p[id].base_url)}"></div>
+        <div><label>Modelle (mit Komma trennen)</label><input id="mp-${id}-models" value="${esc((p[id].models || []).join(', '))}"></div>
+      </div>
+      ${needsKey ? `<label>API-Key ${p[id].has_key ? '(leer lassen = unverändert)' : ''}</label><input type="password" id="mp-${id}-key" autocomplete="new-password">` : ""}
+      <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
+        <label class="switch"><input type="checkbox" id="mp-${id}-en" ${p[id].enabled ? "checked" : ""}> aktiv</label>
+        <button class="primary" onclick="saveProvider('${id}')">Speichern &amp; testen</button>
+        <button class="ghost" onclick="delProvider('${id}')">Entfernen</button>
+        <span id="mp-${id}-status" class="small"></span>
+      </div>
+    </div>`;
+  const fb = p.anthropic_fallback;
+  $("#models-content").innerHTML =
+    card("ollama", "🖥️ Ollama (lokal, privat)", false)
+    + card("openai", "OpenAI / ChatGPT", true)
+    + card("azure", "Azure AI Foundry", true)
+    + `<div class="agent-row" style="display:block;padding:12px 14px">
+        <strong>🔑 Claude-API-Key als Reserve</strong>
+        ${fb.enabled ? '<span class="pill">aktiv</span>' : '<span class="pill">aus</span>'} ${fb.has_key ? '<span class="pill">Key ✓</span>' : ''}
+        <p class="small">Springt automatisch ein, wenn dein Claude-Abo gerade am Limit ist — mit Hinweis im Chat. Kostet dann echtes Geld pro Nachricht (Anthropic-API).</p>
+        <label>Anthropic-API-Key (leer lassen = unverändert)</label>
+        <input type="password" id="mp-fb-key" autocomplete="new-password">
+        <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+          <label class="switch"><input type="checkbox" id="mp-fb-en" ${fb.enabled ? "checked" : ""}> Reserve aktiv</label>
+          <button class="primary" onclick="saveFallback()">Speichern</button>
+        </div></div>`;
+}
+
+async function saveProvider(id) {
+  const body = { base_url: $("#mp-" + id + "-url").value.trim(), enabled: $("#mp-" + id + "-en").checked,
+    models: $("#mp-" + id + "-models").value.split(",").map((x) => x.trim()).filter(Boolean) };
+  const k = $("#mp-" + id + "-key"); if (k && k.value) body.key = k.value;
+  const st = $("#mp-" + id + "-status"); st.textContent = "teste Verbindung…"; st.style.color = "";
+  try {
+    const r = await api("PUT", "/api/models/" + id, body);
+    st.textContent = (r.test_ok ? "✓ " : "✗ ") + r.test_msg;
+    st.style.color = r.test_ok ? "var(--accent)" : "#e66";
+    toast("Gespeichert");
+  } catch (e) { st.textContent = ""; toast(e.message, 1); }
+}
+async function delProvider(id) {
+  if (!confirm("Provider „" + id + "\" entfernen (inkl. Key)?")) return;
+  try { await api("DELETE", "/api/models/" + id); toast("Entfernt"); loadModels(); } catch (e) { toast(e.message, 1); }
+}
+async function saveFallback() {
+  const body = { enabled: $("#mp-fb-en").checked };
+  const k = $("#mp-fb-key"); if (k && k.value) body.key = k.value;
+  try { await api("PUT", "/api/models/anthropic-fallback", body); toast("Gespeichert"); loadModels(); } catch (e) { toast(e.message, 1); }
+}
+
 async function loadN8n() {
   const s = await api("GET", "/api/n8n/status");
   $("#n8n-content").innerHTML = s.configured
@@ -1001,6 +1071,7 @@ async function n8nDisconnect() {
 /* ---------- System: Backup + MCP (B1/B2) ---------- */
 async function loadSystem() {
   await loadN8n();
+  await loadModels();
   const b = await api("GET", "/api/backups");
   $("#backup-list").innerHTML = b.backups.map((x) => `
     <div class="agent-row" style="padding:8px 14px">
