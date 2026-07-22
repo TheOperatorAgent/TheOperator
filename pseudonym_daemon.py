@@ -12,13 +12,11 @@ Läuft im dashboard-venv (Presidio/spaCy). launchd hält ihn am Leben.
 """
 import json
 import os
-import socket
 import sys
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 sys.path.insert(0, BOT_DIR)
-SOCK_PATH = os.path.join(
-    os.environ.get("TMPDIR", "/tmp"), f"operator-pseudonym-{os.getuid()}.sock")
+import platform_compat as _plat  # noqa: E402  (stdlib-Modul aus BOT_DIR)
 
 
 # Cross-Turn-Konsistenz (Issue #34): pro Konversation ein fortgeführtes Mapping im RAM,
@@ -68,13 +66,8 @@ def _handle(req: dict, pseudonym) -> dict:
 def main():
     import pseudonym
     pseudonym._get_analyzer()   # Modell jetzt laden (einmalig), nicht erst bei Anfrage 1
-    if os.path.exists(SOCK_PATH):
-        os.remove(SOCK_PATH)
-    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    srv.bind(SOCK_PATH)
-    os.chmod(SOCK_PATH, 0o600)
-    srv.listen(8)
-    print(f"pseudonym-daemon bereit: {SOCK_PATH}", flush=True)
+    srv, token = _plat.ipc_bind()   # POSIX: AF_UNIX (0600); Windows: TCP-Loopback + Token
+    print("pseudonym-daemon bereit", flush=True)
     while True:
         conn, _ = srv.accept()
         try:
@@ -88,7 +81,11 @@ def main():
             if not buf:
                 continue
             req = json.loads(buf.split(b"\n", 1)[0])
-            resp = _handle(req, pseudonym)
+            # Windows-TCP: nur mit gültigem Token bedienen (kein PII-Mapping-Leak an Fremdprozesse)
+            if token and req.get("token") != token:
+                resp = {"error": "unauthorized"}
+            else:
+                resp = _handle(req, pseudonym)
             conn.sendall((json.dumps(resp) + "\n").encode())
         except Exception as e:
             try:
