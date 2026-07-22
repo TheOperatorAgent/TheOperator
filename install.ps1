@@ -263,7 +263,7 @@ else {
 Bold "Phase 5/7 - Dateien einrichten"
 New-Item -ItemType Directory -Force -Path $BotDir, "$BotDir\workspace\.claude\agents", "$BotDir\workspace\.claude\skills", "$BotDir\connections", "$BotDir\secrets" | Out-Null
 $core = @("listener.py","send.py","memory.py","skills.py","sessions.py","cron_runner.py","redact.py","reid.py",
-          "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py")
+          "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py")
 foreach ($f in $core) { Fetch-File $f (Join-Path $BotDir $f); Ok "$f" }
 $agents = @("recherche","schreiber"); if ($BashOptin -eq "ja") { $agents += "sysadmin" }
 foreach ($a in $agents) {
@@ -304,12 +304,12 @@ if ($dashOptin -eq "ja") {
     $pip = Join-Path $DashDir "venv\Scripts\pip.exe"
     & $pip install -q --upgrade pip
     & $pip install -q "fastapi==0.116.*" "uvicorn==0.35.*" "msal==1.33.*" "cryptography==45.*" `
-        "requests==2.32.*" "mcp==1.*" "starlette<0.49" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker"
+        "requests==2.32.*" "mcp==1.*" "starlette<0.49" "openai>=1.40" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker"
     try { & $pip install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
     catch { Warn "Deutsches Sprachmodell nicht geladen - Pseudonymisierung meldet sich beim ersten Einsatz" }
     foreach ($f in @("server.py","tokens.py","agents_store.py","m365_setup.py","google_auth.py","open.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
     foreach ($f in @("index.html","app.js","style.css")) { Fetch-File "dashboard\static\$f" (Join-Path $DashDir "static\$f") }
-    foreach ($f in @("m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py")) { Fetch-File $f (Join-Path $BotDir $f) }
+    foreach ($f in @("m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py")) { Fetch-File $f (Join-Path $BotDir $f) }
     if (-not (Secret-Has "token-key")) { Secret-Set "token-key" (Rand-Hex) }
     if (-not (Test-Path (Join-Path $BotDir "dashboard.json"))) {
         $dtok = Rand-Hex; Secret-Set "dashboard-token" $dtok
