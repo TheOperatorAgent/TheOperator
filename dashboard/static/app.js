@@ -1,14 +1,18 @@
 /* Operator Dashboard — Frontend (build-frei, vanilla JS) */
-let TOKEN = (location.hash.match(/(?:^|[#&])t=([0-9a-f]+)/) || [])[1] || sessionStorage.getItem("op_token") || "";
+// Token DAUERHAFT im Browser merken (localStorage) — einmal per open.py/»operator« rein,
+// danach öffnet 127.0.0.1:8737 direkt, ohne Token-Getue. Nur localhost, browser-isoliert.
+const _store = window.localStorage;
+let TOKEN = (location.hash.match(/(?:^|[#&])t=([0-9a-f]+)/) || [])[1]
+  || _store.getItem("op_token") || sessionStorage.getItem("op_token") || "";
 const OTT = (location.hash.match(/(?:^|[#&])ott=([0-9a-f]+)/) || [])[1] || "";
-if (TOKEN) { sessionStorage.setItem("op_token", TOKEN); history.replaceState(null, "", location.pathname); }
+if (TOKEN) { _store.setItem("op_token", TOKEN); history.replaceState(null, "", location.pathname); }
 else if (OTT) {
   // Einmal-Link aus dem Chat: Ticket gegen Sitzungs-Token tauschen (Ticket wird verbraucht)
   fetch("/api/auth/ott", { method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ott: OTT }) })
     .then((r) => r.json()).then((d) => {
       if (d.token) {
-        sessionStorage.setItem("op_token", d.token);
+        _store.setItem("op_token", d.token);
         history.replaceState(null, "", location.pathname);
         location.reload();
       } else {
@@ -1119,9 +1123,14 @@ async function refresh() {
     if (active === "verhalten") await loadVerhalten();
     if (active === "privacy") await loadPrivacy();
   } catch (e) {
-    if (String(e.message).includes("Dashboard-Token"))
-      document.body.innerHTML = "<main><div class='card'><h2>Zugang verweigert</h2><p class='hint'>Bitte über <span class='mono'>python3 ~/.claude/matrix-bot/dashboard/open.py</span> öffnen — der Link enthält dein Zugangs-Token.</p></div></main>";
-    else toast(e.message, 1);
+    if (String(e.message).includes("Dashboard-Token")) {
+      // Gespeicherter Token ungültig (z. B. nach Neuinstallation) → verwerfen + freundlich anleiten
+      try { _store.removeItem("op_token"); sessionStorage.removeItem("op_token"); } catch (x) {}
+      document.body.innerHTML = "<main><div class='card' style='max-width:560px;margin:12vh auto'>" +
+        "<h2>🔒 Dashboard entsperren</h2><p class='hint'>Aus Sicherheitsgründen öffnest du das Dashboard einmalig über deinen Rechner — danach merkt sich dein Browser den Zugang dauerhaft.</p>" +
+        "<p>Im Terminal einfach eingeben:</p><pre class='mono' style='user-select:all;padding:12px'>operator</pre>" +
+        "<p class='small'>(Öffnet dieses Dashboard automatisch mit Zugang. Dieser Rechner merkt sich das dann.)</p></div></main>";
+    } else toast(e.message, 1);
   }
 }
 loadStatus().catch(() => refresh());
