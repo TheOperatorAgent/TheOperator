@@ -311,16 +311,35 @@ def test_vault_run_injection(tmp_path, monkeypatch, capsys):
     vault = _vault(tmp_path, monkeypatch)
     vault.init("master-passwort-test")
     vault.add_entry("demo", "Str3ngGeheim!")
+    # Injection-Mechanik: für den Test „sh" erlauben (echt blockiert, s. u.)
+    monkeypatch.setattr(vault, "_run_allowlist", lambda: {"sh"})
     rc = vault.run(["sh", "-c", "echo Wert: {{tresor:demo}}; env | grep -c OP_SECRET_DEMO"])
     out = capsys.readouterr().out
     assert rc == 0
     assert "Str3ngGeheim!" not in out and "«tresor:demo»" in out
     assert "1" in out                                       # env-Variable war im Kind gesetzt
-    rc2 = vault.run(["echo", "{{tresor:gibtsnicht}}"])
+    rc2 = vault.run(["sh", "-c", "echo {{tresor:gibtsnicht}}"])
     assert rc2 == 3
     vault.lock()
-    rc3 = vault.run(["echo", "{{tresor:demo}}"])
+    rc3 = vault.run(["sh", "-c", "echo {{tresor:demo}}"])
     assert rc3 == 2 and "gesperrt" in capsys.readouterr().err
+
+
+def test_vault_run_allowlist(tmp_path, monkeypatch, capsys):
+    vault = _vault(tmp_path, monkeypatch)
+    vault.init("master-passwort-test")
+    vault.add_entry("demo", "Str3ngGeheim!")
+    # echo/sh mit Referenz → abgelehnt (Härtung #22)
+    assert vault.run(["echo", "{{tresor:demo}}"]) == 5
+    assert vault.run(["sh", "-c", "echo {{tresor:demo}}"]) == 5
+    assert "Freigabeliste" in capsys.readouterr().err
+    # allowlisted Programm (curl) → nicht wegen Allowlist abgelehnt (scheitert nur am Netz)
+    assert vault.run(["curl", "-s", "--max-time", "1", "http://127.0.0.1:1/{{tresor:demo}}"]) != 5
+    # Kommando OHNE Referenz → Allowlist irrelevant
+    assert vault.run(["echo", "hallo"]) == 0
+    # konfigurierbar
+    monkeypatch.setattr(vault, "_run_allowlist", lambda: vault.DEFAULT_RUN_ALLOWLIST | {"echo"})
+    assert vault.run(["echo", "{{tresor:demo}}"]) == 0
 
 
 def test_redact_patterns():
