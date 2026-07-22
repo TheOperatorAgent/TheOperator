@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
-"""Öffnet das Operator-Dashboard im Browser (Zugangs-Token aus dem macOS-Schlüsselbund)."""
+"""Öffnet das Operator-Dashboard im Browser (Zugangs-Token aus dem OS-Secret-Store)."""
 import json
 import os
-import subprocess
 import sys
 
 d = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+import secretstore       # noqa: E402  (stdlib-Modul aus BOT_DIR)
+import platform_compat   # noqa: E402
+
 cfg = json.load(open(os.path.join(d, "..", "dashboard.json")))
-r = subprocess.run(["security", "find-generic-password", "-s", "the-operator",
-                    "-a", "dashboard-token", "-w"], capture_output=True, text=True)
-if r.returncode != 0:
+token = secretstore.get("dashboard-token")
+if not token:
     # Fallback für Alt-Installationen mit .token-Datei
     tp = os.path.join(d, ".token")
     if not os.path.exists(tp):
-        sys.exit("Dashboard-Token nicht gefunden — install.sh erneut ausführen")
+        sys.exit("Dashboard-Token nicht gefunden — Installer erneut ausführen")
     token = open(tp).read().strip()
-else:
-    token = r.stdout.strip()
 url = f"http://127.0.0.1:{cfg.get('port', 8737)}/#t={token}"
-subprocess.run(["open", url])
+platform_compat.open_url(url)
 print("Dashboard geöffnet:", url.split("#")[0])
