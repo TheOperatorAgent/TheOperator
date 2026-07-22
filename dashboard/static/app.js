@@ -836,8 +836,33 @@ async function loadLogs() {
   v.scrollTop = v.scrollHeight;
 }
 
+/* ---------- n8n ---------- */
+async function loadN8n() {
+  const s = await api("GET", "/api/n8n/status");
+  $("#n8n-content").innerHTML = s.configured
+    ? `<p>✅ Verbunden mit <strong>${esc(s.url)}</strong> — frag deinen Operator z. B.:
+       <em>„Welche n8n-Workflows sind aktiv?" oder „Warum ist der letzte Lauf fehlgeschlagen?"</em></p>
+       <button class="danger" onclick="n8nDisconnect()">Trennen (Key löschen)</button>`
+    : `<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+        <div><label>Server-Adresse</label><input type="text" id="n8n-url" placeholder="https://n8n.meinserver.de"></div>
+        <div><label>API-Key</label><input type="password" id="n8n-key"></div></div>
+      <button class="primary" onclick="n8nSave()">Verbinden & testen</button>`;
+}
+async function n8nSave() {
+  try {
+    await api("PUT", "/api/n8n/config", { url: $("#n8n-url").value, api_key: $("#n8n-key").value });
+    toast("n8n verbunden ✓ — dein Operator kann es ab der nächsten Nachricht nutzen");
+    loadN8n();
+  } catch (e) { toast(e.message, 1); }
+}
+async function n8nDisconnect() {
+  if (!confirm("n8n-Verbindung trennen und API-Key löschen?")) return;
+  try { await api("DELETE", "/api/n8n"); toast("Getrennt"); loadN8n(); } catch (e) { toast(e.message, 1); }
+}
+
 /* ---------- System: Backup + MCP (B1/B2) ---------- */
 async function loadSystem() {
+  await loadN8n();
   const b = await api("GET", "/api/backups");
   $("#backup-list").innerHTML = b.backups.map((x) => `
     <div class="agent-row" style="padding:8px 14px">
@@ -881,9 +906,55 @@ async function saveVerhalten() {
   try { await api("PUT", "/api/verhalten", { content: $("#verhalten-text").value }); toast("Gespeichert — wirkt ab der nächsten Nachricht"); }
   catch (e) { toast(e.message, 1); }
 }
+const PII_MODES = [
+  ["standard", "Sicher & genau (empfohlen)", "Namen, Orte, Firmen + E-Mail/Telefon/IBAN werden durch realistische Platzhalter ersetzt. Bester Kompromiss."],
+  ["strict", "Streng", "Zusätzlich Datumsangaben. Maximaler Schutz, kann Antworten minimal ungenauer machen."],
+  ["structured", "Nur Kontaktdaten", "Nur E-Mail, Telefon, IBAN, Kreditkarte, IP — Namen bleiben. Geringster Schutz."],
+];
+async function loadPseudonymize() {
+  const p = await api("GET", "/api/pseudonymize");
+  const st = p.last?.stats || {};
+  const total = Object.values(st).reduce((a, b) => a + b, 0);
+  $("#pii-box").innerHTML = `
+    <div class="card">
+      <div class="row-between"><h2>🕵 Pseudonymisierung ${p.enabled ? '<span class="pill" style="color:var(--accent)">AN</span>' : '<span class="pill" style="color:var(--amber)">AUS</span>'}</h2>
+        <label class="switch"><input type="checkbox" id="pii-enabled" ${p.enabled ? "checked" : ""} onchange="savePii()">aktiv</label></div>
+      <p class="hint">Bevor eine Nachricht an Claude geht, ersetzt dein Operator alle echten
+      Namen, E-Mail-Adressen, Telefonnummern usw. durch <strong>realistische Platzhalter</strong>.
+      Anthropic sieht so <strong>nie deine echten Personendaten</strong>. In der Antwort werden
+      die echten Werte automatisch wieder eingesetzt — du merkst also nichts davon.
+      ${p.presidio_ready ? "" : '<br><span style="color:var(--amber)">⚠ Dienst nicht installiert — läuft erst nach der Einrichtung.</span>'}</p>
+      <label>Schutzstufe</label>
+      <select id="pii-mode" onchange="savePii()">
+        ${PII_MODES.map(([v, t]) => `<option value="${v}" ${p.mode === v ? "selected" : ""}>${t}</option>`).join("")}</select>
+      <p class="small">${PII_MODES.find((m) => m[0] === p.mode)?.[2] || ""}</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
+        <div><label>Das bin ich (bleibt im Klartext — je Zeile ein Name/eine Mail)</label>
+          <textarea id="pii-allow" rows="3" class="mono">${esc((p.allow || []).join("\n"))}</textarea></div>
+        <div><label>Immer ersetzen (Namen, die der Automatik durchrutschen)</label>
+          <textarea id="pii-deny" rows="3" class="mono">${esc((p.deny || []).join("\n"))}</textarea></div>
+      </div>
+      <button class="primary" onclick="savePii(true)">Speichern</button>
+      ${total ? `<p class="hint" style="margin-top:10px">Letzte Nachricht: ${Object.entries(st).map(([k, v]) => `${v}× ${PII_LABEL[k] || k}`).join(", ")} pseudonymisiert (${esc(p.last.ts || "")}).</p>` : ""}
+    </div>`;
+}
+const PII_LABEL = {PERSON: "Name", EMAIL_ADDRESS: "E-Mail", PHONE_NUMBER: "Telefon",
+  IBAN_CODE: "IBAN", LOCATION: "Ort", ORGANIZATION: "Firma", DATE_TIME: "Datum",
+  CREDIT_CARD: "Kreditkarte", IP_ADDRESS: "IP"};
+async function savePii(withLists) {
+  const body = {enabled: $("#pii-enabled").checked, mode: $("#pii-mode").value};
+  if (withLists) {
+    body.allow = $("#pii-allow").value.split("\n").map((x) => x.trim()).filter(Boolean);
+    body.deny = $("#pii-deny").value.split("\n").map((x) => x.trim()).filter(Boolean);
+  }
+  try { await api("PUT", "/api/pseudonymize", body); toast("Gespeichert — wirkt ab der nächsten Nachricht"); if (withLists) loadPseudonymize(); }
+  catch (e) { toast(e.message, 1); }
+}
+
 async function loadPrivacy() {
   const s = STATUS || await api("GET", "/api/status");
-  $("#privacy-content").innerHTML = `<div class="card"><table class="kv">
+  await loadPseudonymize();
+  $("#privacy-tables").innerHTML = `<div class="card"><table class="kv">
     <tr><td>Chat-Verarbeitung</td><td>Nachrichten werden zur Beantwortung an die Claude-API (Anthropic) übertragen — über dein persönliches Abo</td></tr>
     <tr><td>Gedächtnis</td><td>${s.memory_count} Fakten, lokal in <span class="mono">~/.claude/matrix-bot/memory.db</span> — verlässt deinen Mac nie</td></tr>
     <tr><td>Matrix-Zugangsdaten</td><td>im macOS-Schlüsselbund (nicht mehr als Klartext-Datei)</td></tr>
