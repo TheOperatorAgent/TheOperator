@@ -949,3 +949,114 @@ def test_llm_runner_against_mock(tmp_path):
         assert out.get("text") == "Echo:gpt-4o"
     finally:
         srv.shutdown()
+
+
+# ---------------------------------------------------------------- #46 Verifikations-Schleife (A1) --
+def _vl():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import verify_loop
+    return verify_loop
+
+
+def test_verify_config_reads_frontmatter():
+    vl = _vl()
+    assert vl.verify_config({"verify": "true"}) == (True, None)
+    assert vl.verify_config({"verify": "ja"}) == (True, None)
+    assert vl.verify_config({"verify_with": "opus"}) == (True, "opus")
+    # verify_with gewinnt auch ohne verify:
+    assert vl.verify_config({"verify_with": "ollama/llama3"})[0] is True
+    assert vl.verify_config({"verify": "false"}) == (False, None)
+    assert vl.verify_config({}) == (False, None)
+    assert vl.verify_config(None) == (False, None)
+
+
+def test_verify_interpret_ok_marker_passes_original():
+    vl = _vl()
+    orig = "Die Hauptstadt von Frankreich ist Paris."
+    # diverse Schreibweisen des OK-Markers → Original bleibt, revised=False
+    for out in ["VERIFIZIERT", "verifiziert", "**VERIFIZIERT**", "VERIFIZIERT.", "  VERIFIZIERT  "]:
+        final, revised = vl.interpret(out, orig)
+        assert final == orig and revised is False
+
+
+def test_verify_interpret_correction_replaces():
+    vl = _vl()
+    orig = "Die Hauptstadt von Australien ist Sydney."
+    corrected = "Die Hauptstadt von Australien ist Canberra."
+    final, revised = vl.interpret(corrected, orig)
+    assert final == corrected and revised is True
+
+
+def test_verify_interpret_fail_open_on_empty():
+    vl = _vl()
+    orig = "Antwort."
+    # Verifier ausgefallen (leer/None) → Original NIE verschlucken
+    assert vl.interpret("", orig) == (orig, False)
+    assert vl.interpret(None, orig) == (orig, False)
+    assert vl.interpret("   \n ", orig) == (orig, False)
+
+
+def test_verify_footer_and_prompts():
+    vl = _vl()
+    assert "geprüft von opus" in vl.footer("opus", False)
+    assert "überarbeitet von opus" in vl.footer("opus", True)
+    assert "Prüfer" in vl.footer(None, False)
+    system, user = vl.verifier_prompts("Was ist 2+2?", "5")
+    assert "VERIFIZIERT" in system
+    assert "Was ist 2+2?" in user and "5" in user
+
+
+def test_verify_loop_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/verify_loop.py")).read()
+    imports = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert not (imports & {"fastapi", "openai", "presidio_analyzer", "spacy", "faker", "cryptography", "requests"})
+
+
+def test_verify_and_send_integration_ok(monkeypatch):
+    """Claude-Worker-Pfad: Verifier winkt durch → Original + Fußzeile, PII rück-übersetzt."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import listener
+    s = listener.BotSession.__new__(listener.BotSession)
+    s.bot_name = "test"
+    sent = []
+    s.send_message = lambda t: sent.append(t)
+    s._call_model_text = lambda plan, system, user: "VERIFIZIERT"   # Prüfer: alles gut
+    mapping = {"s2r": {"Ingeburg": "Michi"}}                        # Surrogat→echt
+    s._verify_and_send((True, "opus"), "Wer bin ich?", "Du bist Ingeburg.", mapping, False)
+    assert len(sent) == 1
+    assert "Du bist Michi." in sent[0]           # PII zurückübersetzt
+    assert "geprüft von opus" in sent[0]          # Fußzeile, nicht überarbeitet
+
+
+def test_verify_and_send_integration_revise(monkeypatch):
+    """Verifier liefert Korrektur → korrigierte Antwort + 'überarbeitet'-Fußzeile."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import listener
+    s = listener.BotSession.__new__(listener.BotSession)
+    s.bot_name = "test"
+    sent = []
+    s.send_message = lambda t: sent.append(t)
+    s._call_model_text = lambda plan, system, user: "Die Hauptstadt ist Canberra."
+    s._verify_and_send((True, "sonnet"), "Hauptstadt Australiens?",
+                       "Die Hauptstadt ist Sydney.", {}, False)
+    assert "Canberra" in sent[0] and "Sydney" not in sent[0]
+    assert "überarbeitet von sonnet" in sent[0]
+
+
+def test_verify_and_send_fail_open(monkeypatch):
+    """Prüfer ausgefallen (None) → Original wird NIE verschluckt."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import listener
+    s = listener.BotSession.__new__(listener.BotSession)
+    s.bot_name = "test"
+    sent = []
+    s.send_message = lambda t: sent.append(t)
+    s._call_model_text = lambda plan, system, user: None            # Verifier tot
+    s._verify_and_send((True, None), "Frage?", "Die einzige Antwort.", {}, False)
+    assert "Die einzige Antwort." in sent[0]
