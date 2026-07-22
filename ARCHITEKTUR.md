@@ -101,14 +101,27 @@ Beide lösen Pseudonymisierungs-Ersatzwerte vor echten Schreib-Aktionen über `r
 | `VERHALTEN.md` | Verhaltensregeln (pro Wecken frisch geladen) |
 | `workspace/` | Arbeitsverzeichnis für claude -p (.claude/agents, .claude/skills, .mcp.json) |
 
-## Schlüsselbund-Konvention (Service `the-operator`)
-`token-key` (AES-Master für secrets/), `matrix-owner`, `matrix-bot-<agent>`, `dashboard-token`.
-Der Passwort-Tresor nutzt bewusst **keinen** Schlüsselbund-Schlüssel, sondern das
-Master-Passwort (sitzungsgebunden + backup-portabel).
+## Plattform-Abstraktion — platform_compat.py + secretstore.py + servicemgr.py (stdlib)
+Ein Modul-Trio kapselt ALLE OS-Unterschiede, damit Listener & Helfer stdlib-only bleiben und
+macOS bitidentisch weiterläuft:
+- **platform_compat**: OS-Flags; `runtime_dir()/runtime_file()` (nutzer-privates Temp: macOS
+  `$TMPDIR`, Linux `$XDG_RUNTIME_DIR`, Windows `%TEMP%`); `user_tag()/owns()` (Ersatz für
+  `os.getuid()`); `venv_python()` (bin/python3 vs Scripts\\python.exe); `open_url()`
+  (`webbrowser`); `secure_chmod()` (0600 bzw. Windows-ACL); `ipc_bind()/ipc_connect()`
+  (AF_UNIX auf POSIX, TCP-Loopback+Token auf Windows).
+- **secretstore**: `get/set/delete(account)` — macOS `security`, Windows DPAPI, Linux
+  `secret-tool`, sonst 0600-Datei. Löst das gesamte frühere `security`/Keychain-Layer ab.
+- **servicemgr**: `status()/restart()` je OS — launchd / systemd-user / Task Scheduler.
 
-## Installation — install.sh (idempotenter Wizard)
+## Secret-Store-Konvention (Service `the-operator`)
+`token-key` (AES-Master für secrets/), `matrix-owner`, `matrix-bot-<agent>`, `dashboard-token`
+— je OS im passenden Store (siehe secretstore). Der Passwort-Tresor nutzt bewusst **keinen**
+Store-Schlüssel, sondern das Master-Passwort (sitzungsgebunden + backup-portabel).
+
+## Installation — install.sh (macOS/Linux) + install.ps1 (Windows), idempotent
 Prüft Voraussetzungen, legt Bot-User an (Admin-API), installiert Listener + Helfer + Dashboard
-(venv), registriert Standard-MCP + Skill-Scout, richtet launchd ein. `--uninstall` stoppt
-Dienste, widerruft alle Tokens (Art.-17-Löschkette) und entfernt Schlüssel inkl.
-Tresor-Sitzungsschlüssel.
+(venv), registriert Standard-MCP + Skill-Scout, richtet den Autostart je OS ein (launchd /
+systemd-user / Task Scheduler). Ein Installationslink je OS (Doku/README). `--uninstall` bzw.
+`-Uninstall` stoppt Dienste, widerruft alle Tokens (Art.-17-Löschkette) und entfernt Schlüssel
+inkl. Tresor-Sitzungsschlüssel.
 
