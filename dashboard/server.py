@@ -116,20 +116,78 @@ def mx(homeserver: str, method: str, path: str, body=None, token: str = None, ok
 
 
 # ---------------------------------------------------------------- Middleware --
+# Einmal-Link-Sitzungen: /api/auth/ott tauscht ein 10-Minuten-Einmal-Ticket (vom Listener
+# in secrets/ott.json hinterlegt, im Chat verlinkt) gegen einen Sitzungs-Token. Der echte
+# Dashboard-Token landet so nie im Chatverlauf; ein benutzter/abgelaufener Link ist wertlos.
+OTT_FILE = os.path.join(BOT_DIR, "secrets", "ott.json")
+_SESSIONS: dict = {}          # sha256(session_token) -> Ablauf-Timestamp
+SESSION_TTL = 24 * 3600
+
+
+def _session_valid(sha: str) -> bool:
+    exp = _SESSIONS.get(sha)
+    if not exp:
+        return False
+    if time.time() > exp:
+        _SESSIONS.pop(sha, None)
+        return False
+    return True
+
+
 @app.middleware("http")
 async def guard(request: Request, call_next):
     host = request.headers.get("host", "")
     if host not in ALLOWED_HOSTS:
         return Response("Forbidden (host)", status_code=403)
     path = request.url.path
-    if path.startswith("/api/") and not path.endswith("/auth/callback"):
+    if path.startswith("/api/") and not path.endswith("/auth/callback") \
+       and path != "/api/auth/ott":
         auth = request.headers.get("authorization", "")
         tok = auth[7:] if auth.startswith("Bearer ") else ""
-        if hashlib.sha256(tok.encode()).hexdigest() != DASH_CFG["token_sha256"]:
+        sha = hashlib.sha256(tok.encode()).hexdigest()
+        if sha != DASH_CFG["token_sha256"] and not _session_valid(sha):
             return JSONResponse(
                 {"error": {"code": "auth", "message_de": "Ungültiges Dashboard-Token"}},
                 status_code=401)
     return await call_next(request)
+
+
+@app.post("/api/auth/ott")
+async def api_auth_ott(request: Request):
+    """Einmal-Ticket gegen Sitzungs-Token tauschen. Das Ticket wird dabei VERBRAUCHT."""
+    b = await request.json()
+    ott = (b.get("ott") or "").strip()
+    if not ott:
+        return err("auth", "Kein Einmal-Ticket übergeben", 400)
+    sha = hashlib.sha256(ott.encode()).hexdigest()
+    try:
+        entries = json.load(open(OTT_FILE))
+    except (OSError, ValueError):
+        entries = []
+    now = time.time()
+    hit = False
+    keep = []
+    for e in entries:
+        if not hit and e.get("sha") == sha and e.get("exp", 0) > now:
+            hit = True            # verbrauchen (nicht in keep übernehmen)
+        elif e.get("exp", 0) > now:
+            keep.append(e)
+    try:                          # verbleibende Tickets atomar zurückschreiben (0600)
+        fd = os.open(OTT_FILE + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(keep, f)
+        os.replace(OTT_FILE + ".tmp", OTT_FILE)
+    except OSError:
+        pass
+    if not hit:
+        audit("dashboard", "auth.ott", "", False)
+        return err("auth", "Dieser Einmal-Link wurde schon benutzt oder ist abgelaufen. "
+                   "Bitte einen neuen anfordern (oder open.py nutzen).", 403)
+    import secrets as _sec
+    sess = _sec.token_hex(32)
+    _SESSIONS[hashlib.sha256(sess.encode()).hexdigest()] = now + SESSION_TTL
+    audit("dashboard", "auth.ott", "Einmal-Link eingelöst")
+    return {"token": sess}
 
 
 # ---------------------------------------------------------------- System --
