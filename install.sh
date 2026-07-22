@@ -275,6 +275,21 @@ import google_auth; google_auth.disconnect()" 2>/dev/null && ok "Google-Token wi
 }
 
 # ---------------------------------------------------------------- Phasen --
+# Bestes Python (>=3.10) für das Dashboard-venv finden. Der Chat-Bot selbst läuft mit
+# jedem python3 (stdlib) — aber die Dashboard-Pakete (mcp, fastapi …) brauchen 3.10+.
+# Wichtig auf frischen Macs: das System-Python ist 3.9, Homebrew-Python liegt aber oft
+# schon unter /opt/homebrew — nur eben nicht im PATH des neuen Kontos.
+find_venv_python() {
+  local c v best="" bestv=0
+  for c in python3.13 python3.12 python3.11 python3.10 \
+           /opt/homebrew/bin/python3 /usr/local/bin/python3 python3; do
+    command -v "$c" >/dev/null 2>&1 || continue
+    v=$("$c" -c 'import sys;print(sys.version_info[0]*100+sys.version_info[1])' 2>/dev/null) || continue
+    if [ "${v:-0}" -ge 310 ] && [ "$v" -gt "$bestv" ]; then best="$c"; bestv="$v"; fi
+  done
+  printf '%s' "$best"
+}
+
 phase1_check() {
   bold "Operator-Installation — your operator inside the Matrix"
   bold "Phase 1/7 — Voraussetzungen prüfen"
@@ -282,20 +297,34 @@ phase1_check() {
     Darwin) command -v python3 >/dev/null || die "python3 fehlt (xcode-select --install)";
             ok "macOS $(sw_vers -productVersion 2>/dev/null), python3 $(python3 -V | cut -d' ' -f2)";;
     Linux)  command -v python3 >/dev/null || die "python3 fehlt (z. B. apt install python3 python3-venv)";
-            ok "Linux $(uname -r), python3 $(python3 -V | cut -d' ' -f2)"
-            # venv braucht ensurepip — auf Debian/Ubuntu ein eigenes Paket. JETZT sagen,
-            # nicht erst in Phase 8 mit englischem Python-Fehler.
-            if ! python3 -c "import ensurepip" 2>/dev/null; then
-              PYV=$(python3 -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
-              warn "Für das Web-Dashboard fehlt ein Systempaket. Bitte VOR dem Fortfahren in"
-              warn "einem zweiten Terminal ausführen:  sudo apt install python${PYV}-venv"
-              local _W; ask_yesno _W "Trotzdem ohne Dashboard fortfahren (Chat-Bot läuft auch so)?" "nein"
-              [ "$_W" = "ja" ] || die "Okay — Paket installieren und dieses Skript danach einfach erneut starten."
-              VENV_POSSIBLE=0
-            fi;;
+            ok "Linux $(uname -r), python3 $(python3 -V | cut -d' ' -f2)";;
     *)      die "Nicht unterstütztes OS '$OS' — Windows: install.ps1 (PowerShell) verwenden";;
   esac
   command -v curl >/dev/null || die "curl fehlt"
+  # Dashboard-Python bestimmen (>=3.10) und ensurepip prüfen — Probleme JETZT auf
+  # Deutsch erklären, nicht erst in Phase 8 mit englischem pip-Fehler.
+  PY_VENV=$(find_venv_python)
+  local _W
+  if [ -z "$PY_VENV" ]; then
+    warn "Für das Web-Dashboard wird Python 3.10 oder neuer gebraucht (der Chat-Bot läuft auch ohne)."
+    if [ "$OS" = Darwin ]; then
+      warn "Installieren mit:  brew install python   (oder von python.org), danach Skript erneut starten."
+    else
+      warn "Installieren z. B. mit:  sudo apt install python3.12 python3.12-venv, danach Skript erneut starten."
+    fi
+    ask_yesno _W "Trotzdem ohne Dashboard fortfahren?" "nein"
+    [ "$_W" = "ja" ] || die "Okay — Python installieren und dieses Skript danach einfach erneut starten."
+    VENV_POSSIBLE=0
+  elif ! "$PY_VENV" -c "import ensurepip" 2>/dev/null; then
+    PYV=$("$PY_VENV" -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+    warn "Für das Web-Dashboard fehlt ein Systempaket. Bitte VOR dem Fortfahren in"
+    warn "einem zweiten Terminal ausführen:  sudo apt install python${PYV}-venv"
+    ask_yesno _W "Trotzdem ohne Dashboard fortfahren (Chat-Bot läuft auch so)?" "nein"
+    [ "$_W" = "ja" ] || die "Okay — Paket installieren und dieses Skript danach einfach erneut starten."
+    VENV_POSSIBLE=0
+  else
+    ok "Dashboard-Python: $PY_VENV ($("$PY_VENV" -V | cut -d' ' -f2))"
+  fi
 }
 
 phase2_claude() {
@@ -327,7 +356,9 @@ phase2_claude() {
         warn "Nachholen: im Terminal 'claude /login' ausführen, dann antwortet dein Operator."
         break
       fi
-      claude /login < /dev/tty > /dev/tty 2>&1 || true
+      # Nur stdin ans Terminal binden — zusätzliche stdout/stderr-Umleitungen auf
+      # /dev/tty lassen den Bun-basierten CLI crashen (kqueue/EINVAL, live gesehen)
+      claude /login < /dev/tty || true
     done
   fi
   [ "$CLAUDE_READY" = 1 ] && ok "Claude CLI angemeldet und antwortet"
@@ -617,11 +648,10 @@ phase8_dashboard() {
     rm -rf "$DASH_DIR/venv"
   fi
   if [ ! -x "$VENV_PY" ]; then
-    if ! python3 -m venv "$DASH_DIR/venv" 2>/dev/null; then
+    if ! "${PY_VENV:-python3}" -m venv "$DASH_DIR/venv" 2>/dev/null; then
       DASH_OK=0
-      PYV=$(python3 -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
       warn "Python-Umgebung fürs Dashboard konnte nicht erstellt werden."
-      warn "Meist fehlt ein Systempaket: sudo apt install python${PYV}-venv — danach Skript erneut ausführen."
+      warn "Siehe Hinweis aus Phase 1 (Python 3.10+ bzw. venv-Paket) — danach Skript erneut ausführen."
     fi
   fi
   if [ "$DASH_OK" = "1" ]; then
@@ -707,9 +737,17 @@ case "\${1:-dashboard}" in
 esac
 LAUNCH
   chmod +x "$HOME/.local/bin/operator"
+  # ~/.local/bin DAUERHAFT in den PATH der Nutzer-Shell (frische Konten haben das nicht;
+  # dort liegen »operator« UND der Claude CLI). Idempotent für zsh + bash.
+  local rc
+  for rc in "$HOME/.zshrc" "$HOME/.bashrc"; do
+    if ! grep -qs '\.local/bin' "$rc" 2>/dev/null; then
+      printf '\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$rc"
+    fi
+  done
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) ok "Kurzbefehl »operator« eingerichtet";;
-    *) ok "Kurzbefehl »operator« eingerichtet (ab dem nächsten Terminal-Fenster verfügbar)";;
+    *) ok "Kurzbefehl »operator« eingerichtet (neues Terminal-Fenster öffnen, dann »operator« tippen)";;
   esac
 }
 
