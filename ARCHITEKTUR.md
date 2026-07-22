@@ -101,6 +101,19 @@ Beide lösen Pseudonymisierungs-Ersatzwerte vor echten Schreib-Aktionen über `r
 | `VERHALTEN.md` | Verhaltensregeln (pro Wecken frisch geladen) |
 | `workspace/` | Arbeitsverzeichnis für claude -p (.claude/agents, .claude/skills, .mcp.json) |
 
+## Multi-LLM — providers.py (stdlib) + llm_runner.py (venv)
+Subagenten können statt Claude ein Fremd-Modell nutzen (Ollama/OpenAI/Azure). **Hybrid-Ansatz:**
+Claude-Agenten laufen weiter über den Claude CLI (voller Werkzeugkasten, Abo); Fremd-Agenten
+laufen über `llm_runner.py` (venv, `openai`-SDK, alle drei via OpenAI-kompatibler `base_url`)
+— reiner Text/Recherche-Betrieb, **ohne** lokale Werkzeuge (der Gateway-Weg dafür ist von
+Anthropic nicht supportet und fragil). `providers.py` (stdlib) hält die Registry
+(`connections/models.json` Klartext, Keys im Secret-Store) und löst einen Agenten-Modellnamen
+auf: Claude-Alias/-ID → CLI-Pfad, `<provider>/<modell>` → Runner. Der Listener verzweigt in
+`execute()`; Fremd-Modelle sehen nur **pseudonymisierte** Daten (der Text läuft durch denselben
+Pfad wie bei Claude), die Antwort wird vor dem Senden reidentifiziert. **Auto-Fallback:** bei
+Claude-Abo-Limit + hinterlegtem Anthropic-API-Key genau ein Wiederholungslauf mit dem Key
+(per-Aufruf-Env) + transparenter Chat-Hinweis. Dashboard-Tab System → „Modelle & Provider".
+
 ## Plattform-Abstraktion — platform_compat.py + secretstore.py + servicemgr.py (stdlib)
 Ein Modul-Trio kapselt ALLE OS-Unterschiede, damit Listener & Helfer stdlib-only bleiben und
 macOS bitidentisch weiterläuft:
