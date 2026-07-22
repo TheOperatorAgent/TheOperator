@@ -68,10 +68,21 @@ Master-Passwort, Wiederherstellungsschlüssel **oder FIDO2-Hardware-Key** (hmac-
 `python-fido2`, Touch-only, mehrere Keys möglich — jeweils ein eigener DEK-Wrap). Details in
 SICHERHEIT.md.
 
-### M365-MCP — mcp_m365.py
-Eigener FastMCP-stdio-Server (9 Task-Tools mail/cal/files/sharepoint/planner/teams), app-only
-über die auto-registrierte Connector-App, jedes Tool prüft die Dashboard-Regler. Standard-MCP,
-via `workspace/.mcp.json` automatisch geladen.
+### Pseudonymisierung — pseudonym.py + reid.py
+Vor dem Senden an Claude werden PII in den Nutzer-Segmenten (Nachricht, Gedächtnis) durch
+realistische Ersatzwerte ersetzt (Presidio + deutsches NER + Faker, im venv), die Antwort und
+Tool-Argumente werden über `reid.py` (stdlib) zurückübersetzt. Reihenfolge: nach der
+Secret-Redaction, im `listener.execute()`. Standard AN, im Datenschutz-Tab steuerbar
+(Schutzstufe, Eigen-Identität-Allowlist, Deny-Liste). Details in SICHERHEIT.md.
+
+### Standard-MCPs — mcp_m365.py & mcp_n8n.py
+Eigene FastMCP-stdio-Server, per Default in `workspace/.mcp.json` registriert:
+- **m365** (9 Task-Tools mail/cal/files/sharepoint/planner/teams), app-only über die
+  auto-registrierte Connector-App, jedes Tool prüft die Dashboard-Regler.
+- **n8n** (workflows/executions/webhook/health) — Nutzer trägt im Dashboard nur Server-URL +
+  API-Key ein (Key AES-verschlüsselt in `secrets/`, nicht als Klartext-Env wie fertige
+  npm-MCPs); Verbindung wird beim Speichern live getestet.
+Beide lösen Pseudonymisierungs-Ersatzwerte vor echten Schreib-Aktionen über `reid.py` auf.
 
 ## Datenablage (BOT_DIR = ~/.claude/matrix-bot)
 
@@ -97,3 +108,4 @@ Prüft Voraussetzungen, legt Bot-User an (Admin-API), installiert Listener + Hel
 (venv), registriert Standard-MCP + Skill-Scout, richtet launchd ein. `--uninstall` stoppt
 Dienste, widerruft alle Tokens (Art.-17-Löschkette) und entfernt Schlüssel inkl.
 Tresor-Sitzungsschlüssel.
+
