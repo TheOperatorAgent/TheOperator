@@ -989,6 +989,22 @@ async function loadLogs() {
 async function loadModels() {
   const d = await api("GET", "/api/models");
   const p = d.providers;
+  const ov = await api("GET", "/api/owner-verify");
+  const ovCard = `<div class="agent-row" style="display:block;padding:12px 14px">
+    <strong>🔎 Antwort-Prüfung (2. Modell)</strong>
+    ${ov.enabled ? '<span class="pill">an</span>' : '<span class="pill">aus</span>'}
+    <p class="small">Ein zweites Modell prüft jede Antwort im Haupt-Chat auf Fehler (Verwechslungen, Halluzinationen), bevor sie an dich geht — und korrigiert sie bei Bedarf. Kostet pro Antwort einen zusätzlichen Modell-Lauf → etwas langsamer und mehr Abo-Verbrauch.</p>
+    <div style="max-width:320px;margin-top:4px">
+      <label>Prüfer-Modell</label>
+      <select id="ov-model">
+        <option value="">Claude (Standard)</option>
+        ${(d.models || []).filter(m => m.value !== "inherit").map(m => `<option value="${esc(m.value)}" ${ov.model === m.value ? 'selected' : ''}>${esc(m.label)}</option>`).join('')}
+      </select>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;margin-top:8px">
+      <label class="switch"><input type="checkbox" id="ov-en" ${ov.enabled ? "checked" : ""}> Prüfung aktiv</label>
+      <button class="primary" onclick="saveOwnerVerify()">Speichern</button>
+    </div></div>`;
   const card = (id, label, needsKey) => `
     <div class="agent-row" style="display:block;padding:12px 14px">
       <strong>${label}</strong>
@@ -1008,7 +1024,8 @@ async function loadModels() {
     </div>`;
   const fb = p.anthropic_fallback;
   $("#models-content").innerHTML =
-    card("ollama", "🖥️ Ollama (lokal, privat)", false)
+    ovCard
+    + card("ollama", "🖥️ Ollama (lokal, privat)", false)
     + card("openai", "OpenAI / ChatGPT", true)
     + card("azure", "Azure AI Foundry", true)
     + `<div class="agent-row" style="display:block;padding:12px 14px">
@@ -1043,6 +1060,11 @@ async function saveFallback() {
   const body = { enabled: $("#mp-fb-en").checked };
   const k = $("#mp-fb-key"); if (k && k.value) body.key = k.value;
   try { await api("PUT", "/api/models/anthropic-fallback", body); toast("Gespeichert"); loadModels(); } catch (e) { toast(e.message, 1); }
+}
+
+async function saveOwnerVerify() {
+  const body = { enabled: $("#ov-en").checked, model: $("#ov-model").value || null };
+  try { await api("PUT", "/api/owner-verify", body); toast(body.enabled ? "Prüfung aktiv" : "Prüfung aus"); loadModels(); } catch (e) { toast(e.message, 1); }
 }
 
 async function loadN8n() {
