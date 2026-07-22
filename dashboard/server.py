@@ -34,6 +34,7 @@ import vaultwarden as vw_store       # noqa: E402  (optionales Vaultwarden-Backe
 import secretstore                   # noqa: E402  (plattformübergreifender Secret-Store)
 import servicemgr                    # noqa: E402  (Dienst-Status/Neustart je OS)
 import platform_compat               # noqa: E402  (Plattform-Abstraktion)
+import providers as providers_reg    # noqa: E402  (Multi-LLM-Provider-Registry)
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -990,6 +991,50 @@ def api_n8n_delete():
         pass
     token_store.delete("n8n_api_key")
     audit("dashboard", "n8n.disconnect", "")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- Modelle & Provider --
+@app.get("/api/models")
+def api_models():
+    """Provider-Status + Auswahlliste für den Agenten-Editor."""
+    return {"providers": providers_reg.get_config(), "models": providers_reg.list_models()}
+
+
+@app.put("/api/models/{provider}")
+async def api_models_put(provider: str, request: Request):
+    b = await request.json()
+    try:
+        providers_reg.set_provider(
+            provider,
+            base_url=b.get("base_url"),
+            models=b.get("models") if isinstance(b.get("models"), list) else None,
+            default=b.get("default"),
+            enabled=b.get("enabled"),
+            key=(b.get("key") or "").strip() or None)
+    except ValueError as e:
+        return err("validate", str(e))
+    ok, msg = providers_reg.test(provider)     # sofort live prüfen
+    audit("dashboard", "models.config", provider, ok)
+    return {"ok": True, "test_ok": ok, "test_msg": msg}
+
+
+@app.delete("/api/models/{provider}")
+def api_models_delete(provider: str):
+    try:
+        providers_reg.delete_provider(provider)
+    except Exception:
+        pass
+    audit("dashboard", "models.delete", provider)
+    return {"ok": True}
+
+
+@app.put("/api/models/anthropic-fallback")
+async def api_models_fallback(request: Request):
+    b = await request.json()
+    providers_reg.set_anthropic_fallback(enabled=b.get("enabled"),
+                                         key=(b.get("key") or "").strip() or None)
+    audit("dashboard", "models.fallback", "on" if b.get("enabled") else "off")
     return {"ok": True}
 
 
