@@ -22,6 +22,14 @@ import requests  # noqa: E402
 from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 import tokens  # noqa: E402
+try:
+    import reid  # noqa: E402  (Re-ID der Pseudonymisierungs-Surrogate)
+except ImportError:
+    reid = None
+
+
+def _rid(s):
+    return reid.reidentify(s) if reid and s else s
 
 GRAPH = "https://graph.microsoft.com/v1.0"
 mcp = FastMCP("m365")
@@ -115,6 +123,8 @@ def mail_read(mail_id: str) -> str:
 def mail_send(to: str, subject: str, text: str) -> str:
     """Eine Mail im Namen des Nutzers senden (braucht Mail › Schreiben)."""
     c = conn(); require(c, "mail", "write"); u = user(c)
+    # Pseudonymisierungs-Surrogate → echte Werte, bevor die Mail real rausgeht
+    to, subject, text = _rid(to), _rid(subject), _rid(text)
     g(c, "POST", f"/users/{u}/sendMail", {"message": {
         "subject": subject, "body": {"contentType": "Text", "content": text},
         "toRecipients": [{"emailAddress": {"address": to}}]}})
@@ -140,6 +150,7 @@ def calendar_list(days: int = 7) -> str:
 def calendar_add(subject: str, start_iso: str, end_iso: str) -> str:
     """Termin anlegen, Zeiten als ISO z. B. 2026-07-22T14:00:00 (braucht Kalender › Schreiben)."""
     c = conn(); require(c, "calendar", "write"); u = user(c)
+    subject = _rid(subject)
     g(c, "POST", f"/users/{u}/events", {"subject": subject,
         "start": {"dateTime": start_iso, "timeZone": "Europe/Berlin"},
         "end": {"dateTime": end_iso, "timeZone": "Europe/Berlin"}})
