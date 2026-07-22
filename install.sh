@@ -195,7 +195,7 @@ fi
 bold "Phase 5/7 — Dateien einrichten"
 mkdir -p "$BOT_DIR"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
-for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py migrate_tokens.py; do
+for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py migrate_tokens.py vaultwarden.py; do
   if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
   else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
   ok "$F installiert"
