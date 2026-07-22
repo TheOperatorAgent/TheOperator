@@ -66,7 +66,39 @@ function Matrix($method, $url, $body, $token) {
     $headers = @{ "Content-Type" = "application/json" }
     if ($token) { $headers["Authorization"] = "Bearer $token" }
     try { return Invoke-RestMethod -Method $method -Uri $url -Headers $headers -Body $body }
-    catch { return $null }
+    catch {
+        # Fehler NICHT verschlucken: errcode/error aus der Matrix-Antwort für Diagnose merken
+        $script:MatrixErr = $null
+        try {
+            $raw = $_.ErrorDetails.Message
+            if ($raw) { $script:MatrixErr = $raw | ConvertFrom-Json }
+        } catch {}
+        if (-not $script:MatrixErr) { $script:MatrixErr = @{ errcode = "NETZWERK"; error = $_.Exception.Message } }
+        return $null
+    }
+}
+
+# Frage in Schleife stellen, bis der Validator (ScriptBlock: param($v) → normalisierter Wert oder $null) zufrieden ist
+function Ask-Loop($prompt, $default, $validator) {
+    while ($true) {
+        $suffix = if ($default) { " [$default]" } else { "" }
+        $in = Read-Host "$prompt$suffix"
+        if (-not $in) { $in = $default }
+        $norm = & $validator $in
+        if ($null -ne $norm) { return $norm }
+    }
+}
+
+function Ask-YesNo($prompt, $default) {
+    while ($true) {
+        $in = Read-Host "$prompt (ja/nein) [$default]"
+        if (-not $in) { $in = $default }
+        switch -Regex ($in.ToLower()) {
+            '^(j|ja|y|yes)$' { return "ja" }
+            '^(n|nein|no)$'  { return "nein" }
+            default { Write-Host "  Bitte mit ja oder nein antworten." -ForegroundColor Yellow }
+        }
+    }
 }
 
 # ---------------------------------------------------------------- Uninstall --
@@ -103,22 +135,70 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 $ClaudeBin = (Get-Command claude -ErrorAction SilentlyContinue).Source
 if (-not $ClaudeBin) { Die "claude nicht im PATH - PowerShell neu öffnen und erneut ausführen" }
 Ok "Claude CLI: $ClaudeBin"
-Warn "Falls noch nicht angemeldet: in einem Terminal 'claude /login' ausführen (Browser-Login)."
+# Anmeldung wirklich PRÜFEN (wie install.sh) — sonst „gelingt" die Installation und der Bot schweigt
+$ClaudeReady = $true
+$probe = & claude -p "Antworte nur mit: OK" 2>$null
+if ($probe -notmatch "OK") {
+    Bold "  Anmeldung bei Claude"
+    Write-Host "  Gleich öffnet sich dein Browser. Danach im Claude-Fenster /exit eingeben."
+    $attempt = 0
+    while ($true) {
+        $probe = & claude -p "Antworte nur mit: OK" 2>$null
+        if ($probe -match "OK") { break }
+        $attempt++
+        if ($attempt -gt 3) {
+            $ClaudeReady = $false
+            Warn "Claude-Anmeldung noch nicht bestätigt - Installation läuft trotzdem weiter."
+            Warn "Nachholen: 'claude /login' im Terminal, dann antwortet dein Operator."
+            break
+        }
+        & claude /login
+    }
+}
+if ($ClaudeReady) { Ok "Claude CLI angemeldet und antwortet" }
 
 # ------------------------------------------------------------ Phase 3: FRAGEN
 Bold "Phase 3/7 - Konfiguration"
-$HsUrl = Read-Host "Matrix-Homeserver-URL des Bot-Accounts (z. B. https://matrix.org)"
-$HsUrl = $HsUrl.TrimEnd('/')
-if (-not (Matrix GET "$HsUrl/_matrix/client/versions" $null $null)) { Die "Homeserver $HsUrl nicht erreichbar" }
-Ok "Homeserver erreichbar"
-$ServerName = $HsUrl -replace '^https?://',''
-$BotUser = Read-Host "Bot-Benutzername (localpart, ohne @ und Server)"
-if (-not $BotUser) { Die "Bot-Benutzername wird benötigt" }
+$HsUrl = Ask-Loop "Matrix-Homeserver-URL des Bot-Accounts" "https://matrix.org" {
+    param($v)
+    if (-not $v) { Warn "Bitte eine Server-Adresse eingeben - Beispiel: https://matrix.org"; return $null }
+    if ($v.StartsWith("@")) { Warn "Das sieht wie eine Matrix-ID aus, nicht wie eine Server-Adresse."; return $null }
+    if ($v -notmatch '^https?://') { $v = "https://$v" }
+    $v = $v.TrimEnd('/')
+    if (Matrix GET "$v/_matrix/client/versions" $null $null) { return $v }
+    Warn "Unter $v antwortet kein Matrix-Server - Tippfehler? (Beispiel: https://matrix.org)"
+    return $null
+}
+Ok "Homeserver erreichbar: $HsUrl"
+$ServerName = ($HsUrl -replace '^https?://','') -replace '/.*$',''
+$BotUser = Ask-Loop "Bot-Benutzername (nur der Name, ohne @ und Server)" "" {
+    param($v)
+    if (-not $v) { Warn "Bitte einen Benutzernamen eingeben (z. B. operator-bot)"; return $null }
+    $v = ($v -replace '^@','') -replace ':.*$',''
+    $v = $v.ToLower()
+    if ($v -notmatch '^[a-z0-9._=/-]+$') { Warn "Erlaubt sind nur Kleinbuchstaben, Zahlen und . _ = - /"; return $null }
+    return $v
+}
 $BotPwSec = Read-Host "Passwort für @${BotUser}:${ServerName}" -AsSecureString
 $BotPw = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($BotPwSec))
-$Human = Read-Host "Deine eigene Matrix-ID (nur diese wird beantwortet, z. B. @ich:matrix.org)"
-if ($Human -notmatch '^@.+:.+') { Die "Bitte vollständige Matrix-ID angeben (@name:server)" }
-$BashOptin = Read-Host "Shell-Zugriff erlauben? (ja/nein) [nein]"
+$Human = Ask-Loop "Deine eigene Matrix-ID (nur diese wird beantwortet)" "" {
+    param($v)
+    if ($v -notmatch '^@.+:.+') { Warn "Eine Matrix-ID sieht so aus: @ich:matrix.org (du hast '$v' getippt)"; return $null }
+    $srv = $v -replace '^@[^:]+:',''
+    if ($srv -eq $ServerName) {
+        # Existenz live prüfen (fängt Tippfehler wie @vmichi ab)
+        $enc = [uri]::EscapeDataString($v)
+        if (-not (Matrix GET "$HsUrl/_matrix/client/v3/profile/$enc" $null $null)) {
+            if ($script:MatrixErr.errcode -eq "M_NOT_FOUND") { Warn "Die Matrix-ID $v gibt es auf diesem Server nicht - Tippfehler?"; return $null }
+        }
+        return $v
+    }
+    # anderer Server: existiert er überhaupt? (fängt vmatrix.-Tippfehler ab)
+    if (Matrix GET "https://$srv/_matrix/client/versions" $null $null) { return $v }
+    Warn "Den Server '$srv' aus deiner Matrix-ID gibt es nicht oder er antwortet nicht - Tippfehler?"
+    return $null
+}
+$BashOptin = Ask-YesNo "Shell-Zugriff erlauben?" "nein"
 if ($BashOptin -eq "ja") {
     $AllowedTools = '["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
     $ToolsText = "Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Unumkehrbares nur nach Rückfrage."
@@ -129,12 +209,41 @@ if ($BashOptin -eq "ja") {
 
 # ------------------------------------------------------------ Phase 4: MATRIX
 Bold "Phase 4/7 - Matrix-Anbindung"
-$pwJson = ($BotPw | ConvertTo-Json)
-$loginBody = "{`"type`":`"m.login.password`",`"identifier`":{`"type`":`"m.id.user`",`"user`":`"$BotUser`"},`"password`":$pwJson,`"initial_device_display_name`":`"Operator Listener`"}"
-$login = Matrix POST "$HsUrl/_matrix/client/v3/login" $loginBody $null
-$Token = $login.access_token
-if (-not $Token) { Die "Login als @$BotUser fehlgeschlagen - Bot-User anlegen (Admin) oder Passwort prüfen. Details siehe README." }
-Ok "Matrix-Token erzeugt"
+$pwTries = 0
+while ($true) {
+    $pwJson = ($BotPw | ConvertTo-Json)
+    $loginBody = "{`"type`":`"m.login.password`",`"identifier`":{`"type`":`"m.id.user`",`"user`":`"$BotUser`"},`"password`":$pwJson,`"initial_device_display_name`":`"Operator Listener`"}"
+    $login = Matrix POST "$HsUrl/_matrix/client/v3/login" $loginBody $null
+    $Token = $login.access_token
+    if ($Token) { break }
+    switch ($script:MatrixErr.errcode) {
+        "M_LIMIT_EXCEEDED" {
+            $waitS = [math]::Ceiling((($script:MatrixErr.retry_after_ms, 2000 | Where-Object { $_ })[0]) / 1000) + 1
+            Warn "Zu viele Anmeldeversuche - der Server bittet um ${waitS}s Pause. Ich warte..."
+            Start-Sleep -Seconds $waitS
+        }
+        "M_USER_DEACTIVATED" { Die "Der Account @$BotUser wurde deaktiviert - bitte einen anderen Bot-Account verwenden." }
+        default {
+            $pwTries++
+            if ($pwTries -lt 3) {
+                Warn "Anmeldung fehlgeschlagen ($($script:MatrixErr.error)). Passwort in Ruhe neu eintippen."
+                $BotPwSec = Read-Host "Passwort für @${BotUser}:${ServerName} (erneut)" -AsSecureString
+                $BotPw = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($BotPwSec))
+            } else {
+                Warn "3x fehlgeschlagen. Entweder ist das Passwort falsch - oder den Account gibt es noch nicht."
+                Warn "Bot-Account anlegen: auf dem Homeserver registrieren (App/Admin), dann hier fortfahren."
+                $BotUser = Ask-Loop "Bot-Benutzername (nur der Name)" $BotUser { param($v) if ($v) { return $v.ToLower() } ; Warn "Bitte einen Namen eingeben"; return $null }
+                $BotPwSec = Read-Host "Passwort für @${BotUser}:${ServerName}" -AsSecureString
+                $BotPw = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($BotPwSec))
+                $pwTries = 0
+            }
+        }
+    }
+}
+# Token-Verifikation (whoami) - erst jetzt gilt die Anmeldung als bestanden
+$who = Matrix GET "$HsUrl/_matrix/client/v3/account/whoami" $null $Token
+if (-not $who.user_id) { Die "Anmeldung unerwartet ungültig (whoami leer) - bitte erneut ausführen." }
+Ok "Angemeldet als $($who.user_id) - Zugang geprüft"
 $Room = $null
 $joined = Matrix GET "$HsUrl/_matrix/client/v3/joined_rooms" $null $Token
 foreach ($r in $joined.joined_rooms) {
@@ -174,8 +283,11 @@ Secret-Set "matrix-owner" $Token
 if (-not (Secret-Has "matrix-owner")) { Warn "Secret-Store nicht verfügbar - Token bleibt in der Datei"; $TokenRef = $Token }
 $creds = @{ homeserver=$HsUrl; user_id="@${BotUser}:${ServerName}"; access_token=$TokenRef; room_id=$Room;
            owner_id=$Human; allowed_tools=($AllowedTools|ConvertFrom-Json); claude_bin=$ClaudeBin }
-$creds | ConvertTo-Json | Set-Content (Join-Path $BotDir "credentials.json")
-Ok "credentials.json geschrieben"
+$credPath = Join-Path $BotDir "credentials.json"
+$creds | ConvertTo-Json | Set-Content $credPath
+# Datei-Rechte härten: Vererbung aus, nur der aktuelle Nutzer hat Zugriff
+try { icacls $credPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null } catch {}
+Ok "credentials.json geschrieben (Zugriff nur für dich)"
 
 # ------------------------------------------------------------- Phase 6: START
 Bold "Phase 6/7 - Listener-Dienst"
@@ -184,8 +296,8 @@ Ok "Listener-Aufgabe registriert und gestartet (Task Scheduler: $($Tasks.listene
 
 # -------------------------------------------------------- Phase 8: DASHBOARD (optional)
 Bold "Phase 8 - Web-Dashboard (optional)"
-$dashOptin = Read-Host "Web-Dashboard installieren (Agenten-GUI, Tresor, Google/M365)? (ja/nein) [ja]"
-if ($dashOptin -ne "nein") {
+$dashOptin = Ask-YesNo "Web-Dashboard installieren (Agenten-GUI, Tresor, Google/M365)?" "ja"
+if ($dashOptin -eq "ja") {
     New-Item -ItemType Directory -Force -Path "$DashDir\static" | Out-Null
     $VenvPy = Join-Path $DashDir "venv\Scripts\python.exe"
     if (-not (Test-Path $VenvPy)) { & $Py -m venv (Join-Path $DashDir "venv") }
