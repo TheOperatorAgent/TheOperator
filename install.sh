@@ -562,7 +562,7 @@ phase5_files() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
   local F A DEST
   for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
-           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py; do
+           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py; do
     if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
     else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
     ok "$F installiert"
@@ -689,7 +689,7 @@ phase8_dashboard() {
     "$DASH_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
     "$DASH_DIR/venv/bin/pip" install -q "fastapi==0.116.*" "uvicorn==0.35.*" \
       "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" "mcp==1.*" "starlette<0.49" \
-      "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" || DASH_OK=0
+      "openai>=1.40" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" || DASH_OK=0
     "$DASH_DIR/venv/bin/pip" install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" \
       || warn "Deutsches Sprachmodell konnte nicht geladen werden — Pseudonymisierung meldet sich beim ersten Einsatz"
     "$VENV_PY" "$BOT_DIR/migrate_sessions.py" 2>/dev/null || true
@@ -703,7 +703,7 @@ phase8_dashboard() {
       if [ -f "$SCRIPT_DIR/dashboard/static/$F" ]; then cp "$SCRIPT_DIR/dashboard/static/$F" "$DASH_DIR/static/$F"
       else curl -fsSL "$REPO_RAW/dashboard/static/$F" -o "$DASH_DIR/static/$F" || DASH_OK=0; fi
     done
-    for F in m365.py gdrive.py mcp_m365.py vault.py mcp_n8n.py pseudonym.py pseudonym_daemon.py migrate_sessions.py; do
+    for F in m365.py gdrive.py mcp_m365.py vault.py mcp_n8n.py pseudonym.py pseudonym_daemon.py migrate_sessions.py llm_runner.py; do
       if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
       else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || DASH_OK=0; fi
     done
