@@ -154,7 +154,8 @@
   <section id="tab-system" class="tab">
     <h2>System</h2>
     <div class="card"><h2>Backups</h2>
-      <p class="hint">Sichert Konfiguration, Agenten, Gedächtnis, Verlauf und verschlüsselte Tokens nach ~/OperatorBackups (ohne venv/Logs). Wiederherstellung entpackt zur Prüfung — überschreibt nie automatisch.</p>
+      <p class="hint">Sichert Konfiguration, Agenten, Gedächtnis, Verlauf und verschlüsselte Tokens nach ~/OperatorBackups (ohne venv/Logs). Wiederherstellung entpackt zur Prüfung — überschreibt nie automatisch.<br>
+      <span class="small">Der <strong>Passwort-Tresor ist voll portabel</strong> (Master-Passwort genügt). Die Dienst-Anbindungen (Google/M365/n8n/Matrix) hängen bewusst am Schlüsselbund und werden auf einem neuen Mac in wenigen Klicks neu verbunden — das schützt deine Tokens.</span></p>
       <button class="primary" onclick="createBackup()">Backup jetzt erstellen</button>
       <div id="backup-list" style="margin-top:12px"></div></div>
     <div class="card"><h2>n8n verbinden</h2>
