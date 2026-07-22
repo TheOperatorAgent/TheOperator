@@ -34,10 +34,13 @@ def verify_config(meta):
     """
     if not isinstance(meta, dict):
         return False, None
-    vw = (meta.get("verify_with") or "").strip()
+    vw = str(meta.get("verify_with") or "").strip()
     if vw:
         return True, vw
-    v = (meta.get("verify") or "").strip().lower()
+    v = meta.get("verify")
+    if isinstance(v, bool):          # JSON-Bool (z. B. owner_verify: true in credentials.json)
+        return v, None
+    v = str(v or "").strip().lower()
     return (v in _TRUE), None
 
 
