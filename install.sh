@@ -48,6 +48,9 @@ if [ "${1:-}" = "--uninstall" ]; then
   DPLIST="$HOME/Library/LaunchAgents/com.the-operator.dashboard.plist"
   launchctl bootout "$GUI_DOMAIN" "$DPLIST" 2>/dev/null && ok "Dashboard gestoppt" || true
   rm -f "$DPLIST"
+  PPLIST="$HOME/Library/LaunchAgents/com.the-operator.pseudonym.plist"
+  launchctl bootout "$GUI_DOMAIN" "$PPLIST" 2>/dev/null && ok "Pseudonym-Daemon gestoppt" || true
+  rm -f "$PPLIST" "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)operator-pseudonym-$(id -u).sock" 2>/dev/null || true
   if [ -f "$BOT_DIR/credentials.json" ]; then
     HS=$(jget "['homeserver']" < "$BOT_DIR/credentials.json")
     TK=$(jget "['access_token']" < "$BOT_DIR/credentials.json")
@@ -192,7 +195,7 @@ fi
 bold "Phase 5/7 — Dateien einrichten"
 mkdir -p "$BOT_DIR"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
-for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py; do
+for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py migrate_tokens.py; do
   if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
   else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
   ok "$F installiert"
@@ -287,6 +290,8 @@ open(sys.argv[1], "w").write(json.dumps({
 PY
 chmod 600 "$BOT_DIR/credentials.json"
 ok "credentials.json geschrieben (Token im Schlüsselbund)"
+# Alt-Klartext-Tokens (frühere Installationen) in den Schlüsselbund migrieren (Issue #20)
+python3 "$BOT_DIR/migrate_tokens.py" 2>/dev/null || true
 # Plist mit dynamischen Pfaden erzeugen
 cat > "$PLIST_PATH" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -336,6 +341,8 @@ if [ "$DASH_OPTIN" = "ja" ]; then
       "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" || DASH_OK=0
     # Deutsches NER-Modell für die Pseudonymisierung (~570 MB, einmalig)
     "$DASH_DIR/venv/bin/pip" install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl"       || warn "Deutsches Sprachmodell konnte nicht geladen werden — Pseudonymisierung meldet sich beim ersten Einsatz"
+    # Alt-Verlauf (vor Redaction/Pseudonymisierung) einmalig säubern (Issue #18)
+    "$DASH_DIR/venv/bin/python3" "$BOT_DIR/migrate_sessions.py" 2>/dev/null || true
   fi
   if [ "$DASH_OK" = "1" ]; then
     for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py; do
@@ -346,7 +353,7 @@ if [ "$DASH_OPTIN" = "ja" ]; then
       if [ -f "$SCRIPT_DIR/dashboard/static/$F" ]; then cp "$SCRIPT_DIR/dashboard/static/$F" "$DASH_DIR/static/$F"
       else curl -fsSL "$REPO_RAW/dashboard/static/$F" -o "$DASH_DIR/static/$F" || DASH_OK=0; fi
     done
-    for F in m365.py gdrive.py mcp_m365.py vault.py mcp_n8n.py pseudonym.py; do
+    for F in m365.py gdrive.py mcp_m365.py vault.py mcp_n8n.py pseudonym.py pseudonym_daemon.py migrate_sessions.py; do
       if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
       else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || DASH_OK=0; fi
     done
@@ -387,6 +394,28 @@ DPLIST
     launchctl bootstrap "$GUI_DOMAIN" "$HOME/Library/LaunchAgents/com.the-operator.dashboard.plist" \
       && ok "Dashboard läuft — öffnen mit: python3 $DASH_DIR/open.py" \
       || warn "Dashboard-Start fehlgeschlagen — Bot läuft trotzdem (Log: $BOT_DIR/dashboard.log)"
+
+    # Pseudonymisierungs-Daemon (lädt das NER-Modell einmal → ~130x schneller je Nachricht)
+    cat > "$HOME/Library/LaunchAgents/com.the-operator.pseudonym.plist" <<PPLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key><string>com.the-operator.pseudonym</string>
+	<key>ProgramArguments</key>
+	<array><string>$DASH_DIR/venv/bin/python3</string><string>$BOT_DIR/pseudonym_daemon.py</string></array>
+	<key>RunAtLoad</key><true/>
+	<key>KeepAlive</key><true/>
+	<key>ThrottleInterval</key><integer>15</integer>
+	<key>StandardOutPath</key><string>$BOT_DIR/pseudonym-daemon.log</string>
+	<key>StandardErrorPath</key><string>$BOT_DIR/pseudonym-daemon.log</string>
+</dict>
+</plist>
+PPLIST
+    launchctl bootout "$GUI_DOMAIN" "$HOME/Library/LaunchAgents/com.the-operator.pseudonym.plist" 2>/dev/null || true
+    launchctl bootstrap "$GUI_DOMAIN" "$HOME/Library/LaunchAgents/com.the-operator.pseudonym.plist" \
+      && ok "Pseudonymisierungs-Daemon läuft (schnelle PII-Ersetzung)" \
+      || warn "Pseudonym-Daemon-Start fehlgeschlagen — Listener nutzt den langsameren Fallback"
   else
     warn "Dashboard-Installation unvollständig — der Chat-Bot läuft davon unabhängig weiter"
   fi
