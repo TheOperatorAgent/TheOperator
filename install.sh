@@ -660,34 +660,84 @@ os.chmod(os.path.join(bot, "dashboard.json"), 0o600)
 PY
     fi
     install_service dashboard "$VENV_PY" "$DASH_DIR/server.py" \
-      && ok "Dashboard läuft — öffnen mit: $VENV_PY $DASH_DIR/open.py" \
+      && { DASH_RUNNING=1; ok "Dashboard läuft"; } \
       || warn "Dashboard-Start fehlgeschlagen — Bot läuft trotzdem (Log: $BOT_DIR/dashboard.log)"
     install_service pseudonym "$VENV_PY" "$BOT_DIR/pseudonym_daemon.py" \
       && ok "Pseudonymisierungs-Daemon läuft (schnelle PII-Ersetzung)" \
       || warn "Pseudonym-Daemon-Start fehlgeschlagen — Listener nutzt den Fallback"
-    if [ "$OS" = Linux ] && [ ! -f /etc/udev/rules.d/70-operator-fido.rules ]; then
-      warn "Für Sicherheitsschlüssel-Entsperrung (optional) einmalig als root:"
-      echo "        sudo tee /etc/udev/rules.d/70-operator-fido.rules >/dev/null <<'RULE'"
-      echo '        KERNEL=="hidraw*", SUBSYSTEM=="hidraw", MODE="0660", TAG+="uaccess"'
-      echo "        RULE"
-      echo "        sudo udevadm control --reload-rules && sudo udevadm trigger"
+    # FIDO-Sicherheitsschlüssel (Linux): EINE Frage statt Copy-Paste — wir richten die
+    # udev-Regel selbst ein (sudo fragt einmal nach dem Nutzer-Passwort)
+    if [ "$OS" = Linux ] && [ ! -f /etc/udev/rules.d/70-operator-fido.rules ] && command -v sudo >/dev/null; then
+      local FIDO_SETUP
+      ask_yesno FIDO_SETUP "Möchtest du einen Sicherheitsschlüssel (z. B. YubiKey) für den Passwort-Tresor nutzen?" "nein"
+      if [ "$FIDO_SETUP" = "ja" ]; then
+        if echo 'KERNEL=="hidraw*", SUBSYSTEM=="hidraw", MODE="0660", TAG+="uaccess"' \
+             | sudo tee /etc/udev/rules.d/70-operator-fido.rules >/dev/null \
+           && sudo udevadm control --reload-rules && sudo udevadm trigger; then
+          ok "Sicherheitsschlüssel-Zugriff eingerichtet"
+        else
+          warn "Einrichtung nicht möglich — der Tresor funktioniert trotzdem (Master-Passwort)"
+        fi
+      fi
     fi
   else
     warn "Dashboard-Installation unvollständig — der Chat-Bot läuft davon unabhängig weiter"
   fi
 }
 
+# Kurzbefehl »operator« für den Alltag: Dashboard öffnen, Log, Status, Deinstallation —
+# nie wieder lange Pfade kopieren.
+install_launcher() {
+  mkdir -p "$HOME/.local/bin"
+  cat > "$HOME/.local/bin/operator" <<LAUNCH
+#!/bin/bash
+BOT_DIR="\$HOME/.claude/matrix-bot"
+VENV="\$BOT_DIR/dashboard/venv/bin/python3"; [ -x "\$VENV" ] || VENV=python3
+case "\${1:-dashboard}" in
+  dashboard|"") exec "\$VENV" "\$BOT_DIR/dashboard/open.py";;
+  log)          exec tail -f "\$BOT_DIR/listener.log";;
+  status)
+    if [ "\$(uname)" = Darwin ]; then
+      for s in listener dashboard pseudonym; do launchctl print "gui/\$(id -u)/com.the-operator.\$s" >/dev/null 2>&1 && echo "✓ \$s läuft" || echo "✗ \$s gestoppt"; done
+    else
+      for s in listener dashboard pseudonym; do systemctl --user is-active --quiet "operator-\$s" && echo "✓ \$s läuft" || echo "✗ \$s gestoppt"; done
+    fi;;
+  uninstall)    curl -fsSL "$REPO_RAW/install.sh" -o /tmp/operator-uninstall.sh && exec bash /tmp/operator-uninstall.sh --uninstall;;
+  *) echo "Nutzung: operator [dashboard|log|status|uninstall]";;
+esac
+LAUNCH
+  chmod +x "$HOME/.local/bin/operator"
+  case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ok "Kurzbefehl »operator« eingerichtet";;
+    *) ok "Kurzbefehl »operator« eingerichtet (ab dem nächsten Terminal-Fenster verfügbar)";;
+  esac
+}
+
 phase7_test() {
   bold "Phase 7 — Funktionstest"
-  python3 "$BOT_DIR/send.py" "✅ Operator einsatzbereit! Schreib mir einfach — ich antworte in Sekunden. (Verhalten anpassen: $BOT_DIR/VERHALTEN.md)" >/dev/null \
+  python3 "$BOT_DIR/send.py" "✅ Operator einsatzbereit! Schreib mir einfach — ich antworte in Sekunden." >/dev/null \
     && ok "Testnachricht im Raum — auf dem Handy prüfen!" \
-    || warn "Testnachricht fehlgeschlagen — Log prüfen: $BOT_DIR/listener.log"
-  if [ "${CLAUDE_READY:-1}" = 0 ]; then
-    warn "WICHTIG: Die Claude-Anmeldung fehlt noch — dein Operator antwortet erst danach."
-    warn "Nachholen: 'claude /login' im Terminal, dann Dienst neu starten (oder Rechner neu anmelden)."
-  fi
+    || warn "Testnachricht fehlgeschlagen — Log prüfen: operator log"
   rm -f "$STATE_FILE" 2>/dev/null || true   # Erfolg → gemerkte Antworten aufräumen
-  bold "Fertig! 🎉  Log: tail -f $BOT_DIR/listener.log  ·  Deinstallation: bash install.sh --uninstall"
+  # Kompakte Übersicht statt Textwand — und das Dashboard öffnet sich gleich von selbst
+  echo ""
+  bold "══════════════════════════════════════════════════"
+  bold " Fertig! 🎉  Dein Operator läuft."
+  bold "══════════════════════════════════════════════════"
+  echo "   💬  Chat        : schreib ihm in deiner Matrix-App"
+  echo "   🖥   Dashboard   : Befehl »operator« (öffnet den Browser)"
+  echo "   📜  Log         : operator log       ·  Status: operator status"
+  echo "   🗑   Entfernen   : operator uninstall"
+  if [ "${CLAUDE_READY:-1}" = 0 ]; then
+    echo ""
+    warn "WICHTIG: Die Claude-Anmeldung fehlt noch — Nachholen mit: claude /login"
+  fi
+  echo ""
+  if [ "${DASH_RUNNING:-0}" = 1 ]; then
+    echo "  Öffne das Dashboard…"
+    "$BOT_DIR/dashboard/venv/bin/python3" "$BOT_DIR/dashboard/open.py" >/dev/null 2>&1 \
+      || warn "Automatisches Öffnen ging nicht — einfach »operator« tippen"
+  fi
 }
 
 # ---------------------------------------------------------------- main --
@@ -700,6 +750,7 @@ main() {
   phase5_files
   phase6_start
   phase8_dashboard
+  install_launcher
   phase7_test
 }
 
