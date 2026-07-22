@@ -10,6 +10,7 @@ bots.json wird zur Laufzeit überwacht (mtime) — Publish/Unpublish greift ohne
 100 % Python-Standardbibliothek (läuft auch ohne Dashboard-venv).
 """
 import json
+import os
 import re
 import subprocess
 import threading
@@ -67,6 +68,61 @@ def redact_text(text):
     except Exception:
         pass
     return redact_mod.redact(text) if redact_mod else text
+
+
+# ---------------------------------------------------------------- Pseudonymisierung --
+def _pii_cfg():
+    """Konfiguration aus dashboard.json (Default AN)."""
+    try:
+        c = json.load(open(f"{BOT_DIR}/dashboard.json")).get("pseudonymize", {})
+    except Exception:
+        c = {}
+    return {"enabled": c.get("enabled", True), "mode": c.get("mode", "standard"),
+            "allow": c.get("allow", []), "deny": c.get("deny", [])}
+
+
+def pseudonymize_segments(segments):
+    """Nutzerdaten-Segmente (Nachricht/Verlauf/Gedächtnis) pseudonymisieren — NICHT den
+    System-Prompt (VERHALTEN/Infrastruktur bleibt echt). Gibt (segments', mapping) zurück.
+    fail-safe: bei Fehler None → Aufrufer bricht ab (maximale Sicherheit)."""
+    cfg = _pii_cfg()
+    if not cfg["enabled"] or not any(s.strip() for s in segments):
+        return segments, {}
+    import os as _os
+    if not _os.path.exists(VENV_PY):
+        return None, None
+    req = json.dumps({"texts": segments, "mapping": {}, "mode": cfg["mode"],
+                      "allow": cfg["allow"], "deny": cfg["deny"]})
+    try:
+        r = subprocess.run([VENV_PY, f"{BOT_DIR}/pseudonym.py", "run"],
+                           input=req, capture_output=True, text=True, timeout=60)
+        if r.returncode != 0 or not r.stdout:
+            log(f"Pseudonymisierung fehlgeschlagen (rc={r.returncode}): {r.stderr[-200:]}")
+            return None, None
+        out = json.loads(r.stdout)
+        try:   # Transparenz-Zähler fürs Dashboard (nur Zahlen, keine Realwerte)
+            with open(f"{BOT_DIR}/pseudonymize-stats.json", "w") as f:
+                json.dump({"ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+                           "stats": out.get("stats", {})}, f)
+        except OSError:
+            pass
+        return out["texts"], out["mapping"]
+    except Exception as e:
+        log(f"Pseudonymisierung-Fehler: {e}")
+        return None, None
+
+
+def reidentify(text, mapping):
+    """Surrogate → echte Werte (stdlib, längste zuerst). Für Antwort UND Tool-Brücke."""
+    s2r = (mapping or {}).get("s2r", {})
+    if not text or not s2r:
+        return text
+    for sur in sorted(s2r, key=len, reverse=True):
+        if sur in text:
+            text = text.replace(sur, s2r[sur])
+    return text
+
+
 CLAUDE = CREDS.get("claude_bin", "/Users/michi/.npm-global/bin/claude")
 OWNER = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
@@ -205,42 +261,63 @@ class BotSession(threading.Thread):
                 "Rückbezügen wie 'darüber' oder 'das'):\n" + "\n".join(lines) + "\n\n")
 
     def build(self, bodies):
+        """Baut Prompt. Pseudonymisiert die PII-tragenden Nutzer-Segmente (aktuelle
+        Nachricht + Gedächtnis-Treffer) gemeinsam — NICHT VERHALTEN/Infrastruktur, NICHT
+        den Verlauf (der kommt schon pseudonymisiert aus sessions.db). history bleibt echt.
+        Rückgabe: (prompt, tools, model, mapping, messages_for_record) oder (None,…,False,…)
+        bei fail-safe-Abbruch."""
         messages = "\n".join(f"- {b}" for b in bodies)
+        memories = self.recall(" ".join(bodies)) if self.kind == "owner" else ""
+        # erst Secrets (stdlib), dann PII pseudonymisieren
+        m_in = redact_mod.redact(messages) if redact_mod else messages
+        mem_in = redact_mod.redact(memories) if redact_mod else memories
+        segs, mapping = pseudonymize_segments([m_in, mem_in])
+        if segs is None:
+            return None, None, None, False, None      # fail-safe: Aufrufer bricht ab
+        messages_p, memories_p = segs
+        history = self.history_block()                # bereits pseudonymisiert in der DB
         if self.kind == "owner":
             try:
                 verhalten = open(f"{BOT_DIR}/VERHALTEN.md").read()
             except OSError:
                 verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende per python3 ~/.claude/matrix-bot/send.py)"
-            return (OWNER_PROMPT.format(verhalten=verhalten, messages=messages,
-                                        history=self.history_block(),
-                                        memories=self.recall(" ".join(bodies))),
-                    OWNER_TOOLS, None)
+            prompt = OWNER_PROMPT.format(verhalten=verhalten, messages=messages_p,
+                                         history=history, memories=memories_p)
+            return prompt, OWNER_TOOLS, None, mapping, messages_p
         agent = parse_agent_md(self.bot_name) or {"tools": [], "model": None,
                                                   "body": "(Agenten-Datei fehlt)"}
         tools = [t for t in agent["tools"] if t in OWNER_TOOLS or t == "Read"]
         if "Bash" not in tools:
             tools.append("Bash")  # noetig fuer send.py; Agent-Frontmatter bleibt die inhaltliche Leitplanke
         model = agent["model"] if agent["model"] in ("haiku", "sonnet", "opus") else None
-        return (AGENT_PROMPT.format(name=self.bot_name, owner=OWNER,
-                                    owner_short=OWNER.split(":")[0],
-                                    body=agent["body"], messages=messages,
-                                    history=self.history_block(),
-                                    bot_dir=BOT_DIR),
-                tools, model)
+        prompt = AGENT_PROMPT.format(name=self.bot_name, owner=OWNER,
+                                     owner_short=OWNER.split(":")[0],
+                                     body=agent["body"], messages=messages_p,
+                                     history=history, bot_dir=BOT_DIR)
+        return prompt, tools, model, mapping, messages_p
 
     # ---------- Claude ----------
     def answer(self, bodies, last_event_id):
-        prompt, tools, model = self.build(bodies)
+        prompt, tools, model, mapping, msg_rec = self.build(bodies)
         self.mark_read(last_event_id)
-        self.execute(prompt, tools, model, " | ".join(bodies), kind="chat")
+        if mapping is False:
+            self.send_message("⚠️ Der Pseudonymisierungs-Dienst ist gerade nicht verfügbar. "
+                              "Aus Datenschutzgründen habe ich deine Nachricht NICHT an Claude "
+                              "geschickt. Du kannst die Pseudonymisierung im Dashboard prüfen "
+                              "oder (bewusst) deaktivieren.")
+            return
+        self.execute(prompt, tools, model, msg_rec, kind="chat", mapping=mapping)
 
     def run_automation(self, job):
         framing = f"[Automation „{job['name']}“ wurde planmäßig ausgelöst] {job['prompt']}"
-        prompt, tools, model = self.build([framing])
+        prompt, tools, model, mapping, msg_rec = self.build([framing])
+        if mapping is False:
+            log(f"[{self.bot_name}] Automation '{job['name']}' abgebrochen (Pseudonymisierung aus)")
+            return
         log(f"[{self.bot_name}] Automation '{job['name']}' startet")
-        self.execute(prompt, tools, model, framing, kind="cron")
+        self.execute(prompt, tools, model, msg_rec, kind="cron", mapping=mapping)
 
-    def execute(self, prompt, tools, model, messages_label, kind):
+    def execute(self, prompt, tools, model, messages_label, kind, mapping=None):
         log(f"[{self.bot_name}] Claude wird geweckt ({kind})"
             + (f" (model={model})" if model else ""))
         done = threading.Event()
@@ -263,11 +340,21 @@ class BotSession(threading.Thread):
                 cmd += ["--mcp-config", mcp_file]
         except OSError:
             pass
+        # Tool-Re-ID-Brücke: Mapping flüchtig ablegen, Pfad per ENV an Claudes Werkzeuge
+        # (send.py/m365/gdrive ersetzen Surrogate → echte Werte vor der Ausführung)
+        run_env, map_path = dict(os.environ), None
+        if mapping and mapping.get("s2r"):
+            import tempfile
+            fd, map_path = tempfile.mkstemp(prefix="operator-pii-", suffix=".json")
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w") as f:
+                json.dump(mapping, f)
+            run_env["OPERATOR_PII_MAP"] = map_path
         start = time.time()
         try:
             with CLAUDE_SLOTS:
                 r = subprocess.run(cmd, capture_output=True, text=True,
-                                   timeout=600, cwd=WORKSPACE)
+                                   timeout=600, cwd=WORKSPACE, env=run_env)
             result, tok_in, tok_out, dur = "", 0, 0, int((time.time() - start) * 1000)
             try:
                 data = json.loads(r.stdout)
@@ -314,6 +401,11 @@ class BotSession(threading.Thread):
             done.set()
             t.join(timeout=5)
             self.set_typing(False)
+            if map_path:
+                try:
+                    os.remove(map_path)   # flüchtige PII-Map nach dem Lauf löschen
+                except OSError:
+                    pass
 
     # ---------- Loop ----------
     def run(self):
