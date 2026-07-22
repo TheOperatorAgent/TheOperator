@@ -30,6 +30,7 @@ import sessions as sessions_db      # noqa: E402
 import cron_runner                  # noqa: E402
 import skills as skills_store       # noqa: E402
 import vault as vault_store         # noqa: E402
+import vaultwarden as vw_store       # noqa: E402  (optionales Vaultwarden-Backend)
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -799,6 +800,85 @@ async def api_vault_recover(request: Request):
         return err("auth", str(e), 403)
     audit("dashboard", "vault.recover", "")
     return {"ok": True, "recovery_key": new_key}
+
+
+# ------------------------------------------------ Tresor-Backend (lokal/Vaultwarden) --
+def _save_dash_cfg() -> None:
+    """dashboard.json atomar (0600) schreiben — Listener/vault lesen es pro Nutzung frisch."""
+    p = os.path.join(BOT_DIR, "dashboard.json")
+    fd = os.open(p + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(DASH_CFG, f, indent=1)
+    os.replace(p + ".tmp", p)
+
+
+@app.get("/api/vault/backend")
+def api_vault_backend_get():
+    return {"backend": DASH_CFG.get("vault_backend", "local"),
+            "vaultwarden": vw_store.status()}
+
+
+@app.put("/api/vault/backend")
+async def api_vault_backend_put(request: Request):
+    b = await request.json()
+    backend = b.get("backend", "local")
+    if backend not in ("local", "vaultwarden"):
+        return err("validate", "Unbekanntes Backend")
+    DASH_CFG["vault_backend"] = backend
+    _save_dash_cfg()
+    audit("dashboard", "vault.backend", backend)
+    return {"ok": True, "backend": backend}
+
+
+@app.put("/api/vault/vaultwarden/config")
+async def api_vw_config(request: Request):
+    url = ((await request.json()).get("url") or "").strip()
+    try:
+        vw_store.set_server(url)
+    except (ValueError, RuntimeError) as e:
+        return err("vaultwarden", str(e))
+    audit("dashboard", "vaultwarden.config", url)
+    return {"ok": True}
+
+
+@app.post("/api/vault/vaultwarden/unlock")
+async def api_vw_unlock(request: Request):
+    if (brake := _vault_brake()):
+        return brake
+    b = await request.json()
+    try:
+        vw_store.unlock(b.get("master_pw", ""), b.get("email", ""))
+    except (ValueError, RuntimeError) as e:
+        _vault_fail()
+        audit("dashboard", "vaultwarden.unlock", "", False)
+        return err("auth", str(e), 403)
+    _vault_fails["count"] = 0
+    audit("dashboard", "vaultwarden.unlock", "")
+    return {"ok": True}
+
+
+@app.post("/api/vault/vaultwarden/lock")
+def api_vw_lock():
+    vw_store.lock()
+    audit("dashboard", "vaultwarden.lock", "")
+    return {"ok": True}
+
+
+@app.get("/api/vault/vaultwarden/items")
+def api_vw_items():
+    try:
+        return {"items": vw_store.list_items()}
+    except PermissionError:
+        return err("locked", "Vaultwarden-Tresor ist gesperrt", 423)
+    except (RuntimeError, ValueError) as e:
+        return err("vaultwarden", str(e), 400)
+
+
+@app.delete("/api/vault/vaultwarden")
+def api_vw_disconnect():
+    vw_store.disconnect()
+    audit("dashboard", "vaultwarden.disconnect", "")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- n8n --
