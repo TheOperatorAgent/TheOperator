@@ -125,6 +125,7 @@ def pseudonymize_segments(segments, conv=""):
     if not cfg["enabled"] or not any(s.strip() for s in segments):
         return segments, {}
     if not os.path.exists(VENV_PY):
+        log(f"Pseudonymisierung nicht möglich: venv-Python fehlt ({VENV_PY})")
         return None, None
     req = json.dumps({"texts": segments, "mapping": {}, "conversation": conv,
                       "mode": cfg["mode"], "allow": cfg["allow"], "deny": cfg["deny"]})
@@ -151,6 +152,36 @@ def pseudonymize_segments(segments, conv=""):
     except Exception as e:
         log(f"Pseudonymisierung-Fehler: {e}")
         return None, None
+
+
+def dashboard_link():
+    """Einmal-Link zum Dashboard: enthält ein 10-Minuten-Ticket, das beim ersten Klick
+    verbraucht wird — der echte Zugangs-Token landet NIE im Chatverlauf. Wer den Raum
+    später liest, kann mit dem Link nichts mehr anfangen."""
+    try:
+        import hashlib
+        import secrets as _sec
+        port = 8737
+        try:
+            port = json.load(open(f"{BOT_DIR}/dashboard.json")).get("port", 8737)
+        except Exception:
+            pass
+        ott = _sec.token_hex(16)
+        p = f"{BOT_DIR}/secrets/ott.json"
+        try:
+            entries = [e for e in json.load(open(p)) if e.get("exp", 0) > time.time()]
+        except Exception:
+            entries = []
+        entries.append({"sha": hashlib.sha256(ott.encode()).hexdigest(),
+                        "exp": time.time() + 600})
+        os.makedirs(f"{BOT_DIR}/secrets", mode=0o700, exist_ok=True)
+        fd = os.open(p + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(entries, f)
+        os.replace(p + ".tmp", p)
+        return f"http://127.0.0.1:{port}/#ott={ott}"
+    except Exception:
+        return "http://127.0.0.1:8737"
 
 
 def reidentify(text, mapping):
@@ -344,8 +375,9 @@ class BotSession(threading.Thread):
         if mapping is False:
             self.send_message("⚠️ Der Pseudonymisierungs-Dienst ist gerade nicht verfügbar. "
                               "Aus Datenschutzgründen habe ich deine Nachricht NICHT an Claude "
-                              "geschickt. Du kannst die Pseudonymisierung im Dashboard prüfen "
-                              "oder (bewusst) deaktivieren.")
+                              "geschickt. Prüfen oder (bewusst) deaktivieren: "
+                              f"{dashboard_link()} — Einmal-Link, 10 Min gültig, funktioniert "
+                              "auf dem Rechner, auf dem dein Operator läuft.")
             return
         self.execute(prompt, tools, model, msg_rec, kind="chat", mapping=mapping)
 
