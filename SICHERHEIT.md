@@ -50,6 +50,34 @@ Redaction-Schicht (`redact.py`), die bekannte Tresor-Werte und generische Secret
 durch `[REDACTED:…]` ersetzt — vor dem Schreiben in `sessions.db`, in Logs und beim
 Wiedereinspielen alter Runden in den Prompt.
 
+## Pseudonymisierung — PII erreicht das Sprachmodell nie im Klartext
+
+Eine dritte, davon getrennte Ebene (standardmäßig AN, im Dashboard → Datenschutz abschaltbar):
+Bevor Nutzerdaten an Claude gehen, werden **personenbezogene Daten** (Namen, E-Mail, Telefon,
+IBAN, Orte, Firmen) durch **konsistente, realistische Ersatzwerte** ersetzt; in der Antwort und
+in Tool-Aktionen werden die echten Werte wieder eingesetzt.
+
+- **Erkennung:** Microsoft Presidio + deutsches spaCy-NER (`de_core_news_lg`) + Regex-Recognizer
+  (E-Mail/Telefon/IBAN/…) + eigener Anrede-Recognizer („Frau Wagner"). Over-Detection von
+  Imperativen/Pronomen wird per Stopwort-Liste, POS-Check und Span-Trimming vermieden.
+- **Ersatzwerte:** Faker(`de_DE`) erzeugt plausible Namen/Adressen; ein konsistentes,
+  bidirektionales Mapping (gleicher Wert → gleicher Ersatz, auch über mehrere Segmente) erlaubt
+  die exakte Rückübersetzung, inkl. Teilnamen (nur Vorname).
+- **Reihenfolge:** erst Secret-Redaction (`redact.py`, irreversibel), **dann** Pseudonymisierung
+  (reversibel) — so wandert nie ein Token in das PII-Mapping.
+- **Tool-Brücke:** Der Operator „denkt" in Ersatzwerten; `send.py`, die m365-/n8n-Tools lösen sie
+  über `reid.py` erst **an der Ausführungsgrenze** auf (Mapping-Pfad flüchtig via
+  `$OPERATOR_PII_MAP`, `0600`, nur für die Dauer eines Laufs). Michi sieht in der Chat-Antwort
+  echte Namen; Anthropic sieht nur Ersatzwerte.
+- **fail-safe:** Ist der Dienst nicht verfügbar und Pseudonymisierung AN, wird die Nachricht
+  **nicht** an Claude geschickt (Meldung im Chat), statt ungeschützt zu senden.
+
+**Grenzen (ehrlich):** NER ist nicht perfekt (~85–92 % Trefferquote) — einzelne unübliche Namen
+können durchrutschen; die **Deny-Liste** im Dashboard fängt bekannte Kontakte zusätzlich ab. Das
+lokale Mapping enthält Klartext-PII → nur im Arbeitsspeicher / flüchtig, **nie** in `sessions.db`
+oder Logs. Ein an das Sprachmodell durchgereichter Ersatzwert ist als solcher nicht markiert
+(realistische Namen statt Tokens) — das ist der bewusste Preis für hohe Antwortqualität.
+
 ### Entsperren mit FIDO2-Hardware-Key (optional)
 Als bequeme Alternative zum Master-Passwort kann der Tresor mit einem FIDO2-Hardware-Key
 (YubiKey o. ä.) entsperrt werden — einstecken und antippen.
@@ -105,3 +133,4 @@ Bindet nur an `127.0.0.1`, Bearer-Token-Pflicht (SHA-256-Hash gespeichert, Token
 URL-Fragment), Host-Header-Whitelist gegen DNS-Rebinding, kein Cookie ⇒ kein CSRF. Der
 Tresor-Entsperr-Endpunkt hat zusätzlich eine Brute-Force-Bremse (5 Fehlversuche → 30 s Sperre);
 scrypt bremst jeden Versuch ohnehin auf ~1 s.
+
