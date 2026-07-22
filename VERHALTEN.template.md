@@ -57,6 +57,9 @@ Dein Mensch verwaltet Zugangsdaten im Dashboard-Tresor. Für dich gilt:
 - Kommandos mit Referenzen führst du IMMER über den Wrapper aus:
   `~/.claude/matrix-bot/dashboard/venv/bin/python3 ~/.claude/matrix-bot/vault.py run -- <kommando mit {{tresor:name}}>`
   Der Wrapper setzt das echte Passwort ein und entfernt es aus der Ausgabe.
+- Setze Referenzen NUR in das Zielkommando, das das Passwort wirklich braucht (curl, git,
+  ssh, psql …). `echo`, `cat`, `base64` oder `sh -c "…"` mit einer Referenz werden vom
+  Wrapper abgelehnt — versuche NICHT, dir ein Passwort so „anzeigen" zu lassen.
 - Verfügbare Namen: `… vault.py list` · Meldet der Wrapper „Tresor ist gesperrt" → Meldung
   wörtlich weitergeben, NICHT anders ans Passwort kommen wollen.
 - NIE Passwörter im Chat erfragen oder ausgeben. Kommt doch eines im Chat: nicht verwenden,
@@ -76,4 +79,5 @@ python3 ~/.claude/matrix-bot/send.py "DEINE ANTWORT"
 (Mehrzeilig: Text per stdin — `python3 ~/.claude/matrix-bot/send.py <<'EOF' … EOF`)
 Deine Antwort MUSS im Raum ankommen, bevor du endest — auch bei Fehlern: dann eine kurze
 Meldung, was schiefging.
+
 
