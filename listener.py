@@ -12,24 +12,27 @@ bots.json wird zur Laufzeit überwacht (mtime) — Publish/Unpublish greift ohne
 import json
 import os
 import re
+import shutil
 import subprocess
+import sys
 import threading
 import time
 import urllib.parse
 import urllib.request
 
-BOT_DIR = "/Users/michi/.claude/matrix-bot"
+BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
+sys.path.insert(0, BOT_DIR)
+import platform_compat as _plat   # noqa: E402  (stdlib-Modul aus BOT_DIR)
+import secretstore                # noqa: E402  (stdlib-Modul aus BOT_DIR)
 
 
 def keychain_token(account, fallback):
-    """Token aus dem macOS-Schlüsselbund; Datei-Wert nur als Fallback (Altbestand)."""
+    """Token aus dem OS-Secret-Store; Datei-Wert nur als Fallback (Altbestand)."""
     if fallback != "keychain":
-        log(f"⚠ Klartext-Token in Datei ({account}) — 'python3 {BOT_DIR}/migrate_tokens.py' "
-            f"ausführen, um es in den Schlüsselbund zu verschieben.")
+        log(f"⚠ Klartext-Token in Datei ({account}) — '{sys.executable} {BOT_DIR}/migrate_tokens.py' "
+            f"ausführen, um es in den Secret-Store zu verschieben.")
         return fallback
-    r = subprocess.run(["security", "find-generic-password", "-s", "the-operator",
-                        "-a", account, "-w"], capture_output=True, text=True)
-    return r.stdout.strip() if r.returncode == 0 else ""
+    return secretstore.get(account) or ""
 
 
 CREDS = json.load(open(f"{BOT_DIR}/credentials.json"))
@@ -37,8 +40,7 @@ BOTS_FILE = f"{BOT_DIR}/bots.json"
 CRON_FILE = f"{BOT_DIR}/cron.json"
 WORKSPACE = f"{BOT_DIR}/workspace"
 
-import sys as _sys
-_sys.path.insert(0, BOT_DIR)
+_sys = sys  # Rückwärtskompatibler Alias (unten weiterhin genutzt)
 try:
     import sessions as sessions_db
 except Exception:
@@ -51,7 +53,7 @@ try:
     import redact as redact_mod
 except Exception:
     redact_mod = None
-VENV_PY = f"{BOT_DIR}/dashboard/venv/bin/python3"
+VENV_PY = _plat.venv_python(BOT_DIR)
 
 
 def redact_text(text):
@@ -83,19 +85,19 @@ def _pii_cfg():
             "allow": c.get("allow", []), "deny": c.get("deny", [])}
 
 
-PSEUDONYM_SOCK = os.path.join(os.environ.get("TMPDIR", "/tmp"),
-                              f"operator-pseudonym-{os.getuid()}.sock")
-
-
 def _pseudonym_via_daemon(req: str):
-    """Anfrage an den langlebigen Daemon (Modell schon geladen) — schnell. None = nicht erreichbar."""
-    import socket as _socket
-    if not os.path.exists(PSEUDONYM_SOCK):
-        return None
+    """Anfrage an den langlebigen Daemon (Modell schon geladen) — schnell. None = nicht erreichbar.
+    IPC plattformübergreifend: POSIX AF_UNIX, Windows TCP-Loopback + Token (via platform_compat)."""
     try:
-        s = _socket.socket(_socket.AF_UNIX, _socket.SOCK_STREAM)
+        s, token = _plat.ipc_connect(timeout=90)
+    except Exception:
+        return None   # Daemon nicht erreichbar → Aufrufer nutzt Subprozess-Fallback
+    try:
+        if token:   # Windows: Token ins Request-JSON einweben (Daemon prüft ihn)
+            d = json.loads(req)
+            d["token"] = token
+            req = json.dumps(d)
         s.settimeout(90)
-        s.connect(PSEUDONYM_SOCK)
         s.sendall(req.encode() + b"\n")
         buf = b""
         while b"\n" not in buf:
@@ -103,10 +105,14 @@ def _pseudonym_via_daemon(req: str):
             if not chunk:
                 break
             buf += chunk
-        s.close()
         return buf.split(b"\n", 1)[0].decode() if buf else None
     except Exception:
         return None
+    finally:
+        try:
+            s.close()
+        except Exception:
+            pass
 
 
 def pseudonymize_segments(segments, conv=""):
@@ -158,7 +164,7 @@ def reidentify(text, mapping):
     return text
 
 
-CLAUDE = CREDS.get("claude_bin", "/Users/michi/.npm-global/bin/claude")
+CLAUDE = CREDS.get("claude_bin") or shutil.which("claude") or "claude"
 OWNER = CREDS.get("owner_id", "@michi:matrix.vonaschenbrenner.bayern")
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
 CLAUDE_SLOTS = threading.Semaphore(2)
@@ -189,7 +195,7 @@ Dein Auftraggeber ist {owner}. Dein Verhalten:
 {messages}
 
 Erledige/beantworte das jetzt. Sende deine Antwort am Ende zwingend per Bash:
-python3 {bot_dir}/send.py --bot {name} "DEINE ANTWORT"
+{py} {bot_dir}/send.py --bot {name} "DEINE ANTWORT"
 (mehrzeilig: Text per stdin an send.py --bot {name}). Keine Secrets in den Chat — \
 Zugangsdaten existieren nur als Referenz {{{{tresor:name}}}} über den Tresor-Wrapper."""
 
@@ -265,7 +271,7 @@ class BotSession(threading.Thread):
     # ---------- Prompt-Bau ----------
     def recall(self, text, k=5):
         try:
-            r = subprocess.run(["python3", f"{BOT_DIR}/memory.py", "search", text, "-k", str(k)],
+            r = subprocess.run([sys.executable, f"{BOT_DIR}/memory.py", "search", text, "-k", str(k)],
                                capture_output=True, text=True, timeout=15)
             hits = r.stdout.strip()
             if hits:
@@ -328,7 +334,7 @@ class BotSession(threading.Thread):
         prompt = AGENT_PROMPT.format(name=self.bot_name, owner=OWNER,
                                      owner_short=OWNER.split(":")[0],
                                      body=agent["body"], messages=messages_p,
-                                     history=history, bot_dir=BOT_DIR)
+                                     history=history, bot_dir=BOT_DIR, py=sys.executable)
         return prompt, tools, model, mapping, messages_p
 
     # ---------- Claude ----------
@@ -381,9 +387,11 @@ class BotSession(threading.Thread):
         if mapping and mapping.get("s2r"):
             import tempfile
             fd, map_path = tempfile.mkstemp(prefix="operator-pii-", suffix=".json")
-            os.fchmod(fd, 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(fd, 0o600)   # POSIX; auf Windows unten via secure_chmod
             with os.fdopen(fd, "w") as f:
                 json.dump(mapping, f)
+            _plat.secure_chmod(map_path)
             run_env["OPERATOR_PII_MAP"] = map_path
         start = time.time()
         try:
