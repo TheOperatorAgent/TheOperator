@@ -114,6 +114,15 @@ Pfad wie bei Claude), die Antwort wird vor dem Senden reidentifiziert. **Auto-Fa
 Claude-Abo-Limit + hinterlegtem Anthropic-API-Key genau ein Wiederholungslauf mit dem Key
 (per-Aufruf-Env) + transparenter Chat-Hinweis. Dashboard-Tab System → „Modelle & Provider".
 
+**Verifikations-Schleife (A1, `verify_loop.py`, stdlib):** Ein Agent kann per Frontmatter
+`verify: true` (optional `verify_with: <modell>`) eine zweite Instanz als Qualitäts-Schleuse
+bekommen. Der Worker (Claude ODER Fremd-LLM) gibt seine Antwort als **Text zurück** statt sie
+selbst zu senden; ein Verifier-Modell (frei über `providers.resolve()` wählbar) prüft sie und
+gibt entweder `VERIFIZIERT` (Original geht raus) oder direkt eine verbesserte Fassung zurück.
+Erst dann sendet der Listener — mit Fußzeile „✓ geprüft/überarbeitet von <modell>". Läuft im
+Surrogat-Raum (Pseudonymisierung greift auch für den Prüfer), Re-ID erst vor dem Senden.
+**fail-open:** fällt der Prüfer aus, geht die Original-Antwort unverändert raus.
+
 ## Plattform-Abstraktion — platform_compat.py + secretstore.py + servicemgr.py (stdlib)
 Ein Modul-Trio kapselt ALLE OS-Unterschiede, damit Listener & Helfer stdlib-only bleiben und
 macOS bitidentisch weiterläuft:
