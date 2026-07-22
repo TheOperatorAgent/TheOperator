@@ -41,6 +41,14 @@ text = args[0] if args else sys.stdin.read().strip()
 if not text:
     sys.exit("Kein Text übergeben")
 
+# Tool-Re-ID-Brücke: Pseudonymisierungs-Surrogate → echte Werte (Michi sieht echte Namen)
+sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+try:
+    import reid
+    text = reid.reidentify(text)
+except Exception:
+    pass
+
 url = (
     f"{creds['homeserver']}/_matrix/client/v3/rooms/"
     f"{urllib.parse.quote(creds['room_id'])}/send/m.room.message/{time.time_ns()}"
