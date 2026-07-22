@@ -282,8 +282,17 @@ phase1_check() {
     Darwin) command -v python3 >/dev/null || die "python3 fehlt (xcode-select --install)";
             ok "macOS $(sw_vers -productVersion 2>/dev/null), python3 $(python3 -V | cut -d' ' -f2)";;
     Linux)  command -v python3 >/dev/null || die "python3 fehlt (z. B. apt install python3 python3-venv)";
-            python3 -c "import venv" 2>/dev/null || warn "python3-venv fehlt evtl. (apt install python3-venv)";
-            ok "Linux $(uname -r), python3 $(python3 -V | cut -d' ' -f2)";;
+            ok "Linux $(uname -r), python3 $(python3 -V | cut -d' ' -f2)"
+            # venv braucht ensurepip — auf Debian/Ubuntu ein eigenes Paket. JETZT sagen,
+            # nicht erst in Phase 8 mit englischem Python-Fehler.
+            if ! python3 -c "import ensurepip" 2>/dev/null; then
+              PYV=$(python3 -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+              warn "Für das Web-Dashboard fehlt ein Systempaket. Bitte VOR dem Fortfahren in"
+              warn "einem zweiten Terminal ausführen:  sudo apt install python${PYV}-venv"
+              local _W; ask_yesno _W "Trotzdem ohne Dashboard fortfahren (Chat-Bot läuft auch so)?" "nein"
+              [ "$_W" = "ja" ] || die "Okay — Paket installieren und dieses Skript danach einfach erneut starten."
+              VENV_POSSIBLE=0
+            fi;;
     *)      die "Nicht unterstütztes OS '$OS' — Windows: install.ps1 (PowerShell) verwenden";;
   esac
   command -v curl >/dev/null || die "curl fehlt"
@@ -591,11 +600,24 @@ phase6_start() {
 phase8_dashboard() {
   bold "Phase 8 — Web-Dashboard"
   [ "$DASH_OPTIN" = "ja" ] || { warn "Dashboard übersprungen (in Phase 3 abgewählt)"; return 0; }
+  if [ "${VENV_POSSIBLE:-1}" = 0 ]; then
+    PYV=$(python3 -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+    warn "Dashboard übersprungen (python-venv fehlt). Nachholen: sudo apt install python${PYV}-venv,"
+    warn "danach dieses Skript erneut ausführen — der Bot läuft schon."
+    return 0
+  fi
   DASH_DIR="$BOT_DIR/dashboard"
   mkdir -p "$DASH_DIR/static" "$BOT_DIR/connections" "$BOT_DIR/secrets"
   chmod 700 "$BOT_DIR/secrets"
   local VENV_PY="$DASH_DIR/venv/bin/python3" DASH_OK=1 F
-  if [ ! -x "$VENV_PY" ]; then python3 -m venv "$DASH_DIR/venv" || DASH_OK=0; fi
+  if [ ! -x "$VENV_PY" ]; then
+    if ! python3 -m venv "$DASH_DIR/venv" 2>/dev/null; then
+      DASH_OK=0
+      PYV=$(python3 -c 'import sys;print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
+      warn "Python-Umgebung fürs Dashboard konnte nicht erstellt werden."
+      warn "Meist fehlt ein Systempaket: sudo apt install python${PYV}-venv — danach Skript erneut ausführen."
+    fi
+  fi
   if [ "$DASH_OK" = "1" ]; then
     "$DASH_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
     "$DASH_DIR/venv/bin/pip" install -q "fastapi==0.116.*" "uvicorn==0.35.*" \
