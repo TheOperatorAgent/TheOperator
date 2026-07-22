@@ -3,19 +3,19 @@
 Aufruf: python3 send.py "Text"   (oder Text über stdin)"""
 import json
 import os
-import subprocess
 import sys
 import time
 import urllib.parse
 import urllib.request
 
+sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+import secretstore  # noqa: E402  (stdlib-Modul aus BOT_DIR)
+
 
 def keychain_token(account, fallback):
     if fallback != "keychain":
         return fallback
-    r = subprocess.run(["security", "find-generic-password", "-s", "the-operator",
-                        "-a", account, "-w"], capture_output=True, text=True)
-    return r.stdout.strip() if r.returncode == 0 else ""
+    return secretstore.get(account) or ""
 
 args = sys.argv[1:]
 bot = None
