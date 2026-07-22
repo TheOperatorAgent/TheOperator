@@ -97,10 +97,16 @@ def get_agent(name: str) -> dict | None:
     }
 
 
+def _model_ok(model: str) -> bool:
+    """Claude-Alias/inherit, volle Claude-ID (claude-…) oder Fremd-Modell <provider>/<name>."""
+    return (model in KNOWN_MODELS or model.startswith("claude")
+            or ("/" in model and model.split("/", 1)[0] in ("ollama", "openai", "azure")))
+
+
 def save_agent(name: str, description: str, tools: list, model: str, body: str) -> tuple[bool, str]:
     if not NAME_RE.match(name):
         return False, "Name muss ^[a-z0-9-]{2,32}$ entsprechen"
-    if model not in KNOWN_MODELS:
+    if not _model_ok(model):
         return False, f"Unbekanntes Modell: {model}"
     bad = [t for t in tools if t not in KNOWN_TOOLS]
     if bad:
