@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
 """Migriert verbliebene Klartext-Matrix-Tokens aus credentials.json / bots.json in den
-macOS-Schlüsselbund und setzt die Dateifelder auf den Marker "keychain" (Issue #20).
+OS-Secret-Store (macOS Keychain / Windows DPAPI / Linux Secret-Service) und setzt die
+Dateifelder auf den Marker "keychain" (Issue #20).
 
-Idempotent: läuft bei jedem install.sh mit; hat der Nutzer schon migriert, passiert nichts.
+Idempotent: läuft bei jedem Install mit; hat der Nutzer schon migriert, passiert nichts.
 Stdlib-only. Nach diesem Lauf existiert kein Klartext-Token mehr auf der Platte, und der
 Datei-Fallback in listener/send/server greift nie wieder.
 """
 import json
 import os
-import subprocess
 import sys
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
+sys.path.insert(0, BOT_DIR)
+import secretstore  # noqa: E402  (stdlib-Modul aus BOT_DIR)
 
 
 def _keychain_set(account: str, value: str) -> bool:
-    r = subprocess.run(["security", "add-generic-password", "-U", "-s", "the-operator",
-                        "-a", account, "-w", value], capture_output=True)
-    return r.returncode == 0
+    try:
+        secretstore.set(account, value)
+        return True
+    except Exception:
+        return False
 
 
 def _atomic_write(path: str, data: dict) -> None:
