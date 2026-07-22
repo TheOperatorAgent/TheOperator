@@ -150,6 +150,18 @@ bitidentisch zum bisherigen Stand.
 - **Datei-Fallback:** Fehlt ein OS-Secret-Store (z. B. headless-Linux ohne Secret-Service), landen
   Tokens als `0600`-Datei unter `secrets/` — dieselbe Grenze wie beim bisherigen `.token`-Fallback.
 
+## Fremd-Sprachmodelle (Ollama · OpenAI · Azure) — optional
+Einzelne Agenten können ein Fremd-Modell nutzen. Sicherheitsrelevant:
+- **PII bleibt geschützt:** Text an Fremd-Modelle durchläuft dieselbe **Pseudonymisierung** wie
+  bei Claude (das Fremd-LLM sieht nie echte Namen/Mails — bei Cloud-Anbietern besonders wichtig);
+  die Antwort wird erst nach der Reidentifikation in den Chat gesendet.
+- **Keine lokalen Werkzeuge:** Fremd-Agenten liefern nur Text — kein Bash/Datei/MCP-Zugriff.
+  Der volle Werkzeugkasten bleibt Claude-Agenten vorbehalten (bewusst, siehe ARCHITEKTUR.md).
+- **API-Keys** (openai/azure/anthropic) liegen im **OS-Secret-Store** (secretstore, wie die
+  Matrix-Tokens); Ollama braucht keinen. `connections/models.json` enthält nur URLs/Modellnamen.
+- **Claude-API-Key als Reserve:** optional, standardmäßig aus; springt nur bei Abo-Limit ein
+  (mit Chat-Hinweis) — verursacht dann echte API-Kosten, daher bewusst opt-in.
+
 ## Threat-Model — was geschützt ist / was NICHT
 
 **Geschützt:**
