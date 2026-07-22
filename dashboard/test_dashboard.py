@@ -847,3 +847,105 @@ def test_vault_run_windows_cmd_substitution(tmp_path, monkeypatch):
     assert "%OP_SECRET_DEMO%" in captured["argv"][2]                          # %VAR%-Syntax
     assert "Str3ngGeheim!" not in captured["argv"][2]                        # Klartext NIE in argv
     assert captured["env"]["OP_SECRET_DEMO"] == "Str3ngGeheim!"              # Wert nur in env
+
+
+# ---------------------------------------------------------------- Multi-LLM --
+def _providers(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import providers
+    monkeypatch.setattr(providers, "MODELS_FILE", str(tmp_path / "models.json"))
+    return providers
+
+
+def test_providers_resolve_claude_vs_foreign(tmp_path, monkeypatch):
+    p = _providers(tmp_path, monkeypatch)
+    assert p.resolve("haiku") == {"kind": "claude", "model": "haiku"}
+    assert p.resolve("inherit")["model"] is None
+    assert p.resolve("")["kind"] == "claude"
+    assert p.resolve("claude-opus-4-8") == {"kind": "claude", "model": "claude-opus-4-8"}
+    # Fremd-Modell braucht konfigurierten Provider
+    p.set_provider("ollama", base_url="http://localhost:11434", models=["llama3.1"],
+                   default="llama3.1", enabled=True)
+    r = p.resolve("ollama/llama3.1")
+    assert r["kind"] == "foreign" and r["provider"] == "ollama"
+    assert r["model_id"] == "llama3.1" and r["base_url"] == "http://localhost:11434"
+    # Unbekanntes → sicher als Claude-Standard
+    assert p.resolve("quatschprovider/x")["kind"] == "claude"
+
+
+def test_providers_list_models(tmp_path, monkeypatch):
+    p = _providers(tmp_path, monkeypatch)
+    vals = [m["value"] for m in p.list_models()]
+    assert vals[:4] == ["inherit", "haiku", "sonnet", "opus"]        # nur Claude by default
+    p.set_provider("openai", models=["gpt-4o", "gpt-4o-mini"], enabled=True)
+    vals = [m["value"] for m in p.list_models()]
+    assert "openai/gpt-4o" in vals and "openai/gpt-4o-mini" in vals
+    p.set_provider("openai", enabled=False)                          # deaktiviert → raus
+    assert "openai/gpt-4o" not in [m["value"] for m in p.list_models()]
+
+
+def test_providers_fallback_key(tmp_path, monkeypatch):
+    p = _providers(tmp_path, monkeypatch)
+    monkeypatch.setattr(p.secretstore, "get", lambda a: "sk-ant-test" if a == "anthropic_api_key" else None)
+    assert p.fallback_key() is None                                  # deaktiviert
+    p.set_anthropic_fallback(enabled=True)
+    assert p.fallback_key() == "sk-ant-test"                         # aktiv + Key → einspringbar
+
+
+def test_providers_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/providers.py")).read()
+    imports = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert not (imports & {"openai", "anthropic", "fastapi", "cryptography", "requests"})
+
+
+def test_agents_store_allows_foreign_model(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot/dashboard"))
+    import agents_store
+    monkeypatch.setattr(agents_store, "AGENTS_DIR", str(tmp_path / "agents"))
+    ok, _ = agents_store.save_agent("rechercheur", "Recherche", ["Read"], "ollama/llama3.1", "Du recherchierst.")
+    assert ok
+    ok, _ = agents_store.save_agent("gpt-bot", "Text", ["Read"], "openai/gpt-4o", "Du schreibst.")
+    assert ok
+    ok, msg = agents_store.save_agent("kaputt", "x", ["Read"], "gibtsnicht", "y")
+    assert not ok and "Modell" in msg
+
+
+def test_llm_runner_against_mock(tmp_path):
+    """Der Runner (venv, openai-SDK) spricht einen OpenAI-kompatiblen Endpoint korrekt an."""
+    import http.server
+    import json as _j
+    import socket
+    import subprocess
+    import threading
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            n = int(self.headers.get("Content-Length", 0))
+            body = _j.loads(self.rfile.read(n) or b"{}")
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(_j.dumps({"choices": [{"message": {
+                "content": "Echo:" + body.get("model", "?")}}]}).encode())
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+    port = srv.server_address[1]
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        req = _j.dumps({"provider": "openai", "base_url": f"http://127.0.0.1:{port}/v1",
+                        "key": "sk-test", "model_id": "gpt-4o", "prompt": "Hi"})
+        r = subprocess.run([sys.executable, os.path.expanduser("~/.claude/matrix-bot/llm_runner.py")],
+                           input=req, capture_output=True, text=True, timeout=30)
+        out = _j.loads(r.stdout)
+        assert out.get("text") == "Echo:gpt-4o"
+    finally:
+        srv.shutdown()
