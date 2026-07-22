@@ -24,6 +24,10 @@ BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 sys.path.insert(0, BOT_DIR)
 import platform_compat as _plat   # noqa: E402  (stdlib-Modul aus BOT_DIR)
 import secretstore                # noqa: E402  (stdlib-Modul aus BOT_DIR)
+try:
+    import providers              # noqa: E402  (stdlib; Multi-LLM-Registry)
+except Exception:
+    providers = None
 
 
 def keychain_token(account, fallback):
@@ -355,44 +359,54 @@ class BotSession(threading.Thread):
                 verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende per python3 ~/.claude/matrix-bot/send.py)"
             prompt = OWNER_PROMPT.format(verhalten=verhalten, messages=messages_p,
                                          history=history, memories=memories_p)
-            return prompt, OWNER_TOOLS, None, mapping, messages_p
+            return prompt, OWNER_TOOLS, None, mapping, messages_p, None
         agent = parse_agent_md(self.bot_name) or {"tools": [], "model": None,
                                                   "body": "(Agenten-Datei fehlt)"}
+        # Fremd-Modell (Ollama/OpenAI/Azure)? → text-orientierter Prompt OHNE Werkzeuge.
+        plan = providers.resolve(agent.get("model")) if providers else {"kind": "claude"}
+        if plan.get("kind") == "foreign":
+            system = (agent["body"].strip() + "\n\nWICHTIG: Du hast KEINE Werkzeuge — nur Text. "
+                      "Antworte direkt, knapp und auf Deutsch; deine Antwort wird 1:1 in den "
+                      "Matrix-Chat gesendet. Keine Erklärungen über dich selbst.")
+            user = ((history + "\n") if history else "") \
+                + f"{OWNER.split(':')[0]} schreibt dir:\n{messages_p}"
+            return user, [], agent.get("model"), mapping, messages_p, system
+        # Claude-Agent (voller Werkzeugkasten)
         tools = [t for t in agent["tools"] if t in OWNER_TOOLS or t == "Read"]
         if "Bash" not in tools:
             tools.append("Bash")  # noetig fuer send.py; Agent-Frontmatter bleibt die inhaltliche Leitplanke
-        model = agent["model"] if agent["model"] in ("haiku", "sonnet", "opus") else None
+        model = agent["model"]   # roh; providers.resolve() in execute() macht Claude-Aliase/-IDs/None
         prompt = AGENT_PROMPT.format(name=self.bot_name, owner=OWNER,
                                      owner_short=OWNER.split(":")[0],
                                      body=agent["body"], messages=messages_p,
                                      history=history, bot_dir=BOT_DIR, py=sys.executable)
-        return prompt, tools, model, mapping, messages_p
+        return prompt, tools, model, mapping, messages_p, None
 
     # ---------- Claude ----------
     def answer(self, bodies, last_event_id):
-        prompt, tools, model, mapping, msg_rec = self.build(bodies)
+        prompt, tools, model, mapping, msg_rec, system = self.build(bodies)
         self.mark_read(last_event_id)
         if mapping is False:
             self.send_message("⚠️ Der Pseudonymisierungs-Dienst ist gerade nicht verfügbar. "
-                              "Aus Datenschutzgründen habe ich deine Nachricht NICHT an Claude "
-                              "geschickt. Prüfen oder (bewusst) deaktivieren: "
+                              "Aus Datenschutzgründen habe ich deine Nachricht NICHT an das "
+                              "Sprachmodell geschickt. Prüfen oder (bewusst) deaktivieren: "
                               f"{dashboard_link()} — Einmal-Link, 10 Min gültig, funktioniert "
                               "auf dem Rechner, auf dem dein Operator läuft.")
             return
-        self.execute(prompt, tools, model, msg_rec, kind="chat", mapping=mapping)
+        self.execute(prompt, tools, model, msg_rec, kind="chat", mapping=mapping, system=system)
 
     def run_automation(self, job):
         framing = f"[Automation „{job['name']}“ wurde planmäßig ausgelöst] {job['prompt']}"
-        prompt, tools, model, mapping, msg_rec = self.build([framing])
+        prompt, tools, model, mapping, msg_rec, system = self.build([framing])
         if mapping is False:
             log(f"[{self.bot_name}] Automation '{job['name']}' abgebrochen (Pseudonymisierung aus)")
             return
         log(f"[{self.bot_name}] Automation '{job['name']}' startet")
-        self.execute(prompt, tools, model, msg_rec, kind="cron", mapping=mapping)
+        self.execute(prompt, tools, model, msg_rec, kind="cron", mapping=mapping, system=system)
 
-    def execute(self, prompt, tools, model, messages_label, kind, mapping=None):
-        log(f"[{self.bot_name}] Claude wird geweckt ({kind})"
-            + (f" (model={model})" if model else ""))
+    def execute(self, prompt, tools, model, messages_label, kind, mapping=None, system=None):
+        plan = providers.resolve(model) if (providers and model) else {"kind": "claude", "model": None}
+        log(f"[{self.bot_name}] Modell erwacht ({kind}) [{plan.get('kind')}:{model or 'inherit'}]")
         done = threading.Event()
 
         def keep_typing():
@@ -402,53 +416,70 @@ class BotSession(threading.Thread):
 
         t = threading.Thread(target=keep_typing, daemon=True)
         t.start()
-        cmd = [CLAUDE, "-p", prompt, "--output-format", "json", "--allowedTools", *tools]
-        if model:
-            cmd += ["--model", model]
-        # Vom Nutzer im Dashboard konfigurierte MCP-Server explizit laden
-        mcp_file = f"{WORKSPACE}/.mcp.json"
+        map_path = None
         try:
-            import os as _os
-            if _os.path.getsize(mcp_file) > 20:
-                cmd += ["--mcp-config", mcp_file]
-        except OSError:
-            pass
-        # Tool-Re-ID-Brücke: Mapping flüchtig ablegen, Pfad per ENV an Claudes Werkzeuge
-        # (send.py/m365/gdrive ersetzen Surrogate → echte Werte vor der Ausführung)
-        run_env, map_path = dict(os.environ), None
-        if mapping and mapping.get("s2r"):
-            import tempfile
-            fd, map_path = tempfile.mkstemp(prefix="operator-pii-", suffix=".json")
-            if hasattr(os, "fchmod"):
-                os.fchmod(fd, 0o600)   # POSIX; auf Windows unten via secure_chmod
-            with os.fdopen(fd, "w") as f:
-                json.dump(mapping, f)
-            _plat.secure_chmod(map_path)
-            run_env["OPERATOR_PII_MAP"] = map_path
-        start = time.time()
-        try:
-            with CLAUDE_SLOTS:
-                r = subprocess.run(cmd, capture_output=True, text=True,
-                                   timeout=600, cwd=WORKSPACE, env=run_env)
-            result, tok_in, tok_out, dur = "", 0, 0, int((time.time() - start) * 1000)
+            if plan.get("kind") == "foreign":
+                self._run_foreign(plan, prompt, system, messages_label, kind, mapping)
+                return
+            # ---------- Claude (voller Werkzeugkasten) ----------
+            cmd = [CLAUDE, "-p", prompt, "--output-format", "json", "--allowedTools", *tools]
+            if plan.get("model"):
+                cmd += ["--model", plan["model"]]
+            mcp_file = f"{WORKSPACE}/.mcp.json"     # vom Nutzer konfigurierte MCP-Server laden
             try:
-                data = json.loads(r.stdout)
-                result = str(data.get("result", ""))[:4000]
-                u = data.get("usage", {})
-                tok_in = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
-                tok_out = u.get("output_tokens", 0)
-                dur = data.get("duration_ms", dur)
-            except ValueError:
-                result = r.stdout[-500:]
+                if os.path.getsize(mcp_file) > 20:
+                    cmd += ["--mcp-config", mcp_file]
+            except OSError:
+                pass
+            # Tool-Re-ID-Brücke: Mapping flüchtig ablegen, Pfad per ENV an Claudes Werkzeuge
+            run_env, map_path = dict(os.environ), None
+            if mapping and mapping.get("s2r"):
+                import tempfile
+                fd, map_path = tempfile.mkstemp(prefix="operator-pii-", suffix=".json")
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    json.dump(mapping, f)
+                _plat.secure_chmod(map_path)
+                run_env["OPERATOR_PII_MAP"] = map_path
+            start = time.time()
+
+            def _claude_run(env):
+                with CLAUDE_SLOTS:
+                    rr = subprocess.run(cmd, capture_output=True, text=True,
+                                        timeout=600, cwd=WORKSPACE, env=env)
+                res, ti, to, du = "", 0, 0, int((time.time() - start) * 1000)
+                try:
+                    d = json.loads(rr.stdout)
+                    res = str(d.get("result", ""))[:4000]
+                    u = d.get("usage", {})
+                    ti = u.get("input_tokens", 0) + u.get("cache_creation_input_tokens", 0)
+                    to = u.get("output_tokens", 0)
+                    du = d.get("duration_ms", du)
+                except ValueError:
+                    res = rr.stdout[-500:]
+                return rr, res, ti, to, du
+
+            r, result, tok_in, tok_out, dur = _claude_run(run_env)
+            used_fallback = False
+            # M4 — Auto-Fallback: Abo am Limit + hinterlegter API-Key → genau EIN Retry mit Key
+            if r.returncode != 0 and providers:
+                low = (r.stdout + r.stderr).lower()
+                fk = providers.fallback_key()
+                if fk and any(k in low for k in ("limit", "429", "rate", "overloaded", "quota")):
+                    log(f"[{self.bot_name}] Abo-Limit erkannt → Wiederholung mit Anthropic-API-Key")
+                    run_env["ANTHROPIC_API_KEY"] = fk
+                    r, result, tok_in, tok_out, dur = _claude_run(run_env)
+                    used_fallback = (r.returncode == 0)
+
             result = redact_text(result)
             messages_label = redact_text(messages_label)
             log(f"[{self.bot_name}] Claude fertig (rc={r.returncode}, {dur}ms, "
-                f"{tok_out} out-tok): {result[-200:]}")
+                f"{tok_out} out-tok{', Fallback-Key' if used_fallback else ''}): {result[-200:]}")
             if sessions_db:
                 try:
-                    sessions_db.record(self.bot_name, messages_label, result,
-                                       r.returncode, dur, tok_in, tok_out, kind,
-                                       model or "inherit")
+                    sessions_db.record(self.bot_name, messages_label, result, r.returncode,
+                                       dur, tok_in, tok_out, kind, plan.get("model") or "inherit")
                 except Exception as e:
                     log(f"Session-Recording fehlgeschlagen: {e}")
             if r.returncode != 0:
@@ -458,10 +489,17 @@ class BotSession(threading.Thread):
                         "⚠️ Ich kann gerade nicht antworten: Mein Claude-CLI-Login ist "
                         "abgelaufen. Bitte am Mac im Terminal `claude /login` ausführen — "
                         "danach beantworte ich deine Nachricht gern nochmal.")
+                elif any(k in out for k in ("limit", "429", "quota")):
+                    self.send_message(
+                        "⚠️ Mein Claude-Abo ist gerade am Limit. Du kannst im Dashboard unter "
+                        "»Modelle & Provider« einen Claude-API-Key als Reserve hinterlegen — "
+                        "dann springe ich automatisch darauf um.")
                 else:
                     self.send_message(
                         "⚠️ Beim Bearbeiten ist ein Fehler aufgetreten (Details im "
                         "listener.log am Mac). Probier's gleich nochmal.")
+            elif used_fallback:
+                self.send_message("ℹ️ (Lief über deinen Claude-API-Key, weil das Abo gerade am Limit war.)")
         except subprocess.TimeoutExpired:
             log(f"[{self.bot_name}] Claude-Lauf abgebrochen (Timeout 600s)")
             if sessions_db:
@@ -481,6 +519,42 @@ class BotSession(threading.Thread):
                     os.remove(map_path)   # flüchtige PII-Map nach dem Lauf löschen
                 except OSError:
                     pass
+
+    def _run_foreign(self, plan, prompt, system, messages_label, kind, mapping):
+        """Fremd-Modell (Ollama/OpenAI/Azure) über llm_runner (venv): Text holen,
+        Surrogate zurückübersetzen, in den Chat senden. Keine lokalen Werkzeuge."""
+        label = f"{plan['provider']}/{plan['model_id']}"
+        req = json.dumps({"provider": plan["provider"], "base_url": plan["base_url"],
+                          "key": plan.get("key", ""), "model_id": plan["model_id"],
+                          "prompt": prompt, "system": system or ""})
+        start = time.time()
+        try:
+            r = subprocess.run([VENV_PY, f"{BOT_DIR}/llm_runner.py"], input=req,
+                               capture_output=True, text=True, timeout=180, env=dict(os.environ))
+        except subprocess.TimeoutExpired:
+            self.send_message(f"⚠️ Das Modell {label} hat zu lange gebraucht — abgebrochen.")
+            return
+        dur = int((time.time() - start) * 1000)
+        try:
+            out = json.loads(r.stdout)
+        except ValueError:
+            out = {"error": (r.stderr or r.stdout or "unbekannter Fehler")[-200:]}
+        if "text" in out:
+            text = redact_text(reidentify(out["text"], mapping))   # Surrogate→echt, dann Secrets maskieren
+            self.send_message(text)
+            log(f"[{self.bot_name}] {label} fertig ({dur}ms): {text[:120]}")
+            rc, rec = 0, text[:4000]
+        else:
+            self.send_message(f"⚠️ {label}: {out.get('error', 'Fehler beim Modell')}. "
+                              "Provider im Dashboard prüfen (Tab »Modelle & Provider«).")
+            log(f"[{self.bot_name}] {label} Fehler: {str(out.get('error', ''))[:160]}")
+            rc, rec = 1, "FEHLER: " + str(out.get("error", ""))[:300]
+        if sessions_db:
+            try:
+                sessions_db.record(self.bot_name, redact_text(messages_label), rec, rc,
+                                   dur, 0, 0, kind, label)
+            except Exception:
+                pass
 
     # ---------- Loop ----------
     def run(self):
