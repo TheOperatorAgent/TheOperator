@@ -709,3 +709,141 @@ def test_vaultwarden_is_stdlib_only():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module.split(".")[0])
     assert not (imports & {"fastapi", "presidio_analyzer", "spacy", "faker", "cryptography"})
+
+
+# ---------------------------------------------------------------- Cross-Platform-Kern --
+def _import_plat():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import platform_compat, secretstore, servicemgr
+    return platform_compat, secretstore, servicemgr
+
+
+def test_platform_modules_are_stdlib_only():
+    import ast
+    for mod in ("platform_compat", "secretstore", "servicemgr"):
+        src = open(os.path.expanduser(f"~/.claude/matrix-bot/{mod}.py")).read()
+        imports = set()
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.Import):
+                imports.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module.split(".")[0])
+        assert not (imports & {"fastapi", "presidio_analyzer", "spacy", "faker",
+                               "cryptography", "keyring", "uvicorn"}), (mod, imports)
+
+
+def test_platform_venv_python_per_os(monkeypatch):
+    pc, _, _ = _import_plat()
+    monkeypatch.setattr(pc, "IS_WIN", True)
+    assert pc.venv_python("/x").endswith(os.path.join("Scripts", "python.exe"))
+    monkeypatch.setattr(pc, "IS_WIN", False)
+    assert pc.venv_python("/x").endswith(os.path.join("bin", "python3"))
+
+
+def test_platform_runtime_file_namespacing(monkeypatch):
+    pc, _, _ = _import_plat()
+    # per-user Basis (macOS/Windows) → flacher Name
+    monkeypatch.setattr(pc, "IS_MAC", True)
+    monkeypatch.setattr(pc, "IS_WIN", False)
+    monkeypatch.setattr(pc, "IS_LINUX", False)
+    assert os.path.basename(pc.runtime_file("x.sock")) == "x.sock"
+    # geteiltes /tmp (Linux ohne XDG_RUNTIME_DIR) → Nutzer-Tag angehängt
+    monkeypatch.setattr(pc, "IS_MAC", False)
+    monkeypatch.setattr(pc, "IS_LINUX", True)
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    assert pc.runtime_file("x.sock").endswith(f"x.sock.{pc.user_tag()}")
+
+
+def test_platform_user_tag_and_owns():
+    pc, _, _ = _import_plat()
+    tag = pc.user_tag()
+    assert tag and isinstance(tag, str)
+    # owns() auf eine eigene Datei ist True
+    import tempfile as _tf
+    f = _tf.NamedTemporaryFile(delete=False)
+    f.close()
+    try:
+        assert pc.owns(os.stat(f.name)) is True
+    finally:
+        os.remove(f.name)
+
+
+def test_ipc_bind_posix_unix_socket(monkeypatch):
+    pc, _, _ = _import_plat()
+    monkeypatch.setattr(pc, "IS_WIN", False)
+    # kurzer Pfad wegen AF_UNIX-104-Zeichen-Limit (pytest-tmp_path ist zu lang)
+    short = f"/tmp/op-{os.getpid()}"
+    monkeypatch.setattr(pc, "runtime_file", lambda n: f"{short}-{n}")
+    srv, tok = pc.ipc_bind()
+    try:
+        assert tok is None
+        assert os.path.exists(f"{short}-operator-pseudonym.sock")
+        # Client kann sich verbinden
+        sock, ctok = pc.ipc_connect(timeout=2)
+        assert ctok is None
+        sock.close()
+    finally:
+        srv.close()
+        pc.ipc_cleanup()
+
+
+def test_secretstore_file_fallback(tmp_path, monkeypatch):
+    pc, ss, _ = _import_plat()
+    monkeypatch.setattr(pc, "IS_MAC", False)
+    monkeypatch.setattr(pc, "IS_WIN", False)
+    monkeypatch.setattr(pc, "IS_LINUX", False)
+    monkeypatch.setattr(ss, "SECRETS_DIR", str(tmp_path / "secrets"))
+    assert ss.get("acct-x") is None
+    ss.set("acct-x", "s3cr3t-token")
+    assert ss.get("acct-x") == "s3cr3t-token"
+    assert ss.get_or("acct-x", "fb") == "s3cr3t-token"
+    assert ss.get_or("fehlt", "fb") == "fb"
+    p = os.path.join(str(tmp_path / "secrets"), "acct-x.secret")
+    assert oct(os.stat(p).st_mode)[-3:] == "600"
+    assert ss.available_backend() == "file-0600"
+    ss.delete("acct-x")
+    assert ss.get("acct-x") is None
+
+
+def test_servicemgr_labels_per_os(monkeypatch):
+    pc, _, sm = _import_plat()
+    monkeypatch.setattr(pc, "IS_MAC", True)
+    monkeypatch.setattr(pc, "IS_WIN", False)
+    monkeypatch.setattr(pc, "IS_LINUX", False)
+    assert sm.label("listener") == "com.the-operator.listener"
+    monkeypatch.setattr(pc, "IS_MAC", False)
+    monkeypatch.setattr(pc, "IS_LINUX", True)
+    assert sm.label("dashboard") == "operator-dashboard"
+    monkeypatch.setattr(pc, "IS_LINUX", False)
+    monkeypatch.setattr(pc, "IS_WIN", True)
+    assert sm.label("pseudonym") == "OperatorPseudonym"
+
+
+def test_vault_run_windows_cmd_substitution(tmp_path, monkeypatch):
+    """Windows-Zweig von vault.run: cmd /c + %VAR%-Ersetzung, Klartext nie in argv.
+    Plattform-gemockt (kein echtes Windows nötig); subprocess.run wird abgefangen."""
+    vault = _vault(tmp_path, monkeypatch)
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import platform_compat as pc
+    monkeypatch.setattr(pc, "IS_WIN", True)
+    vault.init("master-passwort-test")
+    vault.add_entry("demo", "Str3ngGeheim!")
+    monkeypatch.setattr(vault, "_run_allowlist", lambda: {"curl"})
+    captured = {}
+
+    def fake_run(argv, **kw):
+        captured["argv"] = argv
+        captured["env"] = kw.get("env", {})
+        class R:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+        return R()
+
+    monkeypatch.setattr(vault.subprocess, "run", fake_run)
+    rc = vault.run(["curl", "https://example/{{tresor:demo}}"])
+    assert rc == 0
+    assert captured["argv"][0] == "cmd" and captured["argv"][1] == "/c"      # Windows-Shell
+    assert "%OP_SECRET_DEMO%" in captured["argv"][2]                          # %VAR%-Syntax
+    assert "Str3ngGeheim!" not in captured["argv"][2]                        # Klartext NIE in argv
+    assert captured["env"]["OP_SECRET_DEMO"] == "Str3ngGeheim!"              # Wert nur in env
