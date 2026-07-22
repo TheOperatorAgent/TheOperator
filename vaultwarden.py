@@ -19,7 +19,11 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import time
+
+sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+import platform_compat as _plat  # noqa: E402  (stdlib-Modul aus BOT_DIR)
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 CONN_FILE = os.path.join(BOT_DIR, "connections", "vaultwarden.json")
@@ -61,13 +65,7 @@ def bw_installed() -> bool:
 
 # ---------------------------------------------------------------- Session-Datei --
 def _session_path() -> str:
-    try:
-        base = os.confstr("CS_DARWIN_USER_TEMP_DIR")
-    except (ValueError, OSError):
-        base = None
-    if base and os.path.isdir(base):
-        return os.path.join(base, "operator-vaultwarden.session")
-    return f"/private/tmp/operator-vaultwarden-{os.getuid()}.session"
+    return _plat.runtime_file("operator-vaultwarden.session")
 
 
 def _store_session(tok: str) -> None:
@@ -75,6 +73,7 @@ def _store_session(tok: str) -> None:
     fd = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(tok)
+    _plat.secure_chmod(p)
 
 
 def _autolock_minutes() -> int:
@@ -92,7 +91,7 @@ def session() -> str | None:
     p = _session_path()
     try:
         st = os.stat(p)
-        if st.st_uid != os.getuid():
+        if not _plat.owns(st):
             return None
         mins = _autolock_minutes()
         if mins > 0 and time.time() - st.st_mtime > mins * 60:
