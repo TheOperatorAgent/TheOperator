@@ -23,12 +23,14 @@ import os
 import re
 import secrets as pysecrets
 import shlex
+import shutil
 import subprocess
 import sys
 import time
 
 sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
 import redact as redact_mod  # noqa: E402  (stdlib-Modul aus BOT_DIR)
+import platform_compat as _plat  # noqa: E402  (stdlib-Modul aus BOT_DIR)
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 VAULT_FILE = os.path.join(BOT_DIR, "secrets", "vault.enc")
@@ -133,13 +135,7 @@ def _write_vault(v: dict) -> None:
 def _dek_path() -> str:
     if DEK_PATH_OVERRIDE:
         return DEK_PATH_OVERRIDE
-    try:
-        base = os.confstr("CS_DARWIN_USER_TEMP_DIR")
-    except (ValueError, OSError):
-        base = None
-    if base and os.path.isdir(base):
-        return os.path.join(base, "operator-vault.dek")
-    return f"/private/tmp/operator-vault-{os.getuid()}.dek"
+    return _plat.runtime_file("operator-vault.dek")
 
 
 def _store_dek(dek: bytes) -> None:
@@ -161,7 +157,7 @@ def _load_dek() -> bytes | None:
     p = _dek_path()
     try:
         st = os.stat(p)
-        if st.st_uid != os.getuid():
+        if not _plat.owns(st):
             return None
         mins = _autolock_minutes()
         if mins > 0 and time.time() - st.st_mtime > mins * 60:
@@ -242,7 +238,8 @@ def status() -> dict:
     fido_keys = len(_read_vault().get("fido", [])) if exists else 0
     return {"exists": exists, "locked": dek is None,
             "entries": n, "autolock_minutes": _autolock_minutes(),
-            "fido_keys": fido_keys, "backend": _backend(),
+            "fido_keys": fido_keys, "fido_supported": fido_supported(),
+            "backend": _backend(),
             "updated": _read_vault().get("updated") if exists else None}
 
 
@@ -336,8 +333,18 @@ def recover(recovery_key: str, new_master_pw: str) -> str:
 
 
 # ---------------------------------------------------------------- FIDO2 (hmac-secret) --
+def fido_supported() -> bool:
+    """Ob FIDO2-Entsperrung auf dieser Plattform verfügbar ist. Windows sperrt den direkten
+    HID-Zugriff auf CTAP-Geräte für nicht-elevierte Prozesse (WebAuthn-API nötig) → vorerst
+    nur macOS/Linux. Master-Passwort, Recovery-Key und Vaultwarden laufen überall."""
+    return not _plat.IS_WIN
+
+
 def _fido_client():
     """Fido2Client für den ersten angesteckten Sicherheitsschlüssel (roher hmac-secret-Modus)."""
+    if _plat.IS_WIN:
+        raise RuntimeError("Sicherheitsschlüssel-Entsperrung ist derzeit nur auf macOS und Linux "
+                           "verfügbar. Nutze auf Windows dein Master-Passwort oder Vaultwarden.")
     from fido2.hid import CtapHidDevice
     from fido2.client import Fido2Client, DefaultClientDataCollector
     from fido2.ctap2.extensions import HmacSecretExtension
@@ -514,9 +521,12 @@ def _run_with_values(argv: list, values: dict, timeout: int, redact_all: list,
     for n in names:
         var = "OP_SECRET_" + re.sub(r"[.-]", "_", n).upper()
         env[var] = values[n]
-        cmd = re.sub(r"\{\{\s*tresor:" + re.escape(n) + r"\s*\}\}", f'"${var}"', cmd)
+        # Referenz durch env-Variable ersetzen — Shell-Syntax je OS (nie Klartext in argv)
+        ref = f'"%{var}%"' if _plat.IS_WIN else f'"${var}"'
+        cmd = re.sub(r"\{\{\s*tresor:" + re.escape(n) + r"\s*\}\}", ref, cmd)
+    shell = ["cmd", "/c", cmd] if _plat.IS_WIN else [shutil.which("bash") or "/bin/sh", "-c", cmd]
     try:
-        r = subprocess.run(["/bin/bash", "-c", cmd], env=env, capture_output=True,
+        r = subprocess.run(shell, env=env, capture_output=True,
                            text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         print(f"Kommando nach {timeout}s abgebrochen", file=sys.stderr)
