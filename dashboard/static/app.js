@@ -1,6 +1,23 @@
 /* Operator Dashboard — Frontend (build-frei, vanilla JS) */
-const TOKEN = (location.hash.match(/t=([0-9a-f]+)/) || [])[1] || sessionStorage.getItem("op_token") || "";
+let TOKEN = (location.hash.match(/(?:^|[#&])t=([0-9a-f]+)/) || [])[1] || sessionStorage.getItem("op_token") || "";
+const OTT = (location.hash.match(/(?:^|[#&])ott=([0-9a-f]+)/) || [])[1] || "";
 if (TOKEN) { sessionStorage.setItem("op_token", TOKEN); history.replaceState(null, "", location.pathname); }
+else if (OTT) {
+  // Einmal-Link aus dem Chat: Ticket gegen Sitzungs-Token tauschen (Ticket wird verbraucht)
+  fetch("/api/auth/ott", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ott: OTT }) })
+    .then((r) => r.json()).then((d) => {
+      if (d.token) {
+        sessionStorage.setItem("op_token", d.token);
+        history.replaceState(null, "", location.pathname);
+        location.reload();
+      } else {
+        document.body.innerHTML = "<div style='max-width:520px;margin:15vh auto;font-family:monospace;padding:24px;border:1px solid #3a5;border-radius:12px'>" +
+          "<h2>Einmal-Link nicht mehr gültig</h2><p>" + (d?.error?.message_de || "Der Link wurde schon benutzt oder ist abgelaufen.") +
+          "</p><p>Neuen Link im Chat anfordern — oder am Rechner ausführen:<br><code>python3 ~/.claude/matrix-bot/dashboard/open.py</code></p></div>";
+      }
+    }).catch(() => {});
+}
 
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
