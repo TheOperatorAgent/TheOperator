@@ -206,6 +206,12 @@ def reidentify(text, mapping):
 CLAUDE = CREDS.get("claude_bin") or shutil.which("claude") or "claude"
 OWNER = CREDS.get("owner_id", "")
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
+# Owner-Verify (#46, opt-in): jede Owner-Antwort wird von einem zweiten Modell geprüft.
+# Standard AUS (kostet Latenz/Token je Nachricht). owner_verify_with wählt den Prüfer (sonst Claude).
+OWNER_VERIFY, OWNER_VERIFY_WITH = (
+    verify_loop.verify_config({"verify": CREDS.get("owner_verify"),
+                               "verify_with": CREDS.get("owner_verify_with")})
+    if verify_loop else (False, None))
 CLAUDE_SLOTS = threading.Semaphore(2)
 
 OWNER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest stehen hier \
@@ -221,6 +227,26 @@ Michi hat dir soeben im Matrix-Chat geschrieben:
 
 Erledige/beantworte das jetzt gemäß den Regeln oben und sende die Antwort in den Raum. \
 Beziehe dich auf den Gesprächsverlauf oben, wenn sich die Nachricht darauf bezieht."""
+
+# Owner-Verify-Variante (#46, opt-in via credentials.json owner_verify): der Owner erledigt
+# alles mit vollem Werkzeugkasten, SENDET aber nicht selbst — ein zweites Modell prüft die
+# finale Antwort (fängt Fehler wie Verlesen/Verwechslung ab), dann liefert der Listener aus.
+OWNER_PROMPT_VERIFY = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest stehen hier \
+(strikt befolgen):
+
+{verhalten}
+
+---
+{history}{memories}
+Michi hat dir soeben im Matrix-Chat geschrieben:
+
+{messages}
+
+Erledige/beantworte das jetzt gemäß den Regeln oben. Nutze Werkzeuge wie gewohnt. \
+WICHTIG: Sende die Antwort NICHT selbst (kein send.py) — gib deine FINALE Antwort einfach als \
+letzten Text aus. Sie wird von einem zweiten Modell auf Fehler geprüft und danach in den Chat \
+gestellt. Beziehe dich auf den Gesprächsverlauf, wenn passend. Keine Meta-Kommentare, nur die \
+eigentliche Antwort."""
 
 AGENT_PROMPT = """Du bist der Agent „{name}" und läufst als eigenständiger Matrix-Bot. \
 Dein Auftraggeber ist {owner}. Dein Verhalten:
@@ -380,6 +406,11 @@ class BotSession(threading.Thread):
                 verhalten = open(f"{BOT_DIR}/VERHALTEN.md").read()
             except OSError:
                 verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende per python3 ~/.claude/matrix-bot/send.py)"
+            if OWNER_VERIFY and verify_loop:
+                # Owner erledigt alles mit Werkzeugen, gibt Text zurück (sendet nicht) → Prüfer.
+                prompt = OWNER_PROMPT_VERIFY.format(verhalten=verhalten, messages=messages_p,
+                                                    history=history, memories=memories_p)
+                return prompt, OWNER_TOOLS, None, mapping, messages_p, None, (True, OWNER_VERIFY_WITH)
             prompt = OWNER_PROMPT.format(verhalten=verhalten, messages=messages_p,
                                          history=history, memories=memories_p)
             return prompt, OWNER_TOOLS, None, mapping, messages_p, None, None
