@@ -968,6 +968,11 @@ def test_verify_config_reads_frontmatter():
     assert vl.verify_config({"verify": "false"}) == (False, None)
     assert vl.verify_config({}) == (False, None)
     assert vl.verify_config(None) == (False, None)
+    # JSON-Bool (Owner-Verify aus credentials.json: owner_verify: true/false)
+    assert vl.verify_config({"verify": True}) == (True, None)
+    assert vl.verify_config({"verify": False}) == (False, None)
+    assert vl.verify_config({"verify": None}) == (False, None)
+    assert vl.verify_config({"verify": True, "verify_with": "opus"}) == (True, "opus")
 
 
 def test_verify_interpret_ok_marker_passes_original():
