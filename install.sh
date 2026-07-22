@@ -15,6 +15,16 @@ BOT_DIR="$HOME/.claude/matrix-bot"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-http://192.168.178.53:3000/root/the-operator/raw/branch/main}"
 
+# curl|bash-Härtung: Bei Pipe-Start ist stdin die Pipe, nicht das Terminal — interaktive
+# Tools (claude) würden den restlichen Skript-Text aus der Pipe „aufessen" und der Lauf bräche
+# lautlos ab. Darum: ohne TTY das Skript in eine Datei laden und mit /dev/tty neu ausführen.
+if [ ! -t 0 ] && [ -z "${OPERATOR_REEXEC:-}" ] && [ -e /dev/tty ]; then
+  _self="$(mktemp 2>/dev/null || echo /tmp/operator-install.$$.sh)"
+  if curl -fsSL "$REPO_RAW/install.sh" -o "$_self" 2>/dev/null && [ -s "$_self" ]; then
+    OPERATOR_REEXEC=1 exec bash "$_self" "$@" < /dev/tty
+  fi
+fi
+
 bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
 ok()    { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn()  { printf '  \033[33m!\033[0m %s\n' "$*"; }
@@ -164,12 +174,12 @@ if ! command -v claude >/dev/null; then
 fi
 CLAUDE_BIN=$(command -v claude)
 ok "Claude CLI: $CLAUDE_BIN ($(claude --version 2>/dev/null | head -1))"
-if ! claude -p "Antworte nur mit: OK" 2>/dev/null | grep -q "OK"; then
+if ! claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; then
   echo ""; bold "  Anmeldung bei Claude"
   echo "  Gleich öffnet sich dein Browser. Melde dich mit deinem Claude-Konto an."
   ask _ENTER "Weiter mit Enter" ""
   ATTEMPT=0
-  until claude -p "Antworte nur mit: OK" 2>/dev/null | grep -q "OK"; do
+  until claude -p "Antworte nur mit: OK" </dev/null 2>/dev/null | grep -q "OK"; do
     ATTEMPT=$((ATTEMPT+1))
     [ $ATTEMPT -gt 3 ] && die "Anmeldung nach 3 Versuchen nicht erfolgreich. 'claude /login' manuell ausführen und Skript erneut starten."
     claude /login < /dev/tty > /dev/tty 2>&1 || true
