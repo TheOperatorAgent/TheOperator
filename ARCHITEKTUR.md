@@ -41,7 +41,7 @@ Bindet nur an 127.0.0.1, Bearer-Token, Host-Whitelist, kein Cookie/CSRF. Tabs:
 | Übersicht | Status-Kacheln (Listener, Agenten, Gedächtnis, Skills, Tresor, M365, Disk, Läufe) |
 | Agenten | MD-Agenten CRUD, Modell tauschen, als eigenen Matrix-Bot veröffentlichen |
 | Skills | Fähigkeiten (SKILL.md) verwalten + Vorschläge des Skill-Scouts annehmen |
-| **Tresor** | **Passwort-Tresor: anlegen/entsperren, Einträge, Notfall-Kit, Recovery** |
+| **Tresor** | **Passwort-Tresor: anlegen/entsperren, Einträge, Notfall-Kit, Recovery, FIDO-Keys; Backend-Umschalter lokal/Vaultwarden** |
 | Verlauf | sessions.db mit FTS5-Volltextsuche |
 | Automationen | Cron-Jobs (Zeitplan/Prompt/Ziel) + „Jetzt ausführen" |
 | Nutzung | 5h-Fenster + 24h/7d-Balken aus sessions.db |
@@ -62,11 +62,14 @@ Aufgaben und legt selbst Skills an bzw. schlägt sie vor; der **Skill-Scout** (S
 So 18:30) analysiert die Historie. Manuell gepflegte Skills sind vor Auto-Überschreiben
 geschützt.
 
-### Passwort-Tresor — vault.py + redact.py
+### Passwort-Tresor — vault.py + redact.py + vaultwarden.py
 Lokaler, verschlüsselter Tresor; Nutzung nur per `{{tresor:name}}`-Referenz. Entsperren per
 Master-Passwort, Wiederherstellungsschlüssel **oder FIDO2-Hardware-Key** (hmac-secret via
-`python-fido2`, Touch-only, mehrere Keys möglich — jeweils ein eigener DEK-Wrap). Details in
-SICHERHEIT.md.
+`python-fido2`, Touch-only, mehrere Keys möglich — jeweils ein eigener DEK-Wrap).
+Optional statt lokal: **Vaultwarden-Backend** (`vaultwarden.py`, `bw`-CLI) — umschaltbar im
+Dashboard (`vault_backend` in `dashboard.json`, Standard `local`). Der `run`-Wrapper löst
+Referenzen backend-abhängig auf; Allowlist-Härtung und Redaction gelten in beiden Fällen.
+Details in SICHERHEIT.md.
 
 ### Pseudonymisierung — pseudonym.py + reid.py
 Vor dem Senden an Claude werden PII in den Nutzer-Segmenten (Nachricht, Gedächtnis) durch
