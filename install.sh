@@ -610,6 +610,12 @@ phase8_dashboard() {
   mkdir -p "$DASH_DIR/static" "$BOT_DIR/connections" "$BOT_DIR/secrets"
   chmod 700 "$BOT_DIR/secrets"
   local VENV_PY="$DASH_DIR/venv/bin/python3" DASH_OK=1 F
+  # Selbstheilung: eine halb-angelegte venv (z. B. Abbruch weil python3-venv fehlte —
+  # dann existiert bin/python3, aber KEIN pip) wird erkannt und komplett neu gebaut.
+  if [ -d "$DASH_DIR/venv" ] && [ ! -x "$DASH_DIR/venv/bin/pip" ]; then
+    warn "Unvollständige Python-Umgebung vom letzten Versuch gefunden — baue sie neu."
+    rm -rf "$DASH_DIR/venv"
+  fi
   if [ ! -x "$VENV_PY" ]; then
     if ! python3 -m venv "$DASH_DIR/venv" 2>/dev/null; then
       DASH_OK=0
