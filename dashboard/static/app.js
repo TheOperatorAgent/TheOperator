@@ -380,7 +380,7 @@ async function renderLocalVault() {
         onkeydown="if(event.key==='Enter')vaultUnlock()">
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <button class="primary" onclick="vaultUnlock()">Entsperren</button>
-        ${s.fido_keys ? `<button class="ghost" onclick="vaultFidoUnlock()">🔑 Mit Sicherheitsschlüssel entsperren</button>` : ""}
+        ${s.fido_keys && s.fido_supported !== false ? `<button class="ghost" onclick="vaultFidoUnlock()">🔑 Mit Sicherheitsschlüssel entsperren</button>` : ""}
         <a href="#" onclick="vaultRecoverForm();return false" class="small">Master-Passwort vergessen?</a>
       </div>
       <div id="v-fido-status" class="small" style="margin-top:8px"></div>
@@ -421,6 +421,7 @@ async function renderLocalVault() {
       <p class="hint" style="margin-top:8px">Danach im Chat: <em>„Logge dich mit
       {{tresor:${"name"}}} ein"</em> — dein Operator setzt das Passwort ein, ohne es zu sehen.</p>
     </div>
+    ${s.fido_supported === false ? "" : `
     <div class="card"><h2>🔑 Sicherheitsschlüssel (FIDO)</h2>
       <p class="hint">Statt dein Master-Passwort zu tippen, kannst du den Tresor auch mit einem
       Hardware-Schlüssel (z. B. YubiKey) öffnen — einfach einstecken und antippen. Du kannst
@@ -434,8 +435,8 @@ async function renderLocalVault() {
         <button class="primary" onclick="vaultFidoEnroll()">Schlüssel hinzufügen</button>
       </div>
       <div id="v-fido-enroll-status" class="small" style="margin-top:8px"></div>
-    </div>`;
-  loadFidoList();
+    </div>`}`;
+  if (s.fido_supported !== false) loadFidoList();
 }
 
 async function loadFidoList() {
