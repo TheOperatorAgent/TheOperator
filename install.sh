@@ -77,8 +77,8 @@ import sys; sys.path.insert(0, '$BOT_DIR/dashboard')
 import google_auth; google_auth.disconnect()" 2>/dev/null && ok "Google-Token widerrufen" || true
   fi
   security delete-generic-password -s "the-operator" -a "token-key" >/dev/null 2>&1 && ok "Keychain-Schlüssel gelöscht" || true
-  # Tresor-Sitzungsschlüssel entfernen (der Tresor selbst liegt in  und wird unten mitgelöscht)
-  rm -f "/var/folders/wz/54tj6kwj783gfqnl5k105nm00000gn/T//operator-vault.dek" "/private/tmp/operator-vault-501.dek" 2>/dev/null || true
+  # Tresor-Sitzungsschlüssel entfernen (der Tresor selbst liegt in $BOT_DIR und wird unten mitgelöscht)
+  rm -f "$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null)operator-vault.dek" "/private/tmp/operator-vault-$(id -u).dek" 2>/dev/null || true
   [ -f "$BOT_DIR/connections/m365.json" ] && warn "Hinweis: Die Entra-App 'Operator M365 Connector' im M365-Tenant ggf. manuell löschen (Entra Portal → App-Registrierungen)"
   ask CONFIRM "Verzeichnis $BOT_DIR komplett löschen (inkl. Gedächtnis + Tokens)? (ja/nein)" "nein"
   [ "$CONFIRM" = "ja" ] && rm -rf "$BOT_DIR" && ok "Dateien gelöscht" || warn "Dateien behalten"
@@ -142,10 +142,10 @@ echo "  (Mächtig — Serververwaltung etc. —, aber jede Chat-Nachricht von di
 echo "  Kommandos auslösen. Ohne Freigabe kann er nur lesen und im Web recherchieren.)"
 ask BASH_OPTIN "Shell-Zugriff erlauben? (ja/nein)" "nein"
 if [ "$BASH_OPTIN" = "ja" ]; then
-  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365"]'
+  ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
   TOOLS_TEXT="Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Kleine Aufgaben direkt erledigen; Unumkehrbares nur nach Rückfrage im Chat."
 else
-  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365"]'
+  ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
   TOOLS_TEXT="Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben — wenn eine Aufgabe das bräuchte, sag das ehrlich. (Hinweis: Ohne Shell kannst du dein Gedächtnis nicht selbst beschreiben.)"
 fi
 
@@ -192,7 +192,7 @@ fi
 bold "Phase 5/7 — Dateien einrichten"
 mkdir -p "$BOT_DIR"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
-for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py; do
+for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py; do
   if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
   else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
   ok "$F installiert"
@@ -221,9 +221,12 @@ if os.path.exists(p):
 data.setdefault("mcpServers", {})["m365"] = {
     "command": os.path.join(bot, "dashboard", "venv", "bin", "python3"),
     "args": [os.path.join(bot, "mcp_m365.py")]}
+data["mcpServers"]["n8n"] = {
+    "command": os.path.join(bot, "dashboard", "venv", "bin", "python3"),
+    "args": [os.path.join(bot, "mcp_n8n.py")]}
 open(p, "w").write(json.dumps(data, indent=1))
 PYMCP
-ok "Standard-MCP m365 registriert"
+ok "Standard-MCPs m365 + n8n registriert"
 # Skills-Verzeichnis (SKILL.md-Fähigkeiten) + wöchentlicher Skill-Scout:
 # erkennt wiederkehrende Aufgaben im Verlauf und legt VORSCHLÄGE an (nie fertige
 # Skills — der Nutzer nimmt sie im Dashboard an oder lehnt ab; Hermes-Lektion)
@@ -330,7 +333,9 @@ if [ "$DASH_OPTIN" = "ja" ]; then
     "$DASH_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
     "$DASH_DIR/venv/bin/pip" install -q "fastapi==0.116.*" "uvicorn==0.35.*" \
       "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" "mcp==1.*" "starlette<0.49" \
-      "fido2>=1.1" || DASH_OK=0
+      "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" || DASH_OK=0
+    # Deutsches NER-Modell für die Pseudonymisierung (~570 MB, einmalig)
+    "$DASH_DIR/venv/bin/pip" install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl"       || warn "Deutsches Sprachmodell konnte nicht geladen werden — Pseudonymisierung meldet sich beim ersten Einsatz"
   fi
   if [ "$DASH_OK" = "1" ]; then
     for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py; do
@@ -341,7 +346,7 @@ if [ "$DASH_OPTIN" = "ja" ]; then
       if [ -f "$SCRIPT_DIR/dashboard/static/$F" ]; then cp "$SCRIPT_DIR/dashboard/static/$F" "$DASH_DIR/static/$F"
       else curl -fsSL "$REPO_RAW/dashboard/static/$F" -o "$DASH_DIR/static/$F" || DASH_OK=0; fi
     done
-    for F in m365.py gdrive.py mcp_m365.py vault.py; do
+    for F in m365.py gdrive.py mcp_m365.py vault.py mcp_n8n.py pseudonym.py; do
       if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
       else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || DASH_OK=0; fi
     done
