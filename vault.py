@@ -462,6 +462,25 @@ def fido_remove(label: str) -> None:
 
 
 # ---------------------------------------------------------------- run (Injection) --
+# Programme, die einen injizierten Wert bestimmungsgemäß NUTZEN (nicht nur ausgeben).
+DEFAULT_RUN_ALLOWLIST = {
+    "curl", "wget", "git", "ssh", "scp", "sftp", "rsync", "gh", "glab", "az", "aws",
+    "gcloud", "kubectl", "docker", "helm", "psql", "mysql", "mysqldump", "pg_dump",
+    "mongo", "mongosh", "redis-cli", "sqlplus", "npm", "pip", "pip3", "brew", "cargo",
+    "terraform", "ansible", "ansible-playbook", "vault", "op", "restic", "rclone",
+    "smbclient", "openssl", "gpg", "mailx", "sendmail", "msmtp",
+}
+
+
+def _run_allowlist() -> set:
+    try:
+        extra = json.load(open(os.path.join(BOT_DIR, "dashboard.json"))).get(
+            "vault_run_allowlist", [])
+        return DEFAULT_RUN_ALLOWLIST | {str(x).strip() for x in extra if str(x).strip()}
+    except Exception:
+        return DEFAULT_RUN_ALLOWLIST
+
+
 def run(argv: list, timeout: int = 120) -> int:
     """Führt ein Kommando aus und ersetzt {{tresor:name}}-Referenzen durch env-Variablen.
     Klartext landet nie in argv (ps!) und wird aus stdout/stderr redacted."""
@@ -481,6 +500,18 @@ def run(argv: list, timeout: int = 120) -> int:
         print(f"Unbekannte Tresor-Einträge: {', '.join(sorted(unknown))} — "
               f"verfügbare Namen zeigt vault.py list", file=sys.stderr)
         return 3
+    # Härtung (Issue #22, Stufe 1): Tresor-Werte nur in Kommandos einsetzen, die sie
+    # tatsächlich VERWENDEN (Netzwerk/DB/Deploy) — nicht in Ausgabe-/Kodier-/Shell-
+    # Programmen (echo, cat, base64, sh -c …), die den Wert nur sichtbar machen würden.
+    if names:
+        prog = os.path.basename(argv[0]) if argv else ""
+        if prog not in _run_allowlist():
+            print(f"Aus Sicherheitsgründen dürfen Tresor-Referenzen nur in bestimmten "
+                  f"Kommandos verwendet werden (z. B. curl, git, ssh, psql). "
+                  f"„{prog}“ steht nicht auf der Freigabeliste — nutze das Passwort direkt "
+                  f"im Zielkommando. (Liste anpassbar in dashboard.json › vault_run_allowlist.)",
+                  file=sys.stderr)
+            return 5
     env = dict(os.environ)
     for n in names:
         var = "OP_SECRET_" + re.sub(r"[.-]", "_", n).upper()
