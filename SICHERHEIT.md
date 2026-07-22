@@ -128,6 +128,26 @@ Tresor gesperrt. Optionaler Auto-Lock nach Leerlauf (`vault_autolock_minutes` in
   Homeserver — außerhalb der Kontrolle des Operators. Deshalb: Zugangsdaten immer direkt im
   Tresor anlegen, nie in den Chat schreiben.
 
+## Backup & Restore — was wiederherstellbar ist (Issue #21)
+
+Das Dashboard-Backup (`~/OperatorBackups/*.tar.gz`) enthält Konfiguration, Agenten, Skills,
+Gedächtnis, Verlauf und die **verschlüsselten** Secret-Dateien (`secrets/*.enc`) — aber
+bewusst **nicht** den macOS-Schlüsselbund. Daraus folgt für einen Restore auf einem **neuen**
+Mac (ohne den ursprünglichen Schlüsselbund):
+
+| Was | Aus dem tar-Backup allein wiederherstellbar? |
+|---|---|
+| **Passwort-Tresor** (`vault.enc`) | ✅ **Ja** — Master-Passwort (oder Recovery-Key) genügt, schlüsselbund-unabhängig |
+| Gedächtnis, Verlauf, Skills, Agenten, Config | ✅ Ja (Klartext-Dateien bzw. tresor-unabhängig) |
+| OAuth-Tokens (Google/M365) + n8n-API-Key | ❌ **Nein** — verschlüsselt mit dem Schlüsselbund-Schlüssel `token-key`, der nicht im Backup liegt → die `.enc` sind ohne ihn wertlos; die Dienste einfach im Dashboard neu verbinden |
+| Matrix-Tokens (Owner/Bots) | ❌ Nein — liegen im Schlüsselbund; auf neuem Mac neu anmelden (`claude`-CLI + Bot-Login) |
+
+**Kernaussage:** Der Tresor ist voll portabel, die *Dienst-Anbindungen* (Google/M365/n8n/Matrix)
+sind es bewusst nicht — sie werden auf einem neuen Rechner in wenigen Klicks neu verbunden.
+Das ist eine Sicherheitseigenschaft (Tokens verlassen den Schlüsselbund nie), kein Datenverlust.
+Wer echte Voll-Portabilität will, kann den Schlüsselbund-Eintrag `the-operator/token-key`
+manuell exportieren und getrennt sichern — dann sind auch die OAuth-`.enc` woanders nutzbar.
+
 ## Dashboard-Sicherheit
 Bindet nur an `127.0.0.1`, Bearer-Token-Pflicht (SHA-256-Hash gespeichert, Token via
 URL-Fragment), Host-Header-Whitelist gegen DNS-Rebinding, kein Cookie ⇒ kein CSRF. Der
