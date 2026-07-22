@@ -157,6 +157,12 @@
       <p class="hint">Sichert Konfiguration, Agenten, Gedächtnis, Verlauf und verschlüsselte Tokens nach ~/OperatorBackups (ohne venv/Logs). Wiederherstellung entpackt zur Prüfung — überschreibt nie automatisch.</p>
       <button class="primary" onclick="createBackup()">Backup jetzt erstellen</button>
       <div id="backup-list" style="margin-top:12px"></div></div>
+    <div class="card"><h2>n8n verbinden</h2>
+      <p class="hint">Wenn du einen <strong>n8n-Server</strong> hast (deine Automatisierungs-Zentrale),
+      kann dein Operator ihn direkt steuern: Workflows ansehen, ein- und ausschalten, Läufe und
+      Fehler prüfen, Webhooks anstoßen. Nur zwei Angaben nötig — den API-Key erzeugst du in n8n
+      unter <span class="mono">Settings › n8n API › Create an API key</span>.</p>
+      <div id="n8n-content"></div></div>
     <div class="card"><h2>MCP-Server</h2>
       <p class="hint">⚠️ MCP-Server sind Programme mit eigenen Rechten, die dein Operator als Werkzeuge nutzen kann. Nur Quellen hinzufügen, denen du vertraust.</p>
       <div id="mcp-list"></div>
@@ -176,7 +182,8 @@
 
   <section id="tab-privacy" class="tab">
     <h2>Datenschutz — was liegt wo?</h2>
-    <div id="privacy-content"></div>
+    <div id="pii-box"></div>
+    <div id="privacy-tables"></div>
   </section>
 </main>
 <div id="toast" class="hidden"></div>
