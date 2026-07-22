@@ -801,6 +801,104 @@ async def api_vault_recover(request: Request):
     return {"ok": True, "recovery_key": new_key}
 
 
+# ---------------------------------------------------------------- n8n --
+N8N_CONN = os.path.join(BOT_DIR, "connections", "n8n.json")
+
+
+@app.get("/api/n8n/status")
+def api_n8n_status():
+    cfg = {}
+    try:
+        cfg = json.load(open(N8N_CONN))
+    except (OSError, ValueError):
+        pass
+    return {"configured": bool(cfg.get("url")) and bool(token_store.load("n8n_api_key")),
+            "url": cfg.get("url", "")}
+
+
+@app.put("/api/n8n/config")
+async def api_n8n_config(request: Request):
+    b = await request.json()
+    url = (b.get("url") or "").strip().rstrip("/")
+    key = (b.get("api_key") or "").strip()
+    if not url.startswith(("http://", "https://")):
+        return err("validate", "Die Adresse muss mit http:// oder https:// beginnen")
+    if not key:
+        return err("validate", "API-Key fehlt (in n8n: Settings › n8n API › Create an API key)")
+    # Verbindung SOFORT testen — der Nutzer sieht direkt, ob es passt
+    import urllib.request as _ur
+    req = _ur.Request(url + "/api/v1/workflows?limit=1",
+                      headers={"X-N8N-API-KEY": key})
+    try:
+        with _ur.urlopen(req, timeout=10) as r:
+            if r.status != 200:
+                return err("n8n", f"n8n antwortet mit HTTP {r.status}")
+    except Exception as e:
+        code = getattr(e, "code", None)
+        if code == 401:
+            return err("n8n", "n8n lehnt den API-Key ab — bitte neu erzeugen und einfügen", 400)
+        return err("n8n", f"n8n unter {url} nicht erreichbar: {str(e)[:120]}", 400)
+    os.makedirs(os.path.dirname(N8N_CONN), exist_ok=True)
+    fd = os.open(N8N_CONN + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump({"url": url}, f)
+    os.replace(N8N_CONN + ".tmp", N8N_CONN)
+    token_store.save("n8n_api_key", key)
+    audit("dashboard", "n8n.config", url)
+    return {"ok": True}
+
+
+@app.delete("/api/n8n")
+def api_n8n_delete():
+    try:
+        os.remove(N8N_CONN)
+    except OSError:
+        pass
+    token_store.delete("n8n_api_key")
+    audit("dashboard", "n8n.disconnect", "")
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------- Pseudonymisierung --
+PII_MODES = {"structured", "standard", "strict"}
+
+
+@app.get("/api/pseudonymize")
+def api_pii_get():
+    cfg = DASH_CFG.get("pseudonymize", {})
+    stats = {}
+    try:
+        stats = json.load(open(os.path.join(BOT_DIR, "pseudonymize-stats.json")))
+    except (OSError, ValueError):
+        pass
+    return {"enabled": cfg.get("enabled", True), "mode": cfg.get("mode", "standard"),
+            "allow": cfg.get("allow", []), "deny": cfg.get("deny", []),
+            "last": stats, "presidio_ready": os.path.exists(
+                os.path.join(BOT_DIR, "dashboard", "venv", "bin", "python3"))}
+
+
+@app.put("/api/pseudonymize")
+async def api_pii_put(request: Request):
+    b = await request.json()
+    cfg = DASH_CFG.setdefault("pseudonymize", {})
+    if "enabled" in b:
+        cfg["enabled"] = bool(b["enabled"])
+    if b.get("mode") in PII_MODES:
+        cfg["mode"] = b["mode"]
+    if isinstance(b.get("allow"), list):
+        cfg["allow"] = [str(x).strip() for x in b["allow"] if str(x).strip()]
+    if isinstance(b.get("deny"), list):
+        cfg["deny"] = [str(x).strip() for x in b["deny"] if str(x).strip()]
+    # dashboard.json atomar (0600) schreiben — der Listener liest es pro Nachricht frisch
+    p = os.path.join(BOT_DIR, "dashboard.json")
+    fd = os.open(p + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(DASH_CFG, f, indent=1)
+    os.replace(p + ".tmp", p)
+    audit("dashboard", "pseudonymize.config", cfg.get("mode", ""))
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------- Skills --
 @app.get("/api/skills")
 def api_skills():
