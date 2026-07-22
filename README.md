@@ -10,24 +10,32 @@ Matrix-Chat — selbst gehostet, ein Installationsbefehl.
 
 Schreib deinem Assistenten in Element (oder jedem Matrix-Client) — er liest mit deinem
 eigenen Claude-Abo, denkt nach, recherchiert und antwortet in Sekunden. Läuft komplett auf
-deinem eigenen Mac: kein fremder Server, keine API-Keys, keine Zusatzkosten außer deinem
-bestehenden Claude-Abo.
+deinem eigenen Rechner (Mac, Linux-PC oder Windows): kein fremder Server, keine API-Keys,
+keine Zusatzkosten außer deinem bestehenden Claude-Abo.
 
 ```
-Du (Element, Handy) ──▶ dein Matrix-Server ──▶ Listener (dein Mac) ──▶ Claude CLI ──▶ Antwort im Chat
+Du (Element, Handy) ──▶ dein Matrix-Server ──▶ Listener (dein Rechner) ──▶ Claude CLI ──▶ Antwort im Chat
 ```
 
 ## Voraussetzungen
 
-- **macOS** (Apple Silicon oder Intel)
+- **macOS, Linux oder Windows** (läuft auf allen drei — ein einziger Installationsbefehl je OS)
 - **Claude-Abo** (Pro/Max) — der Assistent nutzt deinen persönlichen Claude-Login
 - **Zwei Matrix-Accounts**: dein eigener + ein separater für den Bot
   (z. B. kostenlos auf [matrix.org](https://matrix.org) registrieren — oder auf deinem eigenen Homeserver)
 
 ## Installation
 
+Ein Befehl — passend zu deinem Betriebssystem:
+
+**macOS / Linux** (Terminal):
 ```bash
 curl -fsSL http://192.168.178.53:3000/root/the-operator/raw/branch/main/install.sh | bash
+```
+
+**Windows** (PowerShell):
+```powershell
+irm http://192.168.178.53:3000/root/the-operator/raw/branch/main/install.ps1 | iex
 ```
 
 Der Wizard führt durch alles:
