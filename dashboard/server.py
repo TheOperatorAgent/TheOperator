@@ -885,6 +885,26 @@ async def api_vault_backend_put(request: Request):
     return {"ok": True, "backend": backend}
 
 
+@app.get("/api/owner-verify")
+def api_owner_verify_get():
+    """Owner-Verify-Status (#46): zweites Modell prüft jede Haupt-Chat-Antwort."""
+    c = DASH_CFG.get("owner_verify", {})
+    c = c if isinstance(c, dict) else {}
+    return {"enabled": bool(c.get("enabled")), "model": c.get("model")}
+
+
+@app.put("/api/owner-verify")
+async def api_owner_verify_put(request: Request):
+    b = await request.json()
+    enabled = bool(b.get("enabled"))
+    model = (b.get("model") or "").strip() or None
+    DASH_CFG["owner_verify"] = {"enabled": enabled, "model": model}
+    _save_dash_cfg()
+    audit("dashboard", "owner_verify", f"{'an' if enabled else 'aus'}"
+          + (f" ({model})" if model else ""))
+    return {"ok": True, "enabled": enabled, "model": model}
+
+
 @app.put("/api/vault/vaultwarden/config")
 async def api_vw_config(request: Request):
     url = ((await request.json()).get("url") or "").strip()
