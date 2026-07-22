@@ -31,6 +31,9 @@ import cron_runner                  # noqa: E402
 import skills as skills_store       # noqa: E402
 import vault as vault_store         # noqa: E402
 import vaultwarden as vw_store       # noqa: E402  (optionales Vaultwarden-Backend)
+import secretstore                   # noqa: E402  (plattformübergreifender Secret-Store)
+import servicemgr                    # noqa: E402  (Dienst-Status/Neustart je OS)
+import platform_compat               # noqa: E402  (Plattform-Abstraktion)
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -72,21 +75,17 @@ def creds() -> dict:
 
 
 def keychain_set(account: str, value: str) -> None:
-    subprocess.run(["security", "add-generic-password", "-U", "-s", "the-operator",
-                    "-a", account, "-w", value], check=True, capture_output=True)
+    secretstore.set(account, value)
 
 
 def keychain_get(account: str, fallback: str = "keychain") -> str:
     if fallback != "keychain":
         return fallback
-    r = subprocess.run(["security", "find-generic-password", "-s", "the-operator",
-                        "-a", account, "-w"], capture_output=True, text=True)
-    return r.stdout.strip() if r.returncode == 0 else ""
+    return secretstore.get(account) or ""
 
 
 def keychain_delete(account: str) -> None:
-    subprocess.run(["security", "delete-generic-password", "-s", "the-operator",
-                    "-a", account], capture_output=True)
+    secretstore.delete(account)
 
 
 def load_bots() -> dict:
@@ -136,12 +135,10 @@ async def guard(request: Request, call_next):
 # ---------------------------------------------------------------- System --
 @app.get("/api/status")
 def api_status():
-    listener = subprocess.run(
-        ["launchctl", "print", f"gui/{os.getuid()}/{LISTENER_LABEL}"],
-        capture_output=True, text=True).returncode == 0
+    listener = servicemgr.status("listener")
     mem_count = 0
     try:
-        r = subprocess.run(["python3", os.path.join(BOT_DIR, "memory.py"), "count"],
+        r = subprocess.run([sys.executable, os.path.join(BOT_DIR, "memory.py"), "count"],
                            capture_output=True, text=True, timeout=10)
         mem_count = int(r.stdout.strip() or 0)
     except Exception:
@@ -185,11 +182,10 @@ def api_status():
 
 @app.post("/api/listener/restart")
 def api_listener_restart():
-    r = subprocess.run(["launchctl", "kickstart", "-k",
-                        f"gui/{os.getuid()}/{LISTENER_LABEL}"], capture_output=True, text=True)
-    audit("dashboard", "listener.restart", ok=r.returncode == 0)
-    if r.returncode != 0:
-        return err("listener", f"kickstart fehlgeschlagen: {r.stderr.strip()}", 500)
+    ok = servicemgr.restart("listener")
+    audit("dashboard", "listener.restart", ok=ok)
+    if not ok:
+        return err("listener", "Neustart des Listener-Dienstes fehlgeschlagen", 500)
     return {"ok": True}
 
 
