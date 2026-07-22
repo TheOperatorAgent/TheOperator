@@ -11,6 +11,7 @@ Telemetrie. Dieses Dokument beschreibt ehrlich, **was geschützt ist und was nic
 | OAuth-Tokens (Google/M365) | `secrets/*.enc` | AES-256-GCM, Schlüssel im Schlüsselbund (`token-key`) |
 | **Passwort-Tresor** | `secrets/vault.enc` | AES-256-GCM, Schlüssel aus **Master-Passwort** (nicht im Schlüsselbund) |
 | Sitzungs-Schlüssel des Tresors | nutzer-privates Temp-Verzeichnis, `0600` | reboot-flüchtig, Owner-geprüft |
+| Vaultwarden-Session (optionales Backend) | nutzer-privates Temp-Verzeichnis, `0600` | reboot-flüchtig, Owner-geprüft; Master-PW nie gespeichert |
 
 ## Passwort-Tresor — Design
 
@@ -96,6 +97,28 @@ Als bequeme Alternative zum Master-Passwort kann der Tresor mit einem FIDO2-Hard
   Bindung will, kann später auf PIN+Touch umstellen (Format ist vorbereitet).
 - **Key verloren?** Recovery-Key nutzen (oder Master-Passwort), dann den verlorenen Key im
   Dashboard entfernen. Der Key allein enthält keine Tresordaten.
+
+### Optionales Vaultwarden-Backend (Issue #19)
+Statt des lokalen `vault.enc` kann `{{tresor:name}}` optional aus einer selbst gehosteten
+**Vaultwarden-Instanz** (Bitwarden-kompatibel) aufgelöst werden. Umschaltbar im Dashboard-Tresor-Tab;
+**Standard bleibt lokal** (Produkt-Nutzer ohne Vaultwarden brauchen nichts weiter).
+- **Mechanismus:** Die offizielle `bw`-CLI wird über ein eigenes, isoliertes Datenverzeichnis
+  (`secrets/bw-data`) angesprochen. `bw unlock` liefert ein `BW_SESSION`-Token, das — **genau wie
+  der lokale DEK** — als flüchtige `0600`-Datei im nutzer-privaten Temp liegt (reboot-flüchtig,
+  Owner-geprüft, gleicher Auto-Lock über `vault_autolock_minutes`).
+- **Master-Passwort:** wird **nie persistiert** und nur transient per Umgebungsvariable
+  (`BW_MASTERPW`) an `bw` gereicht — **nicht via argv** (nicht in `ps` sichtbar). Beim ersten Mal
+  ist zusätzlich die E-Mail nötig (Login), danach genügt das Passwort (Unlock).
+- **Nutzung identisch:** Der Operator sieht weiterhin nur Referenzen; der `run`-Wrapper löst sie
+  bei aktivem Vaultwarden-Backend über `bw get password` auf. Allowlist-Härtung (#22) und Output-
+  Redaction gelten unverändert. Die Einträge werden **in Vaultwarden** gepflegt (Dashboard zeigt
+  sie read-only, ohne Passwörter).
+- **Grenzen (ehrlich):** Netz-Abhängigkeit (Vaultwarden muss erreichbar sein); `bw` ist eine
+  externe Node-CLI (größere Angriffsfläche als der stdlib-lokale Tresor) → bleibt bewusst optional.
+  Das `BW_SESSION`-Token ist so sensibel wie der lokale DEK (gleiche at-rest-Grenze). Bei aktiver
+  CLI-Zwei-Faktor-Anmeldung schlägt der Login mit klarer Meldung fehl (CLI-2FA deaktivieren oder
+  API-Key nutzen). Die Listener-Redaction kennt bei Vaultwarden nur die **referenzierten** Werte
+  (nicht die ganze Vault-Liste); generische Secret-Muster greifen weiterhin.
 
 ## Sperr-Modell
 Der Tresor wird pro Sitzung mit dem Master-Passwort entsperrt. Der Sitzungs-Schlüssel liegt im
