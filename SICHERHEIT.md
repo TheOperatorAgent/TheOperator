@@ -126,6 +126,30 @@ nutzer-privaten Temp-Verzeichnis und **verschwindet beim Reboot** → nach jedem
 Tresor gesperrt. Optionaler Auto-Lock nach Leerlauf (`vault_autolock_minutes` in
 `dashboard.json`, Standard aus).
 
+## Plattformen (macOS / Linux / Windows)
+Der Operator läuft auf allen drei Systemen; OS-Unterschiede sind in `platform_compat.py`,
+`secretstore.py` und `servicemgr.py` (alle stdlib) gekapselt. Auf macOS verhält sich alles
+bitidentisch zum bisherigen Stand.
+
+| Aspekt | macOS | Linux | Windows |
+|---|---|---|---|
+| Secret-Store (Tokens, Master-Key) | Schlüsselbund (`security`) | Secret-Service (`secret-tool`) sonst 0600-Datei | **DPAPI** (user-gebunden, `ConvertFrom/To-SecureString`) sonst 0600-Datei |
+| Sitzungsdateien (DEK, Vaultwarden-Session) | nutzer-privates Temp `0600` | `$XDG_RUNTIME_DIR` `0600` | `%LOCALAPPDATA%\Temp` + ACL |
+| Daemon-IPC (Pseudonym) | AF_UNIX-Socket `0600` | AF_UNIX-Socket `0600` | TCP-Loopback 127.0.0.1 **+ Zufallstoken** (verhindert Fremdzugriff) |
+| Autostart-Dienst | launchd (LaunchAgent) | systemd-user (`enable-linger`) | Task Scheduler (onlogon, Restart-on-fail) |
+| Sicherheitsschlüssel (FIDO2) | ✅ | ✅ (udev-Regel nötig) | ⏸ vorerst deaktiviert (WebAuthn-API-Umstellung nötig) |
+
+**Ehrliche Grenzen:**
+- **Windows-Dateirechte:** POSIX-`0o600` schützt unter Windows nicht wie erwartet (NTFS-ACLs
+  statt Mode-Bits). Der Master-Passwort-Schutz des Tresors ist plattformunabhängig (Krypto);
+  für Klartext-Sitzungsdateien setzt `platform_compat.secure_chmod()` best-effort eine
+  Nutzer-ACL via `icacls`. Der stärkste Windows-Secret-Schutz ist DPAPI (an Windows-Login gebunden).
+- **FIDO2 auf Windows:** Der direkte HID-Zugriff ist für nicht-elevierte Prozesse gesperrt; die
+  Entsperrung per Sicherheitsschlüssel ist dort vorerst deaktiviert (klarer Hinweis im Dashboard).
+  Master-Passwort, Wiederherstellungsschlüssel und Vaultwarden funktionieren überall.
+- **Datei-Fallback:** Fehlt ein OS-Secret-Store (z. B. headless-Linux ohne Secret-Service), landen
+  Tokens als `0600`-Datei unter `secrets/` — dieselbe Grenze wie beim bisherigen `.token`-Fallback.
+
 ## Threat-Model — was geschützt ist / was NICHT
 
 **Geschützt:**
