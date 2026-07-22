@@ -213,3 +213,25 @@ URL-Fragment), Host-Header-Whitelist gegen DNS-Rebinding, kein Cookie ⇒ kein C
 Tresor-Entsperr-Endpunkt hat zusätzlich eine Brute-Force-Bremse (5 Fehlversuche → 30 s Sperre);
 scrypt bremst jeden Versuch ohnehin auf ~1 s.
 
+
+## Nutzungsmodell & Grenzen (Claude-Abo)
+
+Operator läuft über dein **eigenes Claude-Abo** — und zwar über die **offizielle Claude-Code-CLI**
+(`claude -p`), den von Anthropic unterstützten Weg. Er extrahiert **keine** Abo-OAuth-Tokens und
+betreibt **keinen** reverse-engineerten Zugang. Damit fällt Operator **nicht** unter Anthropics
+Sperre vom 04.04.2026, die Abo-OAuth-Tokens in Drittanbieter-Harnessen (wie OpenClaw) außerhalb
+von Claude Code/Claude.ai untersagt.
+
+**Ehrliche Grenze:** Anthropic hat zeitweise geplant, headless/automatisierten `claude -p`-Betrieb
+(Agent-SDK-Klasse) separat zu bepreisen (angekündigt 14.05.2026, **pausiert** 15./16.06.2026 —
+aktuell **nicht** in Kraft, alles läuft weiter aus dem Abo-Kontingent). Sollte Anthropic eine
+überarbeitete Fassung reaktivieren, könnte **schwere Dauer-Automation** aus einem kleineren
+Kontingent laufen. Deshalb:
+- Wir versprechen **nicht** „unbegrenzt/keine Kosten", sondern: *läuft über dein Abo (offizielle
+  CLI), optionaler Claude-API-Key als Reserve, Fremd-/lokale Modelle (Ollama) als abo-unabhängige
+  Alternative.*
+- Ist ein `ANTHROPIC_API_KEY` gesetzt, nutzt die CLI **diesen** statt des Abos (kostet API-Preise).
+  Operator setzt den Key **nur im Auto-Fallback** (Abo am Limit), nie im Normalbetrieb.
+- Eine **Fair-Use-Drossel** für Automationen ist vorgesehen, um „outsized strain" zu vermeiden.
+
+Stand der Prüfung: 2026-07-22. Primärquelle: support.claude.com/en/articles/11145838.
