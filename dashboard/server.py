@@ -35,6 +35,7 @@ import secretstore                   # noqa: E402  (plattformübergreifender Sec
 import servicemgr                    # noqa: E402  (Dienst-Status/Neustart je OS)
 import platform_compat               # noqa: E402  (Plattform-Abstraktion)
 import providers as providers_reg    # noqa: E402  (Multi-LLM-Provider-Registry)
+import mcp_catalog                    # noqa: E402  (#55 kuratierte MCP-Integrationen)
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -1200,6 +1201,31 @@ async def api_mcp_add(request: Request):
     open(MCP_FILE, "w").write(json.dumps(data, indent=1))
     audit("dashboard", "mcp.add", name)
     return {"ok": True}
+
+
+@app.get("/api/mcp/catalog")
+def api_mcp_catalog():
+    """Kuratierte, geprüfte MCP-Integrationen (#55) + welche schon eingerichtet sind."""
+    installed = set(load_mcp().get("mcpServers", {}))
+    return {"catalog": mcp_catalog.public_catalog(), "installed": sorted(installed)}
+
+
+@app.post("/api/mcp/catalog/{cid}")
+async def api_mcp_catalog_add(cid: str, request: Request):
+    """Eine kuratierte Integration mit den Nutzer-Angaben einrichten."""
+    fields = (await request.json()).get("fields", {})
+    try:
+        entry = mcp_catalog.build_entry(cid, fields)
+    except ValueError as e:
+        return err("validate", str(e))
+    data = load_mcp()
+    if cid in data.get("mcpServers", {}):
+        return err("validate", "Diese Integration ist bereits eingerichtet")
+    data.setdefault("mcpServers", {})[cid] = entry
+    os.makedirs(os.path.dirname(MCP_FILE), exist_ok=True)
+    open(MCP_FILE, "w").write(json.dumps(data, indent=1))
+    audit("dashboard", "mcp.catalog_add", cid)
+    return {"ok": True, "name": cid}
 
 
 @app.delete("/api/mcp/{name}")
