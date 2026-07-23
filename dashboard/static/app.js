@@ -181,6 +181,21 @@ async function unpublishAgent(name) {
 
 /* ---------- Skills ---------- */
 const SKILL_SOURCE = { dashboard: "von dir gepflegt", bot: "vom Operator gelernt", scout: "Scout-Vorschlag" };
+/* SkillGuard (#48): Ampel-Pill + Befundliste */
+function scanPill(scan) {
+  if (!scan) return "";
+  const map = { ok: ["🟢 Scan: sauber", "var(--green, #2ea043)"],
+    warnung: ["🟡 Scan: Warnung", "var(--amber)"],
+    gefahr: ["🔴 Scan: GEFAHR", "var(--red, #f85149)"] };
+  const [label, color] = map[scan.level] || map.ok;
+  return `<span class="pill" style="color:${color}">${label}</span>`;
+}
+function scanFindings(scan) {
+  if (!scan || !scan.findings || !scan.findings.length) return "";
+  return `<ul class="small" style="margin:6px 0">` + scan.findings.map((f) =>
+    `<li>${f.level === "gefahr" ? "🔴" : "🟡"} ${esc(f.msg)} — <span class="mono">${esc(f.snippet)}</span></li>`).join("") + "</ul>";
+}
+
 async function loadSkills() {
   const d = await api("GET", "/api/skills");
   $("#skill-proposals").innerHTML = d.proposals.length ? `
@@ -191,8 +206,10 @@ async function loadSkills() {
       ${d.proposals.map((p) => `
         <div class="agent-row">
           <div><strong>${esc(p.name)}</strong> <span class="pill">${esc(p.created)}</span>
+            ${scanPill(p.scan)}
             <div class="meta">${esc(p.description)}</div>
             ${p.reason ? `<div class="small">Warum: ${esc(p.reason)}</div>` : ""}
+            ${scanFindings(p.scan)}
             <details class="small"><summary>Anleitung ansehen</summary><pre class="mono small">${esc(p.content)}</pre></details></div>
           <div style="display:flex;gap:8px">
             <button class="primary" onclick="skillProposal('${p.id}','accept')">Annehmen</button>
@@ -257,6 +274,54 @@ async function skillProposal(id, action) {
     await api("POST", `/api/skills/proposals/${id}/${action}`);
     toast(action === "accept" ? "Angenommen — der Skill ist ab sofort aktiv" : "Abgelehnt");
     loadSkills();
+  } catch (e) { toast(e.message, 1); }
+}
+
+/* ---------- SkillGuard-Import (#48) ---------- */
+function showSkillImport() {
+  $("#skill-import").classList.remove("hidden");
+  $("#skill-import").innerHTML = `
+    <h2>⬇ Skill importieren</h2>
+    <p class="hint">Der Skill wird VOR dem Speichern von SkillGuard auf gefährliche Muster
+    geprüft (Secret-Zugriff, Daten-Exfiltration, versteckte Anweisungen). Du entscheidest danach.</p>
+    <label>Adresse der SKILL.md (http/https)</label>
+    <input type="text" id="si-url" placeholder="https://…/SKILL.md">
+    <div style="display:flex;gap:10px;margin-top:8px">
+      <button class="primary" onclick="previewSkillImport()">Laden &amp; prüfen</button>
+      <button class="ghost" onclick="$('#skill-import').classList.add('hidden')">Abbrechen</button></div>
+    <div id="si-preview"></div>`;
+}
+
+let _siData = null;
+async function previewSkillImport() {
+  try {
+    const d = await api("POST", "/api/skills/import", { url: $("#si-url").value.trim() });
+    _siData = d;
+    const danger = d.scan.level === "gefahr";
+    $("#si-preview").innerHTML = `
+      <div class="agent-row" style="display:block;margin-top:10px">
+        <strong>${esc(d.name || "(ohne Namen)")}</strong> ${scanPill(d.scan)}
+        <div class="meta">${esc(d.description || "")}</div>
+        ${scanFindings(d.scan)}
+        <details class="small"><summary>Kompletten Inhalt ansehen</summary>
+          <pre class="mono small">${esc(d.body)}</pre></details>
+        <div style="display:flex;gap:10px;margin-top:8px">
+          <button class="${danger ? "danger" : "primary"}" onclick="confirmSkillImport()">
+            ${danger ? "TROTZDEM übernehmen (nicht empfohlen)" : "Übernehmen"}</button>
+        </div></div>`;
+  } catch (e) { toast(e.message, 1); }
+}
+
+async function confirmSkillImport() {
+  if (!_siData) return;
+  const name = (_siData.name || "").trim() || prompt("Name für den Skill (klein, mit Bindestrichen):") || "";
+  if (!name) return;
+  if (_siData.scan.level === "gefahr"
+      && !confirm("⚠️ SkillGuard hat GEFÄHRLICHE Muster gefunden (siehe Befunde). Wirklich übernehmen?")) return;
+  try {
+    await api("POST", "/api/skills", { name, description: _siData.description, body: _siData.body });
+    $("#skill-import").classList.add("hidden");
+    toast("Skill importiert"); loadSkills();
   } catch (e) { toast(e.message, 1); }
 }
 
