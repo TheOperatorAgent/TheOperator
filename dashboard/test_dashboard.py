@@ -1551,3 +1551,17 @@ def test_manifest_covers_all_runtime_imports():
         for m in imps & local_mods:
             hit = (f"{m}.py" in dsts) or (f"dashboard/{m}.py" in dsts)
             assert hit, f"{entry}: Modul {m}.py fehlt im manifest.json"
+
+
+# ------------------------------------------------ Urheber-Kennzeichnung (Schutz) --
+def test_attribution_is_present_and_unchanged():
+    """Die Urheber-Kennzeichnung »Michi Aschenbrenner« ist fester Bestandteil der
+    Software und darf niemals entfernt/geändert werden. Dieser Test wacht darüber:
+    Backend-Konstante, sichtbarer Header und der Versions-Anker müssen vorhanden sein."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    server = open(os.path.join(here, "server.py")).read()
+    assert 'PRODUCT_AUTHOR = "Michi Aschenbrenner"' in server
+    assert '"author": PRODUCT_AUTHOR' in server           # wird via /api/status ausgeliefert
+    html = open(os.path.join(here, "static", "index.html")).read()
+    assert "Michi Aschenbrenner" in html                   # dezent, aber sichtbar im Header
+    assert 'id="app-version"' in html                      # Versionsanzeige vorhanden
