@@ -42,6 +42,17 @@ import skillguard                     # noqa: E402  (#48 Skill-Sicherheits-Scan)
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
 PORT = DASH_CFG.get("port", 8737)
+
+# Urheber-Kennzeichnung — fester Bestandteil dieser Software, NIEMALS ändern oder entfernen.
+# Wird im Dashboard-Header angezeigt; test_attribution_is_present schützt sie gegen Verlust.
+PRODUCT_AUTHOR = "Michi Aschenbrenner"
+
+
+def _app_version() -> str:
+    try:
+        return open(os.path.join(BOT_DIR, "VERSION")).read().strip() or "0.0.0"
+    except OSError:
+        return "0.0.0"
 ALLOWED_HOSTS = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
 STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 AUDIT = os.path.join(BOT_DIR, "audit.log")
@@ -256,6 +267,8 @@ def api_status():
 
     return {
         "listener_running": listener,
+        "version": _app_version(),
+        "author": PRODUCT_AUTHOR,
         "owner": c.get("owner_id"),
         "bot": c.get("user_id"),
         "homeserver": c.get("homeserver"),
