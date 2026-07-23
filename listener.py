@@ -62,6 +62,10 @@ try:
 except Exception:
     triggers = None
 try:
+    import reid as reid_mod            # noqa: E402  (#60 robuste Re-Identifikation)
+except Exception:
+    reid_mod = None
+try:
     import redact as redact_mod
 except Exception:
     redact_mod = None
@@ -209,11 +213,14 @@ def dashboard_link():
 
 
 def reidentify(text, mapping):
-    """Surrogate → echte Werte (stdlib, längste zuerst). Für Antwort UND Tool-Brücke."""
+    """Surrogate → echte Werte (stdlib). #60: nutzt reid.apply — erfasst auch
+    abgeleitete Formen (Nachname allein, kleingeschrieben in Dateinamen) case-insensitiv."""
     s2r = (mapping or {}).get("s2r", {})
     if not text or not s2r:
         return text
-    for sur in sorted(s2r, key=len, reverse=True):
+    if reid_mod:
+        return reid_mod.apply(text, s2r)
+    for sur in sorted(s2r, key=len, reverse=True):        # Fallback: exakte Treffer
         if sur in text:
             text = text.replace(sur, s2r[sur])
     return text
@@ -296,6 +303,40 @@ Keine Secrets im Klartext — Zugangsdaten nur als Referenz {{{{tresor:name}}}}.
 
 def log(msg):
     print(f"[{time.strftime('%F %T')}] {msg}", flush=True)
+
+
+# ---------- Mail-Watch (#62): alle ~5 min pollen, wenn aktive Regeln existieren ----------
+_mail_watch_state = {"last": 0.0, "busy": False}
+
+
+def _mail_watch_tick(log_fn, interval=300):
+    now = time.time()
+    if _mail_watch_state["busy"] or now - _mail_watch_state["last"] < interval:
+        return
+    try:
+        rules = json.load(open(f"{BOT_DIR}/mail_watch.json")).get("rules", [])
+    except (OSError, ValueError):
+        return
+    if not any(r.get("enabled") for r in rules):
+        return
+    _mail_watch_state["last"] = now
+    _mail_watch_state["busy"] = True
+
+    def _poll():
+        try:
+            r = subprocess.run([VENV_PY, f"{BOT_DIR}/mail_watch.py", "check"],
+                               capture_output=True, text=True, timeout=120)
+            out = (r.stdout or "").strip()
+            if out and "nichts Neues" not in out:
+                log_fn(f"Mail-Watch: {out}")
+            if r.returncode != 0:
+                log_fn(f"Mail-Watch-Fehler: {(r.stderr or r.stdout)[:200]}")
+        except Exception as e:
+            log_fn(f"Mail-Watch-Poll fehlgeschlagen: {e}")
+        finally:
+            _mail_watch_state["busy"] = False
+
+    threading.Thread(target=_poll, daemon=True).start()
 
 
 def parse_agent_md(name):
@@ -691,9 +732,16 @@ class BotSession(threading.Thread):
         return final, revised
 
     def _verify_and_send(self, verify, question, answer, mapping, used_fallback):
-        """Claude-Worker-Pfad: Antwort prüfen, re-identifizieren, senden (+ Fußzeile)."""
+        """Claude-Worker-Pfad: Antwort prüfen, re-identifizieren, senden (+ Fußzeile).
+        #63: Der Prüfer bekommt Frage UND Antwort RE-IDENTIFIZIERT — der Worker hat via
+        Werkzeugen ohnehin echte Daten gesehen, seine Antwort mischt daher echte Namen mit
+        Surrogaten aus dem Prompt. Nur mit einheitlicher (echter) Sicht kann der Prüfer
+        Konsistenz beurteilen, statt Pseudonym-Mischungen als »falsche Mail« zu verwerfen.
+        (Fremd-LLM-Worker sind toollos → deren Prüfung bleibt im Surrogat-Raum.)"""
         v_model = verify[1]
-        final, revised = self._verify_text(v_model, question, answer)   # question/answer: Surrogat
+        q_real = redact_text(reidentify(question, mapping))
+        a_real = redact_text(reidentify(answer, mapping))
+        final, revised = self._verify_text(v_model, q_real, a_real)
         text = redact_text(reidentify(final, mapping)) + verify_loop.footer(v_model, revised)
         if used_fallback:
             text += "\n(lief über deinen Claude-API-Key)"
@@ -796,6 +844,7 @@ def main():
                                    target=s.run_event, args=(n, p), daemon=True).start())
             except Exception as e:
                 log(f"Ereignis-Prüfung fehlgeschlagen: {e}")
+        _mail_watch_tick(log)
 
 
 if __name__ == "__main__":
