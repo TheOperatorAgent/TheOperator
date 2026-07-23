@@ -102,6 +102,7 @@ svg rect { fill: var(--accent); }
 }
 
 /* Urheber-Kennzeichnung (fester Bestandteil, nicht entfernen) */
-.attribution { color: var(--muted); opacity: .72; font-size: 11px; margin-top: 2px;
-  font-family: ui-monospace, Menlo, monospace; letter-spacing: .2px; }
-.attribution strong { color: var(--accent-dim); font-weight: 600; }
+.attribution { color: var(--muted); opacity: .66; font-size: 11px; margin-top: 2px;
+  font-family: ui-monospace, Menlo, monospace; letter-spacing: .2px; font-weight: 300; }
+.attribution strong { color: var(--accent-dim); font-weight: 400; }
+.attribution .neo { color: var(--accent); opacity: .85; font-weight: 400; letter-spacing: 1px; }
