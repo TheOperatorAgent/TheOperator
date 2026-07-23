@@ -904,6 +904,62 @@ async function deleteCron(id) {
   try { await api("DELETE", "/api/cron/" + id); loadCron(); } catch (e) { toast(e.message, 1); }
 }
 
+/* ---------- Ereignis-Regeln (#47) ---------- */
+async function loadTriggers() {
+  const d = await api("GET", "/api/triggers");
+  $("#trigger-list").innerHTML = (d.pending ? `<p class="small">⏳ ${d.pending} Ereignis(se) in der Warteschlange</p>` : "")
+    + d.rules.map((r) => `
+    <div class="agent-row">
+      <div><strong>⚡ ${esc(r.name)}</strong>
+        <span class="pill model">Quelle: ${esc(r.source)}</span>
+        ${r.keyword ? `<span class="pill">Stichwort: ${esc(r.keyword)}</span>` : ""}
+        <span class="pill">${esc(r.target)}</span>
+        ${r.enabled ? "" : '<span class="pill" style="color:var(--amber)">pausiert</span>'}
+        ${r.prompt ? `<div class="meta">${esc(r.prompt.slice(0, 120))}</div>` : ""}</div>
+      <div style="display:flex;gap:8px">
+        <button class="ghost" onclick="editTrigger('${r.id}')">Bearbeiten</button>
+        <button class="danger" onclick="deleteTrigger('${r.id}')">Löschen</button>
+      </div></div>`).join("") || "<p class='hint'>Noch keine Ereignis-Regeln.</p>";
+}
+
+async function editTrigger(id) {
+  let r = { name: "", source: "", keyword: "", prompt: "", target: "owner", enabled: true };
+  if (id) r = (await api("GET", "/api/triggers")).rules.find((x) => x.id === id) || r;
+  const agents = (await api("GET", "/api/agents")).agents.filter((a) => a.published);
+  $("#trigger-editor").classList.remove("hidden");
+  $("#trigger-editor").innerHTML = `
+    <h2>${id ? "Regel bearbeiten" : "Neue Ereignis-Regel"}</h2>
+    <label>Name (z. B. »Wichtige Mail«)</label><input type="text" id="tr-name" value="${esc(r.name)}">
+    <label>Quelle — muss exakt zum <span class="mono">source</span>-Feld des Absenders passen (z. B. »n8n-mail«)</label>
+    <input type="text" id="tr-source" value="${esc(r.source)}" placeholder="n8n-mail">
+    <label>Stichwort-Filter (optional — nur Ereignisse, deren Text das enthält)</label>
+    <input type="text" id="tr-keyword" value="${esc(r.keyword || "")}" placeholder="z. B. Rechnung">
+    <label>Anweisung an den Operator (optional)</label>
+    <textarea id="tr-prompt" rows="3" placeholder="z. B. Fasse die Mail kurz zusammen und schlage eine Antwort vor.">${esc(r.prompt || "")}</textarea>
+    <label>Ausführen als</label>
+    <select id="tr-target"><option value="owner" ${r.target === "owner" ? "selected" : ""}>Operator (Haupt-Bot)</option>
+      ${agents.map((a) => `<option value="${a.name}" ${r.target === a.name ? "selected" : ""}>Agent: ${a.name}</option>`).join("")}</select>
+    <label class="switch" style="margin:8px 0"><input type="checkbox" id="tr-enabled" ${r.enabled ? "checked" : ""}>aktiv</label>
+    <div style="display:flex;gap:10px">
+      <button class="primary" onclick="saveTrigger(${id ? `'${id}'` : "null"})">Speichern</button>
+      <button class="ghost" onclick="$('#trigger-editor').classList.add('hidden')">Abbrechen</button></div>`;
+}
+
+async function saveTrigger(id) {
+  const payload = { name: $("#tr-name").value.trim(), source: $("#tr-source").value.trim(),
+    keyword: $("#tr-keyword").value.trim(), prompt: $("#tr-prompt").value.trim(),
+    target: $("#tr-target").value, enabled: $("#tr-enabled").checked };
+  try {
+    await api(id ? "PUT" : "POST", "/api/triggers" + (id ? "/" + id : ""), payload);
+    $("#trigger-editor").classList.add("hidden");
+    toast("Gespeichert"); loadTriggers();
+  } catch (e) { toast(e.message, 1); }
+}
+async function deleteTrigger(id) {
+  if (!confirm("Ereignis-Regel löschen?")) return;
+  try { await api("DELETE", "/api/triggers/" + id); loadTriggers(); } catch (e) { toast(e.message, 1); }
+}
+
 /* ---------- Retro-Statusbanner (Pixel-Art) ---------- */
 const SKULL = String.raw`
       ▄▄▄▄▄▄▄▄▄▄▄
@@ -1239,7 +1295,7 @@ async function refresh() {
     if (active === "skills") await loadSkills();
     if (active === "vault") await loadVault();
     if (active === "sessions") await loadSessions();
-    if (active === "cron") await loadCron();
+    if (active === "cron") { await loadCron(); await loadTriggers(); }
     if (active === "usage") await loadUsage();
     if (active === "memory") await loadMemory();
     if (active === "m365") await loadM365();
