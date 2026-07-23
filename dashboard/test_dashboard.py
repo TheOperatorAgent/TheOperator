@@ -1323,3 +1323,153 @@ def test_skillguard_stdlib_only():
     imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
                if isinstance(n, ast.Import) for a in n.names}
     assert imports == {"re"}
+
+
+# ------------------------------------------------ #60 Re-ID: abgeleitete Surrogat-Formen --
+def _reid():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import reid
+    return reid
+
+
+def test_reid_exact_case_from_live_bug():
+    """Der echte Fehlerfall vom 2026-07-23: Surrogat-Formen im Chat-Text."""
+    reid = _reid()
+    s2r = {"franz-josef.berger@beispiel.de": "robert.bauer@softinvest.it",
+           "Franz-Josef Berger": "Robert Bauer"}
+    text = ('Skript `check_berger_email.py` fragt ab, trackt IDs in `berger_seen.json`. '
+            'Ordnername z. B. "Berger" oder "Franz-Josef". '
+            'Mail von franz-josef.berger@beispiel.de.')
+    out = reid.apply(text, s2r)
+    assert "berger" not in out.lower() and "franz-josef" not in out.lower()
+    assert "check_bauer_email.py" in out and "bauer_seen.json" in out
+    assert '"Bauer"' in out and '"Robert"' in out
+    assert "robert.bauer@softinvest.it" in out
+
+
+def test_reid_no_false_positives_and_case():
+    reid = _reid()
+    s2r = {"Berger": "Bauer"}
+    out = reid.apply("Hamberger Str. bleibt; BERGER wird laut; berger klein.", s2r)
+    assert "Hamberger" in out                  # kein Treffer mitten im Wort
+    assert "BAUER wird laut" in out and "bauer klein" in out
+
+
+def test_reid_env_roundtrip(tmp_path, monkeypatch):
+    reid = _reid()
+    p = tmp_path / "map.json"
+    p.write_text('{"s2r": {"ingeburg@beispiel.de": "michi@example.org"}}')
+    monkeypatch.setenv("OPERATOR_PII_MAP", str(p))
+    assert "michi@example.org" in reid.reidentify("Schreib an Ingeburg@beispiel.de!")
+    monkeypatch.delenv("OPERATOR_PII_MAP")
+    assert reid.reidentify("unverändert") == "unverändert"
+
+
+def test_listener_reidentify_uses_robust_path():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    listener = importlib.import_module("listener")
+    out = listener.reidentify("Datei berger_check.py für Franz-Josef",
+                              {"s2r": {"franz-josef.berger@x.de": "robert.bauer@y.it"}})
+    assert "bauer_check.py" in out and "Robert" in out
+
+
+# ------------------------------------------------ #62 Mail-Watch --
+def _mw(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import importlib as _il
+    import mail_watch as mw
+    _il.reload(mw)
+    monkeypatch.setattr(mw, "WATCH_FILE", str(tmp_path / "mail_watch.json"))
+    monkeypatch.setattr(mw.triggers, "RULES_FILE", str(tmp_path / "triggers.json"))
+    monkeypatch.setattr(mw.triggers, "EVENTS_FILE", str(tmp_path / "events.json"))
+    return mw
+
+
+def _msg(mid, addr, subject, att=False):
+    return {"id": mid, "subject": subject, "hasAttachments": att,
+            "from": {"emailAddress": {"address": addr, "name": addr.split("@")[0]}}}
+
+
+def test_mail_watch_detects_new_mail_and_enqueues(tmp_path, monkeypatch):
+    mw = _mw(tmp_path, monkeypatch)
+    mw._save({"rules": [{"id": "r1", "name": "Test", "folder": "Softinvest",
+                         "folder_id": "F1", "from": "robert.bauer@softinvest.it",
+                         "user": "michi@x.de", "enabled": True}],
+              "seen": {"r1": ["alt-1"]}})
+    mw.triggers.save_rules([{"id": "mw-r1", "name": "Mail-Watch: Test",
+                             "source": "mail-watch", "keyword": "r1",
+                             "prompt": "Fasse zusammen.", "target": "owner",
+                             "enabled": True}])
+    mails = [_msg("neu-1", "robert.bauer@softinvest.it", "Vertragsentwurf", att=True),
+             _msg("alt-1", "robert.bauer@softinvest.it", "Alte Mail"),
+             _msg("neu-2", "andere@wer.de", "Spam")]
+    monkeypatch.setattr(mw, "conn", lambda: {"permissions": {"mail": {"read": True}}})
+    monkeypatch.setattr(mw, "_fetch", lambda c, rule, top=10: mails)
+    n = mw.check()
+    assert n == 1                                          # nur neu-1 (Absender-Filter!)
+    ev = mw.triggers.load_events()
+    assert len(ev) == 1 and ev[0]["payload"]["mail_id"] == "neu-1"
+    assert "Vertragsentwurf" in ev[0]["summary"] and "mit Anhang" in ev[0]["summary"]
+    assert "r1" in ev[0]["summary"]                        # Keyword fuer Regel-Matching
+    # Zweiter Lauf: nichts Neues (Dedup)
+    assert mw.check() == 0
+
+
+def test_mail_watch_first_run_marks_without_alerting(tmp_path, monkeypatch):
+    """Erstlauf: Bestand wird nur als gesehen markiert — kein Alarm-Sturm alter Mails."""
+    mw = _mw(tmp_path, monkeypatch)
+    mw._save({"rules": [{"id": "r1", "name": "T", "folder": "F", "folder_id": "F1",
+                         "from": "", "user": "u@x", "enabled": True}], "seen": {}})
+    mw.triggers.save_rules([{"id": "mw-r1", "name": "t", "source": "mail-watch",
+                             "keyword": "r1", "enabled": True}])
+    monkeypatch.setattr(mw, "conn", lambda: {"permissions": {"mail": {"read": True}}})
+    monkeypatch.setattr(mw, "_fetch", lambda c, rule, top=10:
+                        [_msg("m1", "a@b.c", "Bestand 1"), _msg("m2", "a@b.c", "Bestand 2")])
+    assert mw.check() == 0                                 # markiert, meldet nicht
+    monkeypatch.setattr(mw, "_fetch", lambda c, rule, top=10:
+                        [_msg("m3", "a@b.c", "Wirklich neu"), _msg("m1", "a@b.c", "Bestand 1")])
+    assert mw.check() == 1                                 # jetzt kommt der Alarm
+
+
+def test_mail_watch_has_active_rules_cheap_check(tmp_path, monkeypatch):
+    mw = _mw(tmp_path, monkeypatch)
+    assert not mw.has_active_rules()
+    mw._save({"rules": [{"id": "x", "enabled": False}], "seen": {}})
+    assert not mw.has_active_rules()
+    mw._save({"rules": [{"id": "x", "enabled": True}], "seen": {}})
+    assert mw.has_active_rules()
+
+
+def test_verifier_prompt_guards_tool_results():
+    """#63: Der Prüfer darf Tool-basierte Inhalte nicht verwerfen und Platzhalter
+    nicht beanstanden — die Guard-Formulierungen müssen im System-Prompt stehen."""
+    vl = _vl()
+    system, user = vl.verifier_prompts("F?", "A.")
+    assert "Werkzeug-Ergebnissen" in system
+    assert "Erfinde NIEMALS einen Fehlschlag" in system
+    assert "Pseudonymisierungs-Platzhalter" in system
+    assert "Im Zweifel gilt die Antwort" in system
+
+
+def test_verify_and_send_reidentifies_before_verifier():
+    """#63: Der Prüfer muss Frage+Antwort in ECHT-Sicht bekommen (Worker sah echte
+    Tool-Daten) — sonst verwirft er korrekte Antworten als »falsche Mail«."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    listener = importlib.import_module("listener")
+    s = object.__new__(listener.BotSession)
+    s.bot_name = "owner"
+    sent, seen = [], {}
+    s.send_message = lambda t: sent.append(t)
+    def fake_verify(v_model, q, a):
+        seen["q"], seen["a"] = q, a
+        return a, False
+    s._verify_text = fake_verify
+    mapping = {"s2r": {"franz-josef42@berger.de": "robert.bauer@softinvest.it",
+                       "Bozena Thanel": "Robert Bauer"}}
+    s._verify_and_send((True, None),
+                       "Mail von franz-josef42@berger.de im Ordner Bozena Thanel",
+                       "Zusammenfassung: Robert Bauer bestätigt den Plan.",  # Tool-Echtdaten
+                       mapping, False)
+    assert "robert.bauer@softinvest.it" in seen["q"] and "Robert Bauer" in seen["q"]
+    assert "franz-josef42" not in seen["q"]            # Prüfer sieht KEINE Surrogate mehr
+    assert "Robert Bauer bestätigt" in sent[0]
