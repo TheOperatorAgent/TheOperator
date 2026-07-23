@@ -1176,3 +1176,95 @@ def test_triggers_stdlib_only():
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.add(node.module.split(".")[0])
     assert imports <= {"json", "os", "time"}
+
+
+# ------------------------------------------------ #52 Hybrid-Memory (FTS5 + Vektor) --
+def _memory(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import importlib as _il
+    import memory as mem
+    _il.reload(mem)                       # frisches Modul je Test
+    monkeypatch.setattr(mem, "DB", str(tmp_path / "mem.db"))
+    return mem
+
+
+# Deterministische Fake-Embeddings: „Auto/Golf/Wagen/fährt" ähneln sich, Rest nicht.
+_FAKE_VECS = {
+    "auto": [1.0, 0.9, 0.0], "golf": [0.95, 1.0, 0.05], "wagen": [0.9, 0.95, 0.1],
+    "essen": [0.0, 0.1, 1.0], "pizza": [0.05, 0.0, 0.95],
+}
+
+
+def _fake_embed(text, plan=None):
+    t = (text or "").lower()
+    for key, v in _FAKE_VECS.items():
+        if key in t:
+            return v
+    return [0.3, 0.3, 0.3]
+
+
+def test_memory_hybrid_finds_paraphrase(tmp_path, monkeypatch):
+    """Kernbeweis #52: FTS5 verfehlt die Umformulierung, der Vektor-Layer findet sie."""
+    mem = _memory(tmp_path, monkeypatch)
+    monkeypatch.setattr(mem.emb, "embed", _fake_embed)
+    mem.cmd_add("Michis Auto ist ein Golf")
+    mem.cmd_add("Lieblingsessen ist Pizza Salami")
+    con = mem.db()
+    # FTS5 allein: „Wagen/fährt" kommt in keinem Fakt vor -> kein Treffer
+    q = mem.fts_query("welchen Wagen faehrt er?")
+    fts = con.execute("SELECT rowid FROM memories_fts WHERE memories_fts MATCH ?",
+                      (q,)).fetchall() if q else []
+    assert fts == []
+    # Hybrid: Vektor-Aehnlichkeit findet den Auto-Fakt als Top-Treffer
+    ids = mem.hybrid_ids(con, "welchen Wagen faehrt er?", k=2)
+    top = con.execute("SELECT text FROM memories WHERE id = ?", (ids[0],)).fetchone()[0]
+    assert "Golf" in top
+
+
+def test_memory_fts_only_without_provider(tmp_path, monkeypatch):
+    """Ohne Embedding-Provider (embed -> None) bleibt reines FTS5 voll funktionsfaehig."""
+    mem = _memory(tmp_path, monkeypatch)
+    monkeypatch.setattr(mem.emb, "embed", lambda text, plan=None: None)
+    mem.cmd_add("Der Serverraum ist im Keller")
+    con = mem.db()
+    assert con.execute("SELECT COUNT(*) FROM mem_vecs").fetchone()[0] == 0
+    ids = mem.hybrid_ids(con, "Serverraum Keller", k=3)
+    assert len(ids) == 1
+
+
+def test_memory_delete_cleans_vector(tmp_path, monkeypatch):
+    mem = _memory(tmp_path, monkeypatch)
+    monkeypatch.setattr(mem.emb, "embed", _fake_embed)
+    mem.cmd_add("Michis Auto ist ein Golf")
+    con = mem.db()
+    assert con.execute("SELECT COUNT(*) FROM mem_vecs").fetchone()[0] == 1
+    mem.cmd_forget("1")
+    con = mem.db()
+    assert con.execute("SELECT COUNT(*) FROM mem_vecs").fetchone()[0] == 0
+
+
+def test_embeddings_pack_cosine_rrf():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import embeddings as e
+    v = [0.25, -1.5, 3.125]
+    assert all(abs(a - b) < 1e-6 for a, b in zip(e.unpack(e.pack(v)), v))
+    assert abs(e.cosine([1, 0], [1, 0]) - 1.0) < 1e-9
+    assert e.cosine([1, 0], [0, 1]) == 0.0
+    assert e.cosine([], [1]) == 0.0
+    # RRF: Element, das in BEIDEN Listen vorn liegt, gewinnt
+    assert e.rrf_merge([[1, 2, 3], [2, 1, 9]], top=2)[0] in (1, 2)
+    assert 9 not in e.rrf_merge([[1, 2, 3], [2, 1, 9]], top=2)
+
+
+def test_embeddings_and_memory_stdlib_only():
+    import ast
+    for fn in ("embeddings.py", "memory.py"):
+        src = open(os.path.expanduser("~/.claude/matrix-bot/" + fn)).read()
+        imports = set()
+        for node in ast.walk(ast.parse(src)):
+            if isinstance(node, ast.Import):
+                imports.update(a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module.split(".")[0])
+        assert not (imports & {"fastapi", "uvicorn", "requests", "numpy",
+                               "openai", "sqlite_vec"}), fn
