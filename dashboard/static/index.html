@@ -114,6 +114,17 @@
     <span class="mono">*</span> heißt „egal/immer".</span></p>
     <div id="cron-list"></div>
     <div id="cron-editor" class="card hidden"></div>
+    <div class="row-between" style="margin-top:22px"><h2>⚡ Ereignis-Regeln</h2>
+      <button class="primary" onclick="editTrigger(null)">+ Neue Regel</button></div>
+    <p class="hint">Dein Operator meldet sich <strong>von selbst</strong>, wenn etwas passiert —
+    z. B. eine wichtige Mail eintrifft oder ein n8n-Workflow anschlägt. Eine Regel legt fest,
+    welche Quelle das darf und was der Operator dann tun soll.<br>
+    <span class="small">Anbindung: dein n8n (oder ein Skript) ruft
+    <span class="mono">POST /api/trigger</span> mit <span class="mono">{source, summary}</span>
+    und dem Dashboard-Token auf. Ohne passende aktive Regel wird nichts angenommen;
+    max. 6 Ereignisse/Stunde je Quelle.</span></p>
+    <div id="trigger-list"></div>
+    <div id="trigger-editor" class="card hidden"></div>
   </section>
 
   <section id="tab-usage" class="tab">
