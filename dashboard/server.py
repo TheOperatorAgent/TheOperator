@@ -37,6 +37,7 @@ import platform_compat               # noqa: E402  (Plattform-Abstraktion)
 import providers as providers_reg    # noqa: E402  (Multi-LLM-Provider-Registry)
 import mcp_catalog                    # noqa: E402  (#55 kuratierte MCP-Integrationen)
 import triggers as triggers_mod       # noqa: E402  (#47 Event-Proaktivität)
+import skillguard                     # noqa: E402  (#48 Skill-Sicherheits-Scan)
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -1167,8 +1168,10 @@ async def api_pii_put(request: Request):
 # ---------------------------------------------------------------- Skills --
 @app.get("/api/skills")
 def api_skills():
-    return {"skills": skills_store.list_skills(),
-            "proposals": skills_store.load_proposals()}
+    props = skills_store.load_proposals()
+    for p in props:                     # #48: Ampel je Vorschlag (auch Bot-Vorschläge prüfen)
+        p["scan"] = skillguard.scan((p.get("content") or "") + "\n" + (p.get("description") or ""))
+    return {"skills": skills_store.list_skills(), "proposals": props}
 
 
 @app.get("/api/skills/{name}")
@@ -1204,6 +1207,39 @@ def api_skill_delete(name: str):
     ok = skills_store.delete(name)
     audit("dashboard", "skill.delete", name, ok)
     return {"ok": True} if ok else err("notfound", "Skill nicht gefunden", 404)
+
+
+@app.post("/api/skills/scan")
+async def api_skill_scan(request: Request):
+    """SkillGuard (#48): Text auf gefährliche Muster prüfen (Ampel + Befunde)."""
+    b = await request.json()
+    return skillguard.scan((b.get("body") or "") + "\n" + (b.get("description") or ""))
+
+
+@app.post("/api/skills/import")
+async def api_skill_import(request: Request):
+    """SkillGuard (#48): Skill von URL/Text holen, parsen, scannen — NICHT speichern.
+    Der Nutzer sieht Skill-Card + Scan-Ampel und entscheidet dann bewusst."""
+    b = await request.json()
+    url = (b.get("url") or "").strip()
+    text = b.get("text") or ""
+    if url:
+        if not url.startswith(("http://", "https://")):
+            return err("validate", "Nur http(s)-Adressen")
+        try:
+            import urllib.request
+            with urllib.request.urlopen(url, timeout=15) as r:
+                text = r.read(200_000).decode("utf-8", "replace")   # 200-KB-Limit
+        except Exception as e:
+            return err("import", f"Konnte die Adresse nicht laden: {e}")
+    if not text.strip():
+        return err("validate", "url oder text angeben")
+    p = skills_store.parse(text)
+    fm = p.get("frontmatter", {})
+    scan = skillguard.scan(text)
+    audit("dashboard", "skill.import_preview", url or "(text)", scan["level"] != "gefahr")
+    return {"name": fm.get("name", ""), "description": fm.get("description", ""),
+            "body": p.get("body", "").strip(), "source_url": url, "scan": scan}
 
 
 @app.post("/api/skills/proposals/{pid}/accept")
