@@ -23,6 +23,10 @@ try:
     import embeddings as emb            # stdlib-Modul, gleiche Verzeichnisebene
 except Exception:
     emb = None
+try:
+    import skillguard                   # #49: Injection-Scan für neue Fakten
+except Exception:
+    skillguard = None
 
 DB = os.path.expanduser("~/.claude/matrix-bot/memory.db")
 
@@ -54,7 +58,21 @@ def db():
                 "id INTEGER PRIMARY KEY REFERENCES memories(id), vec BLOB)")
     con.execute("CREATE TRIGGER IF NOT EXISTS mem_vd AFTER DELETE ON memories BEGIN "
                 "DELETE FROM mem_vecs WHERE id = old.id; END")
+    # #49: Quarantäne-Flag für Fakten mit Injection-Verdacht (migrationssicher hinzufügen)
+    if "flagged" not in [r[1] for r in con.execute("PRAGMA table_info(memories)")]:
+        con.execute("ALTER TABLE memories ADD COLUMN flagged INTEGER DEFAULT 0")
     return con
+
+
+def _injection_verdict(text):
+    """#49: Prüft einen zu speichernden Fakt auf Prompt-Injection/Exfil-Muster.
+    Rückgabe: (flagged: bool, grund: str). Fail-open ohne skillguard."""
+    if not skillguard:
+        return False, ""
+    r = skillguard.scan(text)
+    if r["level"] == "gefahr":
+        return True, "; ".join(f["msg"] for f in r["findings"][:3])
+    return False, ""
 
 
 def _store_vec(con, mid, text, plan=None):
@@ -97,21 +115,29 @@ def cmd_add(text):
     if con.execute("SELECT 1 FROM memories WHERE text = ?", (text,)).fetchone():
         print("schon vorhanden")
         return
-    cur = con.execute("INSERT INTO memories(text) VALUES (?)", (text,))
+    flagged, grund = _injection_verdict(text)
+    cur = con.execute("INSERT INTO memories(text, flagged) VALUES (?, ?)",
+                      (text, 1 if flagged else 0))
     _store_vec(con, cur.lastrowid, text)
     con.commit()
-    print("gespeichert")
+    if flagged:
+        print(f"⚠️ QUARANTÄNE: Fakt zeigt Injection-/Exfil-Muster ({grund}) — gespeichert, "
+              "aber aus der Gedächtnis-Suche ausgeschlossen, bis du ihn im Dashboard freigibst.")
+    else:
+        print("gespeichert")
 
 
 def hybrid_ids(con, text, k=5):
-    """Hybrid-Ranking (#52): FTS5-Rangliste + Vektor-Rangliste -> RRF -> Top-k-IDs."""
+    """Hybrid-Ranking (#52): FTS5-Rangliste + Vektor-Rangliste -> RRF -> Top-k-IDs.
+    #49: quarantänte Fakten (flagged=1) sind ausgeschlossen — sie beeinflussen KEINE Antwort."""
+    flagged = {r[0] for r in con.execute("SELECT id FROM memories WHERE flagged = 1")}
     fts_ids = []
     q = fts_query(text)
     if q:
         fts_ids = [r[0] for r in con.execute(
             "SELECT rowid FROM memories_fts WHERE memories_fts MATCH ? "
-            "ORDER BY bm25(memories_fts) LIMIT 20", (q,))]
-    vec_ids = _vec_ranking(con, text)
+            "ORDER BY bm25(memories_fts) LIMIT 20", (q,)) if r[0] not in flagged]
+    vec_ids = [i for i in _vec_ranking(con, text) if i not in flagged]
     if not vec_ids:
         return fts_ids[:k]
     if not fts_ids:
@@ -182,6 +208,15 @@ def main():
         print(db().execute("SELECT COUNT(*) FROM memories").fetchone()[0])
     elif cmd == "reindex":
         cmd_reindex()
+    elif cmd == "flagged":                              # #49: Quarantäne anzeigen
+        for mid, text, created in db().execute(
+                "SELECT id, text, created FROM memories WHERE flagged = 1 ORDER BY id DESC"):
+            print(f"[{mid}] ({created}) {text}")
+    elif cmd == "release" and rest:                     # #49: Fakt aus Quarantäne freigeben
+        con = db()
+        con.execute("UPDATE memories SET flagged = 0 WHERE id = ?", (int(rest[0]),))
+        con.commit()
+        print("freigegeben" if con.total_changes else "id nicht gefunden")
     else:
         sys.exit(__doc__)
 
