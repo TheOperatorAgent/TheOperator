@@ -58,6 +58,8 @@ document.querySelectorAll("nav button").forEach((b) =>
 let STATUS = null;
 async function loadStatus() {
   STATUS = await api("GET", "/api/status");
+  const ver = $("#app-version");
+  if (ver && STATUS.version) ver.textContent = "v" + STATUS.version;
   const badge = $("#listener-badge");
   badge.textContent = STATUS.listener_running ? "● Listener läuft" : "● Listener aus";
   badge.className = "badge " + (STATUS.listener_running ? "ok" : "err");
