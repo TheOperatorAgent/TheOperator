@@ -307,7 +307,7 @@ if ($dashOptin -eq "ja") {
         "requests==2.32.*" "mcp==1.*" "starlette<0.49" "openai>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker"
     try { & $pip install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
     catch { Warn "Deutsches Sprachmodell nicht geladen - Pseudonymisierung meldet sich beim ersten Einsatz" }
-    foreach ($f in @("server.py","tokens.py","agents_store.py","m365_setup.py","google_auth.py","open.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
+    foreach ($f in @("server.py","tokens.py","agents_store.py","m365_setup.py","google_auth.py","open.py","mcp_catalog.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
     foreach ($f in @("index.html","app.js","style.css")) { Fetch-File "dashboard\static\$f" (Join-Path $DashDir "static\$f") }
     foreach ($f in @("m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
     if (-not (Secret-Has "token-key")) { Secret-Set "token-key" (Rand-Hex) }
