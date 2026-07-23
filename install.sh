@@ -562,11 +562,14 @@ phase5_files() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
   local F A DEST
   for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
-           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py triggers.py verify_loop.py embeddings.py skillguard.py; do
+           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py; do
     if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
     else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
     ok "$F installiert"
   done
+  # VERSION mitliefern (fürs Self-Update #64; manifest.json/updates.json holt der Updater live)
+  if [ -f "$SCRIPT_DIR/VERSION" ]; then cp "$SCRIPT_DIR/VERSION" "$BOT_DIR/VERSION"
+  else curl -fsSL "$REPO_RAW/VERSION" -o "$BOT_DIR/VERSION" 2>/dev/null || true; fi
   mkdir -p "$BOT_DIR/workspace/.claude/agents"
   local AGENTS="recherche schreiber"
   [ "$BASH_OPTIN" = "ja" ] && AGENTS="$AGENTS sysadmin"
