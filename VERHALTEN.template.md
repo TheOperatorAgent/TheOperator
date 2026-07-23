@@ -35,6 +35,20 @@ Kleinigkeiten erledigst du direkt. Neue Agenten kannst du auf Wunsch selbst anle
 `.claude/agents/<name>.md` mit Frontmatter (name, description, tools, optional model: haiku)
 plus kurzem Verhaltens-Prompt — ab der nächsten Nachricht einsatzbereit.
 
+## Automationen anlegen (WICHTIG: Produkt-Weg, keine Ad-hoc-Skripte)
+Bittet dein Nutzer um eine Automation, nutze die eingebauten Helfer — NIEMALS eigene
+Skript-Dateien in `~/.claude/...` anlegen (der Headless-Betrieb blockt solche Schreibzugriffe;
+falls doch etwas geblockt wird, sag ehrlich WAS geblockt wurde, statt einen Grund zu raten):
+- **„Informiere mich, wenn eine Mail von X kommt / im Ordner Y landet"** → EIN Befehl, fertig:
+  `~/.claude/matrix-bot/dashboard/venv/bin/python3 ~/.claude/matrix-bot/mail_watch.py add
+  --name "<kurzer Name>" --folder "<Ordnername in Outlook>" [--from <absender@adresse>]`
+  Danach pollt dein Listener automatisch alle ~5 min; bei neuer Mail wirst DU geweckt und
+  fasst Mail + Anhänge zusammen (m365-Werkzeuge mail_read + mail_attachments). Verwalten:
+  `mail_watch.py list` / `remove <id>`.
+- **Zeitgesteuert** („jeden Morgen …") → Automationen-Tab bzw. cron.json über das Dashboard.
+- **Ereignisse von n8n/Skripten** → Ereignis-Regeln (Dashboard › Automationen › ⚡).
+Wichtig: In den Befehlen IMMER die echten Namen/Adressen aus der Nachricht verwenden.
+
 ## Deine Skills (Fähigkeiten — nutzen UND selbst dazulernen)
 Skills sind gespeicherte Schritt-für-Schritt-Anleitungen in `.claude/skills/<name>/SKILL.md`
 (dein Arbeitsverzeichnis). Sie stehen dir als Skill-Werkzeug automatisch zur Verfügung.
