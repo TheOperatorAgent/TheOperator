@@ -1101,12 +1101,45 @@ async function loadSystem() {
       <button class="ghost" onclick="restoreBackup('${x.name}')">Wiederherstellen</button>
     </div>`).join("") || "<p class='hint'>Noch keine Backups.</p>";
   const m = await api("GET", "/api/mcp");
-  $("#mcp-list").innerHTML = m.servers.map((s) => `
+  const cat = await api("GET", "/api/mcp/catalog");
+  const inst = new Set(cat.installed);
+  const catHtml = cat.catalog.map((c) => inst.has(c.id) ? `
+    <div class="agent-row" style="display:block;padding:10px 14px">
+      <strong>${c.emoji} ${esc(c.label)}</strong> <span class="pill">eingerichtet</span>
+    </div>` : `
+    <div class="agent-row" style="display:block;padding:10px 14px">
+      <strong>${c.emoji} ${esc(c.label)}</strong>
+      <a href="${esc(c.homepage)}" target="_blank" rel="noopener" class="small">Doku ↗</a>
+      <p class="small" style="margin:4px 0">${esc(c.desc)}</p>
+      <p class="hint" style="margin:4px 0">${esc(c.setup)}</p>
+      <div style="display:grid;gap:6px;margin:8px 0">
+        ${c.fields.map((fl) => `<div><label class="small">${esc(fl.label)}</label>
+          <input id="cat-${c.id}-${fl.key}" type="${fl.secret ? 'password' : 'text'}"
+                 ${fl.secret ? 'autocomplete="new-password"' : ''} value="${esc(fl.default || '')}"></div>`).join("")}
+      </div>
+      <button class="primary" onclick="addCatalogMcp('${c.id}')">Einrichten</button>
+      <span id="cat-${c.id}-status" class="small"></span>
+    </div>`).join("");
+  const listHtml = m.servers.map((s) => `
     <div class="agent-row" style="padding:8px 14px">
       <div><strong>${esc(s.name)}</strong> <span class="pill">${esc(s.transport)}</span>
         <span class="mono small">${esc(s.command || s.url)}</span></div>
       <button class="danger" onclick="deleteMcp('${s.name}')">Entfernen</button>
     </div>`).join("") || "<p class='hint'>Keine MCP-Server konfiguriert.</p>";
+  $("#mcp-list").innerHTML =
+    `<p class="small" style="margin:2px 0 6px"><strong>Empfohlene Integrationen</strong> — geprüfte Server. Sie laufen mit deinen Rechten; Zugangsdaten landen in der lokalen <span class="mono">.mcp.json</span>.</p>`
+    + catHtml
+    + `<p class="small" style="margin:14px 0 6px"><strong>Eingerichtete MCP-Server</strong></p>`
+    + listHtml;
+}
+async function addCatalogMcp(id) {
+  const st = $("#cat-" + id + "-status");
+  const inputs = document.querySelectorAll(`[id^="cat-${id}-"]`);
+  const fields = {};
+  inputs.forEach((el) => { if (el.tagName === "INPUT") fields[el.id.replace("cat-" + id + "-", "")] = el.value; });
+  if (st) st.textContent = "…";
+  try { await api("POST", "/api/mcp/catalog/" + id, { fields }); toast("Eingerichtet"); loadSystem(); }
+  catch (e) { if (st) st.textContent = ""; toast(e.message, 1); }
 }
 async function createBackup() {
   try { const r = await api("POST", "/api/backup"); toast(`Backup erstellt: ${r.name} (${(r.size / 1e6).toFixed(1)} MB)`); loadSystem(); }
