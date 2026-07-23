@@ -195,6 +195,39 @@ async def api_auth_ott(request: Request):
 
 
 # ---------------------------------------------------------------- System --
+_update_cache = {"at": 0.0, "data": None}
+
+
+@app.get("/api/update/status")
+def api_update_status():
+    """Update-Verfügbarkeit (#64) — 10 min gecacht, damit die Übersicht nicht bei
+    jedem Laden einen Netz-Call macht."""
+    import updater
+    now = time.time()
+    if _update_cache["data"] and now - _update_cache["at"] < 600:
+        return _update_cache["data"]
+    data = updater.check()
+    _update_cache.update(at=now, data=data)
+    return data
+
+
+@app.post("/api/update/apply")
+def api_update_apply():
+    """Ein-Klick-Update (#64): startet updater.py apply DETACHED, damit der
+    Dashboard-Neustart den Update-Prozess nicht killt."""
+    py = servicemgr and platform_compat.venv_python(BOT_DIR) or sys.executable
+    try:
+        subprocess.Popen([py, os.path.join(BOT_DIR, "updater.py"), "apply"],
+                         start_new_session=True, cwd=BOT_DIR,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as e:
+        return err("update", f"Konnte Update nicht starten: {e}")
+    _update_cache.update(at=0.0, data=None)   # Cache invalidieren
+    audit("dashboard", "update.apply", "")
+    return {"ok": True, "info": "Update läuft — Listener und Dashboard starten in ~15 s "
+            "neu. Bitte die Seite danach neu laden."}
+
+
 @app.get("/api/status")
 def api_status():
     listener = servicemgr.status("listener")
