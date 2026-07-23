@@ -695,7 +695,7 @@ phase8_dashboard() {
     "$VENV_PY" "$BOT_DIR/migrate_sessions.py" 2>/dev/null || true
   fi
   if [ "$DASH_OK" = "1" ]; then
-    for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py; do
+    for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py mcp_catalog.py; do
       if [ -f "$SCRIPT_DIR/dashboard/$F" ]; then cp "$SCRIPT_DIR/dashboard/$F" "$DASH_DIR/$F"
       else curl -fsSL "$REPO_RAW/dashboard/$F" -o "$DASH_DIR/$F" || DASH_OK=0; fi
     done
