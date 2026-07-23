@@ -263,8 +263,9 @@ else {
 Bold "Phase 5/7 - Dateien einrichten"
 New-Item -ItemType Directory -Force -Path $BotDir, "$BotDir\workspace\.claude\agents", "$BotDir\workspace\.claude\skills", "$BotDir\connections", "$BotDir\secrets" | Out-Null
 $core = @("listener.py","send.py","memory.py","skills.py","sessions.py","cron_runner.py","redact.py","reid.py",
-          "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py")
+          "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py","updater.py")
 foreach ($f in $core) { Fetch-File $f (Join-Path $BotDir $f); Ok "$f" }
+try { Fetch-File "VERSION" (Join-Path $BotDir "VERSION") } catch {}   # Self-Update #64
 $agents = @("recherche","schreiber"); if ($BashOptin -eq "ja") { $agents += "sysadmin" }
 foreach ($a in $agents) {
     $dest = Join-Path $BotDir "workspace\.claude\agents\$a.md"
