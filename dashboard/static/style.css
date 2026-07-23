@@ -100,3 +100,8 @@ svg rect { fill: var(--accent); }
   text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
   user-select: all;
 }
+
+/* Urheber-Kennzeichnung (fester Bestandteil, nicht entfernen) */
+.attribution { color: var(--muted); opacity: .72; font-size: 11px; margin-top: 2px;
+  font-family: ui-monospace, Menlo, monospace; letter-spacing: .2px; }
+.attribution strong { color: var(--accent-dim); font-weight: 600; }
