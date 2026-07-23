@@ -1,0 +1,165 @@
+{
+ "version": "1.4.0",
+ "files": [
+  {
+   "src": "listener.py",
+   "dst": "listener.py"
+  },
+  {
+   "src": "send.py",
+   "dst": "send.py"
+  },
+  {
+   "src": "memory.py",
+   "dst": "memory.py"
+  },
+  {
+   "src": "skills.py",
+   "dst": "skills.py"
+  },
+  {
+   "src": "sessions.py",
+   "dst": "sessions.py"
+  },
+  {
+   "src": "cron_runner.py",
+   "dst": "cron_runner.py"
+  },
+  {
+   "src": "redact.py",
+   "dst": "redact.py"
+  },
+  {
+   "src": "reid.py",
+   "dst": "reid.py"
+  },
+  {
+   "src": "migrate_tokens.py",
+   "dst": "migrate_tokens.py"
+  },
+  {
+   "src": "vaultwarden.py",
+   "dst": "vaultwarden.py"
+  },
+  {
+   "src": "platform_compat.py",
+   "dst": "platform_compat.py"
+  },
+  {
+   "src": "secretstore.py",
+   "dst": "secretstore.py"
+  },
+  {
+   "src": "servicemgr.py",
+   "dst": "servicemgr.py"
+  },
+  {
+   "src": "providers.py",
+   "dst": "providers.py"
+  },
+  {
+   "src": "triggers.py",
+   "dst": "triggers.py"
+  },
+  {
+   "src": "verify_loop.py",
+   "dst": "verify_loop.py"
+  },
+  {
+   "src": "embeddings.py",
+   "dst": "embeddings.py"
+  },
+  {
+   "src": "skillguard.py",
+   "dst": "skillguard.py"
+  },
+  {
+   "src": "updater.py",
+   "dst": "updater.py"
+  },
+  {
+   "src": "m365.py",
+   "dst": "m365.py"
+  },
+  {
+   "src": "gdrive.py",
+   "dst": "gdrive.py"
+  },
+  {
+   "src": "mcp_m365.py",
+   "dst": "mcp_m365.py"
+  },
+  {
+   "src": "vault.py",
+   "dst": "vault.py"
+  },
+  {
+   "src": "mcp_n8n.py",
+   "dst": "mcp_n8n.py"
+  },
+  {
+   "src": "pseudonym.py",
+   "dst": "pseudonym.py"
+  },
+  {
+   "src": "pseudonym_daemon.py",
+   "dst": "pseudonym_daemon.py"
+  },
+  {
+   "src": "migrate_sessions.py",
+   "dst": "migrate_sessions.py"
+  },
+  {
+   "src": "llm_runner.py",
+   "dst": "llm_runner.py"
+  },
+  {
+   "src": "mail_watch.py",
+   "dst": "mail_watch.py"
+  },
+  {
+   "src": "dashboard/server.py",
+   "dst": "dashboard/server.py"
+  },
+  {
+   "src": "dashboard/tokens.py",
+   "dst": "dashboard/tokens.py"
+  },
+  {
+   "src": "dashboard/agents_store.py",
+   "dst": "dashboard/agents_store.py"
+  },
+  {
+   "src": "dashboard/m365_setup.py",
+   "dst": "dashboard/m365_setup.py"
+  },
+  {
+   "src": "dashboard/google_auth.py",
+   "dst": "dashboard/google_auth.py"
+  },
+  {
+   "src": "dashboard/open.py",
+   "dst": "dashboard/open.py"
+  },
+  {
+   "src": "dashboard/mcp_catalog.py",
+   "dst": "dashboard/mcp_catalog.py"
+  },
+  {
+   "src": "dashboard/static/index.html",
+   "dst": "dashboard/static/index.html"
+  },
+  {
+   "src": "dashboard/static/app.js",
+   "dst": "dashboard/static/app.js"
+  },
+  {
+   "src": "dashboard/static/style.css",
+   "dst": "dashboard/static/style.css"
+  },
+  {
+   "src": "VERSION",
+   "dst": "VERSION"
+  }
+ ]
+}
