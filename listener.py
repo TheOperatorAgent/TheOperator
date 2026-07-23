@@ -66,6 +66,10 @@ try:
 except Exception:
     reid_mod = None
 try:
+    import audit_log                   # noqa: E402  (#49 Audit-Integritäts-Siegel)
+except Exception:
+    audit_log = None
+try:
     import redact as redact_mod
 except Exception:
     redact_mod = None
@@ -307,6 +311,7 @@ def log(msg):
 
 # ---------- Mail-Watch (#62): alle ~5 min pollen, wenn aktive Regeln existieren ----------
 _mail_watch_state = {"last": 0.0, "busy": False}
+_audit_seal_state = {"last": 0.0}
 
 
 def _mail_watch_tick(log_fn, interval=300):
@@ -845,6 +850,14 @@ def main():
             except Exception as e:
                 log(f"Ereignis-Prüfung fehlgeschlagen: {e}")
         _mail_watch_tick(log)
+        if audit_log:                    # #49: Audit-Log periodisch versiegeln (single writer)
+            try:
+                now_s = time.time()
+                if now_s - _audit_seal_state["last"] >= 300:
+                    _audit_seal_state["last"] = now_s
+                    audit_log.seal()
+            except Exception as e:
+                log(f"Audit-Siegel fehlgeschlagen: {e}")
 
 
 if __name__ == "__main__":
