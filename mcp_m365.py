@@ -106,17 +106,81 @@ def mail_list(count: int = 10) -> str:
         for m in res.get("value", [])) or "(keine Mails)"
 
 
+def _resolve_mail(c, u, mail_id, select):
+    """Mail per ID finden: Surrogate zuerst auflösen (Tool-Re-ID-Brücke — die
+    Pseudonymisierung kann IDs durch Platzhalter ersetzt haben), lange IDs direkt
+    per Graph laden (findet auch Unterordner-Mails), sonst Suffix aus mail_list."""
+    mail_id = _rid(mail_id or "").strip()
+    if len(mail_id) > 40:                     # volle Graph-ID → direkter Zugriff
+        try:
+            return g(c, "GET", f"/users/{u}/messages/{mail_id}?$select={select}")
+        except Exception:
+            pass
+    res = g(c, "GET", f"/users/{u}/messages?$top=50&$select={select}"
+                      "&$orderby=receivedDateTime desc")
+    return next((m for m in res.get("value", []) if m["id"].endswith(mail_id)), None)
+
+
 @mcp.tool()
 def mail_read(mail_id: str) -> str:
-    """Eine Mail im Volltext lesen (mail_id = Suffix aus mail_list)."""
+    """Eine Mail im Volltext lesen. mail_id: Suffix aus mail_list ODER die ID aus einem
+    Mail-Watch-Ereignis (exakt übernehmen — auch wenn sie wie ein Name aussieht,
+    das ist ein Pseudonymisierungs-Platzhalter und wird automatisch aufgelöst)."""
     c = conn(); require(c, "mail", "read"); u = user(c)
-    res = g(c, "GET", f"/users/{u}/messages?$top=50&$select=id,subject,from,body,receivedDateTime")
-    msg = next((m for m in res.get("value", []) if m["id"].endswith(mail_id)), None)
+    msg = _resolve_mail(c, u, mail_id, "id,subject,from,body,receivedDateTime")
     if not msg:
         return "Mail-ID nicht gefunden — Suffix aus mail_list verwenden."
     body = re.sub(r"<[^>]+>", " ", msg["body"]["content"])
     audit("mail_read", mail_id)
     return f"Von: {msg.get('from', {}).get('emailAddress', {}).get('address', '?')}\nBetreff: {msg.get('subject', '')}\nDatum: {msg['receivedDateTime'][:16]}\n\n{body[:6000]}"
+
+
+@mcp.tool()
+def mail_attachments(mail_id: str) -> str:
+    """Anhänge einer Mail lesen: Name, Typ, Größe und — wo möglich — extrahierter Text
+    (txt/csv/json/html direkt, PDF via pypdf). mail_id wie bei mail_read (Ereignis-IDs
+    exakt übernehmen, Platzhalter werden automatisch aufgelöst)."""
+    c = conn(); require(c, "mail", "read"); u = user(c)
+    msg = _resolve_mail(c, u, mail_id, "id,subject")
+    if not msg:
+        return "Mail-ID nicht gefunden — Suffix aus mail_list verwenden."
+    atts = g(c, "GET", f"/users/{u}/messages/{msg['id']}/attachments").get("value", [])
+    audit("mail_attachments", mail_id)
+    if not atts:
+        return "(keine Anhänge)"
+    import base64
+    import io
+    out = []
+    for a in atts:
+        name = a.get("name", "?")
+        ctype = a.get("contentType", "?")
+        size = a.get("size", 0)
+        head = f"— {name} ({ctype}, {size // 1024} KB)"
+        blob = a.get("contentBytes")
+        if not blob:
+            out.append(head + " [Inhalt nicht eingebettet — z. B. Element-Anhang]")
+            continue
+        raw = base64.b64decode(blob)
+        text = None
+        try:
+            if name.lower().endswith(".pdf") or "pdf" in ctype:
+                from pypdf import PdfReader
+                pages = PdfReader(io.BytesIO(raw)).pages[:15]
+                text = "\n".join(p.extract_text() or "" for p in pages)
+            elif any(name.lower().endswith(e) for e in
+                     (".txt", ".csv", ".json", ".md", ".log", ".xml", ".html")) \
+                    or ctype.startswith("text/"):
+                text = raw.decode("utf-8", "replace")
+                if name.lower().endswith((".html", ".htm")):
+                    text = re.sub(r"<[^>]+>", " ", text)
+        except Exception as e:
+            out.append(head + f" [Extraktion fehlgeschlagen: {e}]")
+            continue
+        if text and text.strip():
+            out.append(head + "\n" + text.strip()[:4000])
+        else:
+            out.append(head + " [kein extrahierbarer Text — Binärformat]")
+    return "\n\n".join(out)
 
 
 @mcp.tool()
