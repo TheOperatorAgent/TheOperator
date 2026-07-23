@@ -1065,3 +1065,46 @@ def test_verify_and_send_fail_open(monkeypatch):
     s._call_model_text = lambda plan, system, user: None            # Verifier tot
     s._verify_and_send((True, None), "Frage?", "Die einzige Antwort.", {}, False)
     assert "Die einzige Antwort." in sent[0]
+
+
+# ------------------------------------------------ #55 MCP-Katalog (kuratierte Integrationen) --
+def _catalog():
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import mcp_catalog
+    return mcp_catalog
+
+
+def test_mcp_catalog_has_expected_integrations():
+    ids = {c["id"] for c in _catalog().public_catalog()}
+    assert {"notion", "homeassistant", "obsidian", "calendar"} <= ids
+    for c in _catalog().public_catalog():
+        assert c["label"] and c["homepage"].startswith("http") and c["fields"]
+
+
+def test_mcp_catalog_build_notion():
+    e = _catalog().build_entry("notion", {"token": "secret_abc"})
+    assert e["command"] == "npx" and "@notionhq/notion-mcp-server" in e["args"]
+    assert e["env"]["NOTION_TOKEN"] == "secret_abc"
+
+
+def test_mcp_catalog_build_homeassistant_url_and_token():
+    e = _catalog().build_entry("homeassistant",
+                               {"url": "http://ha.local:8123/mcp_server/sse", "token": "llat1"})
+    assert "mcp-remote" in e["args"] and "http://ha.local:8123/mcp_server/sse" in e["args"]
+    assert any("Bearer llat1" in a for a in e["args"])
+
+
+def test_mcp_catalog_build_calendar_env():
+    e = _catalog().build_entry("calendar",
+                               {"url": "https://cal", "user": "u", "pass": "p"})
+    assert e["env"] == {"CALDAV_BASE_URL": "https://cal",
+                        "CALDAV_USERNAME": "u", "CALDAV_PASSWORD": "p"}
+
+
+def test_mcp_catalog_missing_field_raises():
+    import pytest
+    vl = _catalog()
+    with pytest.raises(ValueError):
+        vl.build_entry("notion", {})
+    with pytest.raises(ValueError):
+        vl.build_entry("unbekannt", {"x": "y"})
