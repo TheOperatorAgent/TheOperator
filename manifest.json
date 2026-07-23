@@ -78,6 +78,10 @@
    "dst": "updater.py"
   },
   {
+   "src": "audit_log.py",
+   "dst": "audit_log.py"
+  },
+  {
    "src": "m365.py",
    "dst": "m365.py"
   },
