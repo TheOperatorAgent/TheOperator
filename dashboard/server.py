@@ -36,6 +36,7 @@ import servicemgr                    # noqa: E402  (Dienst-Status/Neustart je OS
 import platform_compat               # noqa: E402  (Plattform-Abstraktion)
 import providers as providers_reg    # noqa: E402  (Multi-LLM-Provider-Registry)
 import mcp_catalog                    # noqa: E402  (#55 kuratierte MCP-Integrationen)
+import triggers as triggers_mod       # noqa: E402  (#47 Event-Proaktivität)
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 DASH_CFG = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -672,6 +673,70 @@ def api_cron_delete(jid: str):
     cron_runner.save_jobs([j for j in jobs if j["id"] != jid])
     audit("dashboard", "cron.delete", jid)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- Trigger (#47) --
+@app.get("/api/triggers")
+def api_triggers_list():
+    """Regeln + Anzahl wartender Ereignisse."""
+    return {"rules": triggers_mod.load_rules(),
+            "pending": len(triggers_mod.load_events()),
+            "rate_per_hour": triggers_mod.RATE_PER_HOUR}
+
+
+@app.post("/api/triggers")
+async def api_triggers_add(request: Request):
+    b = await request.json()
+    if not b.get("name", "").strip() or not b.get("source", "").strip():
+        return err("validate", "name und source sind Pflicht")
+    rules = triggers_mod.load_rules()
+    rule = {"id": hashlib.sha256(os.urandom(8)).hexdigest()[:8],
+            "name": b["name"].strip(), "source": b["source"].strip(),
+            "keyword": (b.get("keyword") or "").strip(),
+            "prompt": (b.get("prompt") or "").strip(),
+            "target": b.get("target", "owner"),
+            "enabled": bool(b.get("enabled", True))}
+    rules.append(rule)
+    triggers_mod.save_rules(rules)
+    audit("dashboard", "trigger.create", rule["name"])
+    return {"ok": True, "id": rule["id"]}
+
+
+@app.put("/api/triggers/{rid}")
+async def api_triggers_update(rid: str, request: Request):
+    b = await request.json()
+    rules = triggers_mod.load_rules()
+    rule = next((r for r in rules if r["id"] == rid), None)
+    if not rule:
+        return err("notfound", "Regel nicht gefunden", 404)
+    for k in ("name", "source", "keyword", "prompt", "target", "enabled"):
+        if k in b:
+            rule[k] = b[k]
+    triggers_mod.save_rules(rules)
+    audit("dashboard", "trigger.update", rule["name"])
+    return {"ok": True}
+
+
+@app.delete("/api/triggers/{rid}")
+def api_triggers_delete(rid: str):
+    rules = triggers_mod.load_rules()
+    if not any(r["id"] == rid for r in rules):
+        return err("notfound", "Regel nicht gefunden", 404)
+    triggers_mod.save_rules([r for r in rules if r["id"] != rid])
+    audit("dashboard", "trigger.delete", rid)
+    return {"ok": True}
+
+
+@app.post("/api/trigger")
+async def api_trigger_ingress(request: Request):
+    """Ereignis-Eingang (#47) — von n8n/Skripten aufgerufen (Bearer-Token nötig).
+    Nur Ereignisse, die eine aktive Regel erlauben; Rate-Limit je Quelle."""
+    b = await request.json()
+    ok, msg = triggers_mod.enqueue(b.get("source"), b.get("summary"), b.get("payload"))
+    audit("trigger", "ingress", f"{b.get('source')}: {str(b.get('summary'))[:80]}", ok)
+    if not ok:
+        return err("trigger", msg, 429 if "Rate-Limit" in msg else 403)
+    return {"ok": True, "info": "Ereignis angenommen — der Operator meldet sich binnen ~5 s"}
 
 
 @app.post("/api/cron/{jid}/run")
