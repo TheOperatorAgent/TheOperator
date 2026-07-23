@@ -206,6 +206,13 @@ async def api_auth_ott(request: Request):
 
 
 # ---------------------------------------------------------------- System --
+@app.get("/api/audit/integrity")
+def api_audit_integrity():
+    """#49: Manipulations-Prüfung des Audit-Logs (Siegel-Verfahren)."""
+    import audit_log
+    return audit_log.verify()
+
+
 _update_cache = {"at": 0.0, "data": None}
 
 
