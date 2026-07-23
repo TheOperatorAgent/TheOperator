@@ -1108,3 +1108,71 @@ def test_mcp_catalog_missing_field_raises():
         vl.build_entry("notion", {})
     with pytest.raises(ValueError):
         vl.build_entry("unbekannt", {"x": "y"})
+
+
+# ------------------------------------------------ #47 Event-Trigger (Proaktivität) --
+def _triggers(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import triggers
+    monkeypatch.setattr(triggers, "RULES_FILE", str(tmp_path / "triggers.json"))
+    monkeypatch.setattr(triggers, "EVENTS_FILE", str(tmp_path / "events.json"))
+    return triggers
+
+
+def test_trigger_requires_matching_rule(tmp_path, monkeypatch):
+    tr = _triggers(tmp_path, monkeypatch)
+    ok, msg = tr.enqueue("n8n-mail", "Neue Mail von der Bank")
+    assert not ok and "Regel" in msg                       # keine Regel -> abgelehnt
+    tr.save_rules([{"id": "r1", "name": "Mail-Alarm", "source": "n8n-mail",
+                    "keyword": "bank", "prompt": "Fasse kurz zusammen.",
+                    "target": "owner", "enabled": True}])
+    ok, _ = tr.enqueue("n8n-mail", "Neue Mail von der Bank")
+    assert ok
+    ok, _ = tr.enqueue("n8n-mail", "Newsletter Katzenfutter")   # Stichwort fehlt
+    assert not ok
+    ok, _ = tr.enqueue("andere-quelle", "Bank Bank Bank")       # falsche Quelle
+    assert not ok
+    # deaktivierte Regel zieht nicht
+    tr.save_rules([{"id": "r1", "name": "x", "source": "n8n-mail", "enabled": False}])
+    assert not tr.enqueue("n8n-mail", "Bank")[0]
+
+
+def test_trigger_rate_limit_per_source(tmp_path, monkeypatch):
+    tr = _triggers(tmp_path, monkeypatch)
+    tr.save_rules([{"id": "r1", "name": "m", "source": "s", "enabled": True}])
+    for i in range(tr.RATE_PER_HOUR):
+        assert tr.enqueue("s", f"Ereignis {i}", now=1000.0 + i)[0]
+    ok, msg = tr.enqueue("s", "eins zuviel", now=1000.0 + 99)
+    assert not ok and "Rate-Limit" in msg
+    # eine Stunde später geht es wieder
+    assert tr.enqueue("s", "neuer Tag", now=1000.0 + 3700)[0]
+
+
+def test_trigger_drain_runs_and_clears(tmp_path, monkeypatch):
+    tr = _triggers(tmp_path, monkeypatch)
+    tr.save_rules([{"id": "r1", "name": "m", "source": "s", "prompt": "Sag Bescheid.",
+                    "target": "owner", "enabled": True}])
+    assert tr.enqueue("s", "Platte fast voll", payload={"disk": "93%"})[0]
+    runs = []
+    n = tr.drain(owner_session="OWNER", agent_sessions={}, log=lambda *_: None,
+                 run=lambda sess, name, prompt: runs.append((sess, name, prompt)))
+    assert n == 1 and runs[0][0] == "OWNER"
+    assert "Platte fast voll" in runs[0][2] and "93%" in runs[0][2]
+    assert "Sag Bescheid." in runs[0][2] and "⚡" in runs[0][2]
+    assert tr.load_events() == []                          # Queue geleert
+    # Ziel nicht aktiv -> verworfen, kein Crash
+    assert tr.enqueue("s", "noch eins")[0]
+    tr.save_events([dict(tr.load_events()[0], target="geist")])
+    assert tr.drain("OWNER", {}, log=lambda *_: None, run=lambda *a: None) == 0
+
+
+def test_triggers_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/triggers.py")).read()
+    imports = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            imports.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imports.add(node.module.split(".")[0])
+    assert imports <= {"json", "os", "time"}
