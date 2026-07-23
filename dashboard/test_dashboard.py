@@ -1473,3 +1473,81 @@ def test_verify_and_send_reidentifies_before_verifier():
     assert "robert.bauer@softinvest.it" in seen["q"] and "Robert Bauer" in seen["q"]
     assert "franz-josef42" not in seen["q"]            # Prüfer sieht KEINE Surrogate mehr
     assert "Robert Bauer bestätigt" in sent[0]
+
+
+# ------------------------------------------------ #64 Self-Update --
+def _updater():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import importlib as _il
+    import updater
+    _il.reload(updater)
+    return updater
+
+
+def test_updater_version_compare():
+    up = _updater()
+    assert up._parse("1.10.0") > up._parse("1.9.0")        # nicht als String vergleichen!
+    assert up._parse("1.4.0") == up._parse("1.4")          # fehlende Stellen = 0
+    assert up._parse("2.0.0") > up._parse("1.99.99")
+    assert not (up._parse("1.4.0") > up._parse("1.4.0"))
+
+
+def test_updater_check_available_and_current(monkeypatch, tmp_path):
+    up = _updater()
+    monkeypatch.setattr(up, "VERSION_FILE", str(tmp_path / "VERSION"))
+    (tmp_path / "VERSION").write_text("1.3.0")
+    monkeypatch.setattr(up, "remote_info", lambda: {
+        "version": "1.4.0", "date": "2026-07-23", "highlights": ["A", "B", "C"]})
+    r = up.check()
+    assert r["update_available"] and r["latest"] == "1.4.0" and len(r["highlights"]) == 3
+    (tmp_path / "VERSION").write_text("1.4.0")
+    assert not up.check()["update_available"]              # aktuell -> kein Banner
+    monkeypatch.setattr(up, "remote_info", lambda: None)   # Server weg -> fail-soft
+    assert up.check()["update_available"] is False
+
+
+def test_updater_apply_writes_files_and_version(monkeypatch, tmp_path):
+    up = _updater()
+    monkeypatch.setattr(up, "BOT_DIR", str(tmp_path))
+    monkeypatch.setattr(up, "VERSION_FILE", str(tmp_path / "VERSION"))
+    fake = {"manifest.json": '{"version":"1.4.0","files":[{"src":"listener.py","dst":"listener.py"},{"src":"VERSION","dst":"VERSION"}]}',
+            "listener.py": "print('neu')", "VERSION": "1.4.0"}
+    monkeypatch.setattr(up, "_fetch", lambda p, binary=False: fake[p].encode() if binary else fake[p])
+    (tmp_path / "listener.py").write_text("print('alt')")
+    ok, msg = up.apply(restart=False)
+    assert ok
+    assert (tmp_path / "listener.py").read_text() == "print('neu')"
+    assert (tmp_path / "listener.py.bak").read_text() == "print('alt')"   # Backup
+    assert (tmp_path / "VERSION").read_text() == "1.4.0"
+
+
+def test_updater_apply_rejects_path_traversal(monkeypatch, tmp_path):
+    up = _updater()
+    monkeypatch.setattr(up, "BOT_DIR", str(tmp_path))
+    monkeypatch.setattr(up, "_fetch", lambda p, binary=False:
+                        '{"files":[{"src":"x","dst":"../evil.py"}]}' if p == "manifest.json" else "x")
+    ok, msg = up.apply(restart=False)
+    assert not ok and "Ungültig" in msg
+    assert not (tmp_path.parent / "evil.py").exists()
+
+
+def test_manifest_covers_all_runtime_imports():
+    """Das Manifest muss jedes lokal importierte Modul von listener.py + server.py enthalten
+    — sonst zieht ein Update einen Import mit, der nicht mitkommt (Crash)."""
+    import ast, json
+    BOT = os.path.expanduser("~/.claude/matrix-bot")
+    manifest = json.load(open(os.path.join(BOT, "manifest.json")))
+    dsts = {e["dst"] for e in manifest["files"]}
+    local_mods = {f[:-3] for f in os.listdir(BOT) if f.endswith(".py")}
+    local_mods |= {f[:-3] for f in os.listdir(os.path.join(BOT, "dashboard")) if f.endswith(".py")}
+    for entry in ("listener.py", "dashboard/server.py"):
+        t = ast.parse(open(os.path.join(BOT, entry)).read())
+        imps = set()
+        for n in ast.walk(t):
+            if isinstance(n, ast.Import):
+                imps |= {a.name.split(".")[0] for a in n.names}
+            elif isinstance(n, ast.ImportFrom) and n.module:
+                imps.add(n.module.split(".")[0])
+        for m in imps & local_mods:
+            hit = (f"{m}.py" in dsts) or (f"dashboard/{m}.py" in dsts)
+            assert hit, f"{entry}: Modul {m}.py fehlt im manifest.json"
