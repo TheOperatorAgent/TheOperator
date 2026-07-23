@@ -78,6 +78,11 @@ async function loadStatus() {
   $("#audit-list").innerHTML = audit.entries.reverse().map((e) =>
     `<div>${esc(e.ts)} · ${esc(e.actor)} · ${esc(e.action)} ${esc(e.target || "")} ${e.ok ? "" : "❌"}</div>`).join("") || "<div>Noch keine Einträge</div>";
   loadUpdate().catch(() => {});
+  api("GET", "/api/audit/integrity").then((i) => {
+    const el = $("#audit-integrity"); if (!el) return;
+    el.textContent = i.ok ? "🔒 Audit-Log unverändert" : "⚠️ " + (i.reason || "Audit-Log verändert!");
+    el.style.color = i.ok ? "var(--muted)" : "var(--red,#f85149)";
+  }).catch(() => {});
 }
 async function restartListener() { try { await api("POST", "/api/listener/restart"); toast("Listener neu gestartet"); loadStatus(); } catch (e) { toast(e.message, 1); } }
 
