@@ -58,6 +58,10 @@ try:
 except Exception:
     cron_runner = None
 try:
+    import triggers                    # noqa: E402  (#47 Event-Proaktivität)
+except Exception:
+    triggers = None
+try:
     import redact as redact_mod
 except Exception:
     redact_mod = None
@@ -478,6 +482,17 @@ class BotSession(threading.Thread):
         self.execute(prompt, tools, model, msg_rec, kind="cron", mapping=mapping,
                      system=system, verify=verify)
 
+    def run_event(self, name, framing):
+        """#47: proaktiver Lauf, von einem externen Ereignis ausgelöst (triggers.drain).
+        Gleicher Pfad wie Chat/Automation — Pseudonymisierung, Werkzeuge, Audit inklusive."""
+        prompt, tools, model, mapping, msg_rec, system, verify = self.build([framing])
+        if mapping is False:
+            log(f"[{self.bot_name}] Ereignis '{name}' abgebrochen (Pseudonymisierung aus)")
+            return
+        log(f"[{self.bot_name}] Ereignis '{name}' startet proaktiven Lauf")
+        self.execute(prompt, tools, model, msg_rec, kind="event", mapping=mapping,
+                     system=system, verify=verify)
+
     def execute(self, prompt, tools, model, messages_label, kind, mapping=None, system=None,
                 verify=None):
         plan = providers.resolve(model) if (providers and model) else {"kind": "claude", "model": None}
@@ -773,6 +788,14 @@ def main():
                 cron_runner.tick(owner, agents, log)
             except Exception as e:
                 log(f"Automations-Prüfung fehlgeschlagen: {e}")
+        if triggers:
+            try:
+                # #47: wartende Ereignisse proaktiv abarbeiten (je Ereignis ein Thread)
+                triggers.drain(owner, agents, log,
+                               run=lambda s, n, p: threading.Thread(
+                                   target=s.run_event, args=(n, p), daemon=True).start())
+            except Exception as e:
+                log(f"Ereignis-Prüfung fehlgeschlagen: {e}")
 
 
 if __name__ == "__main__":
