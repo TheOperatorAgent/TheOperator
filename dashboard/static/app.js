@@ -75,8 +75,41 @@ async function loadStatus() {
   const audit = await api("GET", "/api/audit?limit=12");
   $("#audit-list").innerHTML = audit.entries.reverse().map((e) =>
     `<div>${esc(e.ts)} · ${esc(e.actor)} · ${esc(e.action)} ${esc(e.target || "")} ${e.ok ? "" : "❌"}</div>`).join("") || "<div>Noch keine Einträge</div>";
+  loadUpdate().catch(() => {});
 }
 async function restartListener() { try { await api("POST", "/api/listener/restart"); toast("Listener neu gestartet"); loadStatus(); } catch (e) { toast(e.message, 1); } }
+
+/* Update-Benachrichtigung (#64) */
+async function loadUpdate() {
+  const b = $("#update-banner");
+  if (!b) return;
+  let u;
+  try { u = await api("GET", "/api/update/status"); } catch (e) { b.innerHTML = ""; return; }
+  if (!u.update_available) { b.innerHTML = ""; return; }
+  b.innerHTML = `
+    <div class="card" style="border-color:var(--green,#2ea043);margin-bottom:14px">
+      <div class="row-between">
+        <h2 style="margin:0">🎉 Neue Version verfügbar — ${esc(u.latest)}</h2>
+        <span class="pill">aktuell: ${esc(u.current)}</span>
+      </div>
+      <ul style="margin:8px 0 12px">${(u.highlights || []).map((h) => `<li>${esc(h)}</li>`).join("")}</ul>
+      <button class="primary" onclick="applyUpdate(this)">Jetzt aktualisieren</button>
+      <span class="small" style="margin-left:10px">Dauert ~15 s, danach Seite neu laden.</span>
+    </div>`;
+}
+
+async function applyUpdate(btn) {
+  if (!confirm("Operator jetzt auf die neue Version aktualisieren? Listener und Dashboard "
+    + "starten dabei kurz neu (deine Daten & Einstellungen bleiben unverändert).")) return;
+  if (btn) { btn.disabled = true; btn.textContent = "Aktualisiere …"; }
+  try {
+    await api("POST", "/api/update/apply");
+    $("#update-banner").innerHTML = `<div class="card" style="border-color:var(--green,#2ea043);margin-bottom:14px">
+      <h2 style="margin:0">⏳ Update läuft …</h2>
+      <p class="small">Listener und Dashboard starten in ~15 Sekunden neu. Danach bitte diese Seite neu laden.</p></div>`;
+    setTimeout(() => location.reload(), 18000);
+  } catch (e) { toast(e.message, 1); if (btn) { btn.disabled = false; btn.textContent = "Jetzt aktualisieren"; } }
+}
 
 /* ---------- Agenten ---------- */
 const ALL_TOOLS = ["Bash", "Read", "Write", "WebFetch", "WebSearch", "Agent", "Skill"];
