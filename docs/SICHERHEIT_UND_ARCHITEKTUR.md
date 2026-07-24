@@ -96,24 +96,29 @@ ohne zum Risiko zu werden, laufen alle Werkzeuge in einem mehrfach abgesicherten
 
 ## 6. Abgrenzung: Operator vs. OpenClaw vs. Hermes
 
-Die Bewertung folgt aus der internen Differenzierungs-Studie. Der Fokus liegt auf **belegbaren
-Eigenschaften des Operators**; für die Wettbewerber ist der jeweils typische Cloud-Agent-Ansatz
-zugrunde gelegt.
+**OpenClaw** (Nous-nahe Community, sehr populär) und **Hermes Agent** (Nous Research) sind
+beides ebenfalls **selbst-gehostete**, quelloffene Agenten — der Unterschied liegt also *nicht*
+in „lokal vs. Cloud", sondern in **Datenschutz-Tiefe, Kanal-Philosophie und Kostenmodell**.
+Wettbewerber-Angaben nach öffentlicher Doku (Stand 2026); „nicht dokumentiert" bedeutet: kein
+beworbenes Feature — kein Gegenbeweis.
 
-| Kriterium | **Operator** | Typischer Cloud-Agent (OpenClaw / Hermes) |
-|---|---|---|
-| Wo laufen die Daten? | Auf **eigener Hardware** (Mac/Pi), Dashboard nur localhost | Überwiegend in der Anbieter-Cloud |
-| PII-Schutz vor dem Modell | **Ja — automatische Pseudonymisierung** bei jeder Nachricht | Selten; Daten gehen meist im Klartext ans Modell |
-| Geheimnis-Handling | Verschlüsselter Tresor + **FIDO2** + OS-Schlüsselbund | Variiert; oft Cloud-Secrets |
-| Werkzeug-Ausführung | **Abgeschottet** (Pfad-Käfig, Sperrliste, Limits, Audit) | Je nach Anbieter unterschiedlich transparent |
-| Modell-Wahl | **Frei** (Claude, lokales Ollama, OpenAI, Azure) — auch rein lokal/privat | Meist an einen Anbieter gebunden |
-| Nachvollziehbarkeit | Manipulations­evidentes Audit-Log | Nicht durchgängig |
-| Antwort-Qualitätssicherung | Optionale **Zweitmodell-Prüfung** | Selten eingebaut |
-| Bedienbarkeit | **Für Nicht-Techniker** (kein Terminal, geführte Abläufe) | Häufig entwicklerzentriert |
+| Kriterium | **Operator** | OpenClaw | Hermes Agent |
+|---|---|---|---|
+| Betrieb | selbst-gehostet (Mac/Linux/Windows) | selbst-gehostet | selbst-gehostet |
+| Chat-Kanäle | **nur Matrix** (bewusst: E2E-fähig, selbst hostbar) | viele (WhatsApp, Telegram, Signal, Discord …) | viele (WhatsApp, Telegram, Signal, Discord …) |
+| Daten über Fremd-Plattformen | **nein** (kein Meta-/Telegram-Server im Pfad) | ja, je nach Kanal | ja, je nach Kanal |
+| PII-Schutz **vor** dem Modell | **automatische Pseudonymisierung** (Presidio + Faker) | nicht dokumentiert | nicht dokumentiert |
+| Geheimnis-Handling | verschlüsselter Tresor + **FIDO2** + Redaction + OS-Schlüsselbund | anbieterabhängig | anbieterabhängig |
+| Werkzeug-Ausführung | **abgeschottet** (Pfad-Käfig, Sperrliste, Limits, Audit) | Terminal/Dateien (Sandbox anbieterabhängig) | Terminal/Dateien (dito) |
+| Modell & Kosten | **Claude-Abo — kein API-Key, keine Token-Kosten** (oder lokal Ollama/OpenAI/Azure) | API-Key eines Anbieters nötig | API-Key eines Anbieters nötig |
+| Nachvollziehbarkeit | manipulationsevidentes Audit-Log | nicht dokumentiert | nicht dokumentiert |
+| Antwort-Qualitätssicherung | optionale **Zweitmodell-Prüfung** | nicht dokumentiert | nicht dokumentiert |
+| Bedienbarkeit | **für Nicht-Techniker** (kein Terminal, geführte Abläufe) | entwicklerzentriert | entwicklerzentriert |
 
-**Unser Alleinstellungsmerkmal:** die Kombination aus *Local-First*, *automatischem
-PII-Schutz* und *FIDO2-gestütztem Tresor* — Datenschutz und Sicherheit sind hier keine
-Checkbox, sondern der Bauplan.
+**Ehrliche Einordnung:** OpenClaw und Hermes sind bei der **Kanal-Breite** (viele Messenger)
+voraus — das ist ihr Stärkefeld. Der Operator setzt bewusst den Gegenakzent: **Matrix-only +
+automatischer PII-Schutz + FIDO2-Tresor + Claude-Abo statt API-Key**. Datenschutz und
+Sicherheit sind hier der Bauplan, keine Checkbox.
 
 ---
 

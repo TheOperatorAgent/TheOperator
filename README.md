@@ -132,22 +132,28 @@ Ein externes Modell sieht **nie** echte Namen, E-Mails oder Passwörter — nur 
 Platzhalter, die vor dem Versand automatisch zurückübersetzt werden. Wer ein lokales Modell
 (Ollama) wählt, dessen Daten verlassen den eigenen Rechner überhaupt nicht.
 
-### Operator vs. OpenClaw vs. Hermes
+### Operator vs. OpenClaw vs. Hermes Agent
 
-| Kriterium | **Operator** | OpenClaw / Hermes (typischer Cloud-Agent) |
-|---|---|---|
-| Wo laufen die Daten? | **Auf deiner Hardware** (Mac/Linux/Windows), Dashboard nur localhost | Überwiegend in der Anbieter-Cloud |
-| PII-Schutz vor dem Modell | **Automatische Pseudonymisierung** bei jeder Nachricht | Selten — Daten gehen meist im Klartext ans Modell |
-| Geheimnis-Handling | Verschlüsselter Tresor + **FIDO2** + OS-Schlüsselbund | Variiert, oft Cloud-Secrets |
-| Werkzeug-Ausführung | **Abgeschottet** (Pfad-Käfig, Sperrliste, Limits, Audit) | Anbieterabhängig, oft intransparent |
-| Modell-Wahl | **Frei** — Claude, lokales Ollama, OpenAI, Azure (auch rein lokal) | Meist an einen Anbieter gebunden |
-| Nachvollziehbarkeit | Manipulationssicheres Audit-Log | Nicht durchgängig |
-| Antwort-Qualität | Optionale **Zweitmodell-Prüfung** vor dem Senden | Selten eingebaut |
-| Bedienbarkeit | **Für Nicht-Techniker** (kein Terminal, geführte Abläufe) | Häufig entwicklerzentriert |
+Alle drei sind **selbst-gehostete** Agenten — der Unterschied liegt nicht im „lokal vs. Cloud",
+sondern in **Datenschutz-Tiefe, Kanal-Philosophie und Kosten**. (Wettbewerber-Spalten nach
+öffentlicher Doku, Stand 2026; „nicht dokumentiert" = kein beworbenes Feature, kein Gegenbeweis.)
 
-**Unser Alleinstellungsmerkmal:** die Kombination aus *Local-First*, *automatischem
-PII-Schutz* und *FIDO2-gestütztem Tresor*. Vollständiges Konzept mit Modul-Landkarte und
-Datenfluss: **[docs/SICHERHEIT_UND_ARCHITEKTUR.md](docs/SICHERHEIT_UND_ARCHITEKTUR.md)**.
+| Kriterium | **Operator** | OpenClaw | Hermes Agent |
+|---|---|---|---|
+| Betrieb | selbst-gehostet (Mac/Linux/Windows) | selbst-gehostet | selbst-gehostet |
+| Chat-Kanäle | **nur Matrix** — bewusst: E2E-fähig, selbst hostbar | viele (WhatsApp, Telegram, Signal, Discord …) | viele (WhatsApp, Telegram, Signal, Discord …) |
+| Daten über Fremd-Plattformen | **nein** (kein Meta/Telegram-Server im Pfad) | ja, je nach Kanal | ja, je nach Kanal |
+| PII-Schutz **vor** dem Modell | **automatische Pseudonymisierung** (Presidio + Faker) | nicht dokumentiert | nicht dokumentiert |
+| Geheimnisse | verschlüsselter Tresor + **FIDO2** + Redaction + OS-Schlüsselbund | anbieterabhängig | anbieterabhängig |
+| Werkzeug-Ausführung | **abgeschottet** (Pfad-Käfig, Sperrliste, Limits, Audit) | Terminal/Dateien (Sandbox anbieterabhängig) | Terminal/Dateien (dito) |
+| Modell & Kosten | **Claude-Abo — kein API-Key, keine Token-Kosten** (oder lokal Ollama/OpenAI/Azure) | API-Key eines Anbieters nötig | API-Key eines Anbieters nötig |
+| Antwort-Prüfung | optionale **Zweitmodell-Prüfung** vor dem Senden | nicht dokumentiert | nicht dokumentiert |
+| Bedienbarkeit | **für Nicht-Techniker** (kein Terminal, geführte Abläufe) | entwicklerzentriert | entwicklerzentriert |
+
+**Unser Alleinstellungsmerkmal:** OpenClaw und Hermes sind breiter bei den Messengern —
+der Operator setzt bewusst auf **Matrix-only + automatischen PII-Schutz + FIDO2-Tresor** und
+läuft über dein **Claude-Abo statt eines kostenpflichtigen API-Keys**. Datenschutz ist der
+Bauplan, nicht ein Feature. Vollständiges Konzept: **[docs/SICHERHEIT_UND_ARCHITEKTUR.md](docs/SICHERHEIT_UND_ARCHITEKTUR.md)**.
 
 ## Fehlerbehebung
 
@@ -166,6 +172,18 @@ starts a background service. Your assistant answers within seconds, powered by y
 Claude login on your own machine. Customize its behavior in
 `~/.claude/matrix-bot/VERHALTEN.md` (hot-reloaded per message). Security: only your Matrix
 ID is answered; shell access is opt-in; the bot room is not end-to-end encrypted yet.
+
+**New in 1.5:** agents that *actually work* — foreign models (e.g. Kimi K2.7 Code via Ollama
+Cloud, local models, OpenAI, Azure) can now create files, run commands and test them, safely
+in a sandboxed workspace (path jail, command blocklist, step/time limits, full audit log).
+A **setup assistant** in the dashboard guides you through configuration and performs actions
+on confirmation (secrets only via masked forms, never in chat). Simpler login: message your
+operator `dashboard` for a one-click link; publish an agent as its own chat contact with a
+single click — no second account, no password. Plain-language errors instead of raw codes.
+Built to be usable **without IT knowledge** (see [EINFACHHEIT.md](EINFACHHEIT.md)). How the
+Operator compares to **OpenClaw** and **Hermes Agent** — and why privacy is the blueprint —
+is in the security section above and in
+[docs/SICHERHEIT_UND_ARCHITEKTUR.md](docs/SICHERHEIT_UND_ARCHITEKTUR.md).
 
 ## Roadmap
 
