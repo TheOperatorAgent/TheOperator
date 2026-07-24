@@ -519,6 +519,12 @@ class BotSession(threading.Thread):
                 system = (agent["body"].strip() + "\n\nWICHTIG: Du hast KEINE Werkzeuge — nur Text. "
                           "Antworte direkt, knapp und auf Deutsch; deine Antwort wird 1:1 in den "
                           "Matrix-Chat gesendet. Keine Erklärungen über dich selbst.")
+            # Identitäts-Ehrlichkeit: manche Fremd-Modelle behaupten fälschlich, »Claude«/»ChatGPT«
+            # zu sein. Gegensteuern (passt zur Transparenz-Linie).
+            system += ("\n\nWenn du nach deinem Sprachmodell/Hersteller gefragt wirst: Behaupte "
+                       "NIEMALS, ein bestimmtes Produkt (Claude, ChatGPT, Gemini o. Ä.) zu sein. "
+                       "Sag wahrheitsgemäß, dass du ein Sprachmodell im Operator bist; das konkrete "
+                       "Modell verwaltet dein Nutzer im Dashboard.")
             user = ((history + "\n") if history else "") \
                 + f"{OWNER.split(':')[0]} schreibt dir:\n{messages_p}"
             return user, f_tools, agent.get("model"), mapping, messages_p, system, verify
