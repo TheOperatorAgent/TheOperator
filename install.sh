@@ -562,7 +562,7 @@ phase5_files() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
   local F A DEST
   for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
-           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
+           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
     if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
     else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
     ok "$F installiert"
