@@ -1,8 +1,8 @@
 {
-  "version": "1.7.0",
+  "version": "1.7.2",
   "date": "2026-07-24",
   "highlights": [
-    "🌐 Browser-Agent: der Operator kann jetzt im Web NAVIGIEREN — Seiten öffnen, Links/Buttons klicken, Daten extrahieren (nur Lesen/Navigieren, kein Formular-Absenden). Neuer »websurfer«-Agent",
-    "🎭 Persona & Profil (aus 1.6) · 🤖 Agenten mit Werkzeugen + 🧭 Assistent (aus 1.5)"
+    "🔗 Kein »stummer« Operator mehr: Der Operator folgt dir jetzt automatisch in neue Direktchats. Legt Element (wie es manchmal passiert) einen zweiten »Operator«-Chat an, wird der Operator dort automatisch Mitglied und antwortet — ohne dass du etwas tun musst.",
+    "🔒 Streng abgesichert: Es werden AUSSCHLIESSLICH deine eigenen Einladungen angenommen (keine Fremden), nur echte 2-Personen-Direktchats, nie Gruppen- oder Agenten-Räume."
   ]
 }

@@ -1730,3 +1730,70 @@ def test_auditlog_stdlib_only():
     imports |= {n.module.split(".")[0] for n in ast.walk(ast.parse(src))
                 if isinstance(n, ast.ImportFrom) and n.module}
     assert imports <= {"hashlib", "json", "os", "sys", "time"}
+
+
+# ---------------------------------------------------------------- #81 Auto-Join --
+def _load_listener():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    return importlib.import_module("listener")
+
+
+def test_discover_owner_dm_rooms_gate(monkeypatch):
+    """Findet 2-Personen-DMs self↔OWNER; schließt Agenten- und Gruppenräume aus."""
+    listener = _load_listener()
+    me = listener.CREDS["user_id"]
+    owner = listener.OWNER or "@michi:hs"
+    monkeypatch.setattr(listener, "OWNER", owner)
+    dm, agent, group = "!dm:hs", "!agent:hs", "!group:hs"
+    members = {dm: {me, owner}, agent: {me, owner}, group: {me, owner, "@fremd:hs"}}
+
+    def fake_api(hs, token, path, method="GET", body=None, timeout=30):
+        if path.endswith("/joined_rooms"):
+            return {"joined_rooms": [dm, agent, group]}
+        for rid, mem in members.items():
+            if listener.urllib.parse.quote(rid) in path and path.endswith("/joined_members"):
+                return {"joined": {m: {} for m in mem}}
+        raise AssertionError("unerwarteter Pfad: " + path)
+
+    monkeypatch.setattr(listener, "_owner_api", fake_api)
+    found = listener.discover_owner_dm_rooms("hs", "tok", blocked_rooms={agent})
+    assert found == [dm]           # agent geblockt, group zu groß
+
+
+def test_accept_owner_invites_only_owner(monkeypatch):
+    """Nimmt NUR Owner-Einladungen an; Fremd-Einladung ignoriert; Nicht-DM wieder verlassen."""
+    listener = _load_listener()
+    me = listener.CREDS["user_id"]
+    owner = listener.OWNER or "@michi:hs"
+    monkeypatch.setattr(listener, "OWNER", owner)
+    good, spam, grp = "!good:hs", "!spam:hs", "!grp:hs"
+
+    def invite(sender):
+        return {"invite_state": {"events": [
+            {"type": "m.room.member", "state_key": me,
+             "content": {"membership": "invite"}, "sender": sender}]}}
+
+    members_after = {good: {me, owner}, grp: {me, owner, "@x:hs"}}
+    calls = {"join": [], "leave": []}
+
+    def fake_api(hs, token, path, method="GET", body=None, timeout=30):
+        if "/sync?" in path:
+            return {"rooms": {"invite": {good: invite(owner), spam: invite("@boese:hs"),
+                                         grp: invite(owner)}}}
+        if path.endswith("/join"):
+            calls["join"].append(path); return {}
+        if path.endswith("/leave"):
+            calls["leave"].append(path); return {}
+        if path.endswith("/joined_members"):
+            for rid, mem in members_after.items():
+                if listener.urllib.parse.quote(rid) in path:
+                    return {"joined": {m: {} for m in mem}}
+            return {"joined": {}}
+        raise AssertionError("unerwarteter Pfad: " + path)
+
+    monkeypatch.setattr(listener, "_owner_api", fake_api)
+    new = listener.accept_owner_invites("hs", "tok", blocked_rooms=set())
+    assert new == [good]                                    # nur der echte Owner-DM
+    assert any("!good" in p or "good" in p for p in calls["join"])   # good beigetreten
+    assert not any("spam" in p for p in calls["join"])     # Fremd-Einladung NICHT beigetreten
+    assert any("grp" in p for p in calls["leave"])         # Gruppenraum wieder verlassen

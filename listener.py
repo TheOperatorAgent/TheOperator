@@ -882,18 +882,125 @@ def load_bot_sessions():
     return sessions
 
 
+# ---------- #81: Owner-DM-Räume automatisch finden & Einladungen annehmen ----------
+# Hintergrund: Der Anzeigename des Operator-Kontos ist „Operator" → in Element heißt JEDER
+# Direktchat mit ihm „Operator". Legt Element (bekannter Client-Bug) einen ZWEITEN „Operator"-
+# DM an, tippt der Nutzer dort ins Leere, wenn der Operator nicht Mitglied ist. Diese Helfer
+# lassen den Operator dem Owner in alle seine DM-Räume folgen — selbstheilend, aber streng
+# abgesichert: NUR Einladungen des Owners, NUR 2-Personen-DMs, NIE Agenten-/Gruppenräume.
+def _owner_api(hs, token, path, method="GET", body=None, timeout=30):
+    req = urllib.request.Request(
+        hs + path, method=method,
+        data=json.dumps(body).encode() if body is not None else None,
+        headers={"Authorization": "Bearer " + token, "Content-Type": "application/json"})
+    return json.load(urllib.request.urlopen(req, timeout=timeout))
+
+
+def _room_members(hs, token, room_id):
+    try:
+        m = _owner_api(hs, token,
+                       f"/_matrix/client/v3/rooms/{urllib.parse.quote(room_id)}/joined_members")
+        return set(m.get("joined", {}).keys())
+    except Exception:
+        return set()
+
+
+def discover_owner_dm_rooms(hs, token, blocked_rooms):
+    """Alle beigetretenen 2-Personen-DMs (self↔OWNER), die noch nicht bedient werden.
+    Heilt bestehende Element-Doppel-DMs ohne neue Einladung. Sicherheits-Gate: exakt
+    {OWNER, self} — nie Agenten-Räume, nie Gruppen."""
+    me = CREDS["user_id"]
+    found = []
+    if not OWNER:
+        return found
+    try:
+        joined = _owner_api(hs, token, "/_matrix/client/v3/joined_rooms").get("joined_rooms", [])
+    except Exception as e:
+        log(f"Owner-Raum-Suche fehlgeschlagen: {e}")
+        return found
+    for rid in joined:
+        if rid in blocked_rooms:
+            continue
+        if _room_members(hs, token, rid) == {me, OWNER}:
+            found.append(rid)
+    return found
+
+
+def accept_owner_invites(hs, token, blocked_rooms):
+    """Nimmt AUSSCHLIESSLICH Einladungen des OWNER an (Anti-Spam / Anti-Prompt-Injection).
+    Fremde Einladungen werden ignoriert; versehentlich beigetretene Nicht-DMs wieder verlassen.
+    Gibt die room_ids neuer Owner-DM-Chats zurück."""
+    me = CREDS["user_id"]
+    new_rooms = []
+    if not OWNER:
+        return new_rooms
+    try:
+        data = _owner_api(hs, token, "/_matrix/client/v3/sync?timeout=0")
+    except Exception:
+        return new_rooms
+    for rid, info in data.get("rooms", {}).get("invite", {}).items():
+        inviter = None
+        for e in info.get("invite_state", {}).get("events", []):
+            if (e.get("type") == "m.room.member" and e.get("state_key") == me
+                    and e.get("content", {}).get("membership") == "invite"):
+                inviter = e.get("sender")
+        if inviter != OWNER:
+            log(f"Einladung zu {rid} ignoriert (nicht vom Owner: {inviter})")
+            continue
+        try:
+            _owner_api(hs, token,
+                       f"/_matrix/client/v3/rooms/{urllib.parse.quote(rid)}/join",
+                       method="POST", body={})
+        except Exception as e:
+            log(f"Auto-Join {rid} fehlgeschlagen: {e}")
+            continue
+        if rid not in blocked_rooms and _room_members(hs, token, rid) == {me, OWNER}:
+            log(f"Owner-Einladung angenommen — neuer Operator-Chat {rid}")
+            new_rooms.append(rid)
+        else:
+            log(f"Beigetretener Raum {rid} ist kein Owner-DM — wird wieder verlassen")
+            try:
+                _owner_api(hs, token,
+                           f"/_matrix/client/v3/rooms/{urllib.parse.quote(rid)}/leave",
+                           method="POST", body={})
+            except Exception:
+                pass
+    return new_rooms
+
+
 def main():
     owner_token = keychain_token("matrix-owner", CREDS["access_token"])
     if not owner_token:
         log("FATAL: Owner-Token weder im Keychain noch in credentials.json")
         return
-    owner = BotSession("owner", "owner", CREDS["homeserver"], owner_token,
-                       CREDS["room_id"], CREDS["user_id"])
+    hs = CREDS["homeserver"]
+    primary_room = CREDS["room_id"]
+    owner = BotSession("owner", "owner", hs, owner_token, primary_room, CREDS["user_id"])
     owner.start()
     agents = load_bot_sessions()
     for s in agents.values():
         s.start()
+
+    # #81: mehrere Owner-Chats bedienen. `owner` (primärer Raum) bleibt der Kanal für
+    # proaktive Läufe (Mail/Cron/Ereignisse); zusätzliche DM-Räume reagieren nur auf Chats.
+    owner_rooms = {primary_room: owner}
+
+    def start_owner_room(rid):
+        if rid in owner_rooms:
+            return
+        s = BotSession("owner", "owner", hs, owner_token, rid, CREDS["user_id"])
+        s.start()
+        owner_rooms[rid] = s
+        log(f"Zusätzlicher Operator-Chat wird bedient: {rid}")
+
+    def agent_rooms():
+        return {a.room for a in agents.values()}
+
+    for rid in discover_owner_dm_rooms(hs, owner_token, set(owner_rooms) | agent_rooms()):
+        start_owner_room(rid)
+
     last_mtime = 0
+    last_owner_scan = time.time()
     try:
         import os
         last_mtime = os.path.getmtime(BOTS_FILE)
@@ -901,6 +1008,17 @@ def main():
         pass
     while True:
         time.sleep(5)
+        # #81: regelmäßig neue Owner-Einladungen annehmen + Doppel-DMs entdecken (alle ~30 s)
+        if time.time() - last_owner_scan >= 30:
+            last_owner_scan = time.time()
+            try:
+                blocked = set(owner_rooms) | agent_rooms()
+                fresh = accept_owner_invites(hs, owner_token, blocked)
+                fresh += discover_owner_dm_rooms(hs, owner_token, blocked | set(fresh))
+                for rid in fresh:
+                    start_owner_room(rid)
+            except Exception as e:
+                log(f"Owner-Raum-Watcher: {e}")
         try:
             import os
             m = os.path.getmtime(BOTS_FILE)
