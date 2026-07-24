@@ -45,6 +45,28 @@ function toast(msg, isErr) {
   setTimeout(() => t.classList.add("hidden"), 3500);
 }
 
+// Technik-Fehler → einfache Sprache mit nächstem Schritt (EINFACHHEIT.md). Rohe Codes wie
+// »HTTP 502« oder »M_FORBIDDEN« sieht der Nutzer nie; die Details bleiben in der Konsole/im Log.
+function friendlyError(e) {
+  const raw = (e && e.message ? String(e.message) : String(e || "")).trim();
+  const low = raw.toLowerCase();
+  try { if (raw) console.warn("Fehler-Detail:", raw); } catch (_) {}
+  if (low.includes("failed to fetch") || low.includes("networkerror") || low.includes("load failed"))
+    return "Keine Verbindung zum Operator. 👉 Läuft der Dienst noch? Lade die Seite neu (Cmd+R).";
+  if (/\b401\b/.test(low) || low.includes("unauth") || low.includes("dashboard-token") || low.includes("token"))
+    return "Deine Anmeldung ist abgelaufen. 👉 Schreib deinem Operator im Chat »dashboard« für einen neuen Zugangs-Link.";
+  if (/\b403\b/.test(low) || low.includes("forbidden"))
+    return "Zugriff abgelehnt: Name oder Passwort stimmen nicht. 👉 Es sind dieselben Daten wie in Element — bitte prüfen und nochmal versuchen.";
+  if (/\b429\b/.test(low) || low.includes("viele"))
+    return "Zu viele Versuche kurz hintereinander. 👉 Warte einen Moment und versuch es erneut.";
+  if (/\b5\d\d\b/.test(low) || low.includes("bad gateway") || low.includes("timeout") || low.includes("timed out") || low.includes("zu lange"))
+    return "Der Server hat nicht rechtzeitig geantwortet. 👉 Bitte in einer Minute nochmal versuchen.";
+  // Schon ein verständlicher Satz vom Backend? (hat Leerzeichen, ist kein roher Code)
+  if (raw && /\s/.test(raw) && !/^HTTP \d+$/i.test(raw) && !/\b[A-Z]_[A-Z]{3,}\b/.test(raw) && !/errno/i.test(raw))
+    return raw;
+  return "Da ist etwas schiefgegangen. 👉 Bitte nochmal versuchen — bleibt es so, frag im Tab »🧭 Assistent« nach »Fehler prüfen«.";
+}
+
 /* ---------- Tabs ---------- */
 document.querySelectorAll("nav button").forEach((b) =>
   b.addEventListener("click", () => {
@@ -84,7 +106,7 @@ async function loadStatus() {
     el.style.color = i.ok ? "var(--muted)" : "var(--red,#f85149)";
   }).catch(() => {});
 }
-async function restartListener() { try { await api("POST", "/api/listener/restart"); toast("Listener neu gestartet"); loadStatus(); } catch (e) { toast(e.message, 1); } }
+async function restartListener() { try { await api("POST", "/api/listener/restart"); toast("Listener neu gestartet"); loadStatus(); } catch (e) { toast(friendlyError(e), 1); } }
 
 /* Update-Benachrichtigung (#64) */
 async function loadUpdate() {
@@ -115,7 +137,7 @@ async function applyUpdate(btn) {
       <h2 style="margin:0">⏳ Update läuft …</h2>
       <p class="small">Listener und Dashboard starten in ~15 Sekunden neu. Danach bitte diese Seite neu laden.</p></div>`;
     setTimeout(() => location.reload(), 18000);
-  } catch (e) { toast(e.message, 1); if (btn) { btn.disabled = false; btn.textContent = "Jetzt aktualisieren"; } }
+  } catch (e) { toast(friendlyError(e), 1); if (btn) { btn.disabled = false; btn.textContent = "Jetzt aktualisieren"; } }
 }
 
 /* ---------- Agenten ---------- */
@@ -190,13 +212,13 @@ async function saveAgent(existing) {
     $("#agent-editor").classList.add("hidden");
     toast("Gespeichert — ab der nächsten Nachricht aktiv");
     loadAgents();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function deleteAgent(name) {
   if (!confirm(`Agent "${name}" wirklich löschen?`)) return;
   try { await api("DELETE", "/api/agents/" + name); $("#agent-editor").classList.add("hidden"); toast("Gelöscht"); loadAgents(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 
 // Kleines Overlay-Modal (kein Klartext-prompt() mehr — Passwörter gehören maskiert).
@@ -247,7 +269,7 @@ async function publishAgent(name) {
 async function unpublishAgent(name) {
   if (!confirm(`Bot von "${name}" entfernen? Der Matrix-Zugang wird invalidiert.`)) return;
   try { await api("DELETE", `/api/agents/${name}/publish`); toast("Bot entfernt"); loadAgents(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- Skills ---------- */
@@ -331,13 +353,13 @@ async function saveSkill(existing) {
     $("#skill-editor").classList.add("hidden");
     toast("Gespeichert — ab der nächsten Nachricht einsatzbereit");
     loadSkills();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function deleteSkill(name) {
   if (!confirm(`Skill "${name}" wirklich löschen?`)) return;
   try { await api("DELETE", "/api/skills/" + name); $("#skill-editor").classList.add("hidden"); toast("Gelöscht"); loadSkills(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function skillProposal(id, action) {
@@ -345,7 +367,7 @@ async function skillProposal(id, action) {
     await api("POST", `/api/skills/proposals/${id}/${action}`);
     toast(action === "accept" ? "Angenommen — der Skill ist ab sofort aktiv" : "Abgelehnt");
     loadSkills();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- SkillGuard-Import (#48) ---------- */
@@ -380,7 +402,7 @@ async function previewSkillImport() {
           <button class="${danger ? "danger" : "primary"}" onclick="confirmSkillImport()">
             ${danger ? "TROTZDEM übernehmen (nicht empfohlen)" : "Übernehmen"}</button>
         </div></div>`;
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function confirmSkillImport() {
@@ -393,7 +415,7 @@ async function confirmSkillImport() {
     await api("POST", "/api/skills", { name, description: _siData.description, body: _siData.body });
     $("#skill-import").classList.add("hidden");
     toast("Skill importiert"); loadSkills();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- Tresor ---------- */
@@ -420,7 +442,7 @@ async function loadVault() {
 }
 
 async function setVaultBackend(backend) {
-  try { await api("PUT", "/api/vault/backend", { backend }); } catch (e) { return toast(e.message, 1); }
+  try { await api("PUT", "/api/vault/backend", { backend }); } catch (e) { return toast(friendlyError(e), 1); }
   loadVault(); loadStatus().catch(() => {});
 }
 
@@ -489,7 +511,7 @@ async function renderVaultwarden(vw) {
 
 async function vwSaveServer() {
   try { await api("PUT", "/api/vault/vaultwarden/config", { url: $("#vw-url").value.trim() }); }
-  catch (e) { return toast(e.message, 1); }
+  catch (e) { return toast(friendlyError(e), 1); }
   toast("Server gespeichert"); loadVault();
 }
 
@@ -498,18 +520,18 @@ async function vwUnlock() {
   try {
     await api("POST", "/api/vault/vaultwarden/unlock",
       { master_pw: $("#vw-pw").value, email: ($("#vw-email").value || "").trim() });
-  } catch (e) { if (st) st.textContent = ""; return toast(e.message, 1); }
+  } catch (e) { if (st) st.textContent = ""; return toast(friendlyError(e), 1); }
   toast("Vaultwarden entsperrt"); loadVault(); loadStatus().catch(() => {});
 }
 
 async function vwLock() {
-  try { await api("POST", "/api/vault/vaultwarden/lock"); } catch (e) { return toast(e.message, 1); }
+  try { await api("POST", "/api/vault/vaultwarden/lock"); } catch (e) { return toast(friendlyError(e), 1); }
   toast("Vaultwarden gesperrt"); loadVault(); loadStatus().catch(() => {});
 }
 
 async function vwDisconnect() {
   if (!confirm("Vaultwarden-Verbindung trennen? Der Operator nutzt dann wieder den lokalen Tresor, sobald du oben umschaltest.")) return;
-  try { await api("DELETE", "/api/vault/vaultwarden"); } catch (e) { return toast(e.message, 1); }
+  try { await api("DELETE", "/api/vault/vaultwarden"); } catch (e) { return toast(friendlyError(e), 1); }
   toast("Getrennt"); loadVault();
 }
 
@@ -629,13 +651,13 @@ async function vaultFidoEnroll() {
     $("#v-fido-label").value = "";
     toast(`Schlüssel „${label}" registriert`);
     loadFidoList();
-  } catch (e) { st.textContent = ""; toast(e.message, 1); }
+  } catch (e) { st.textContent = ""; toast(friendlyError(e), 1); }
 }
 
 async function vaultFidoRemove(label) {
   if (!confirm(`Sicherheitsschlüssel "${label}" entfernen?`)) return;
   try { await api("DELETE", "/api/vault/fido/" + encodeURIComponent(label)); toast("Entfernt"); loadFidoList(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function vaultFidoUnlock() {
@@ -644,7 +666,7 @@ async function vaultFidoUnlock() {
   try {
     await api("POST", "/api/vault/fido/unlock");
     toast("Tresor entsperrt"); loadVault(); loadStatus().catch(() => {});
-  } catch (e) { if (st) st.textContent = ""; toast(e.message, 1); }
+  } catch (e) { if (st) st.textContent = ""; toast(friendlyError(e), 1); }
 }
 
 async function vaultInit() {
@@ -653,7 +675,7 @@ async function vaultInit() {
   try {
     const r = await api("POST", "/api/vault/init", { master_pw: p1 });
     showEmergencyKit(r.recovery_key, "Tresor angelegt!");
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 
 function kitText(key) {
@@ -714,11 +736,11 @@ async function vaultUnlock() {
   try {
     await api("POST", "/api/vault/unlock", { master_pw: $("#v-unlock-pw").value });
     toast("Tresor entsperrt"); loadVault(); loadStatus().catch(() => {});
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 async function vaultLock() {
   try { await api("POST", "/api/vault/lock"); toast("Tresor gesperrt"); loadVault(); loadStatus().catch(() => {}); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 
 function vaultRecoverForm() {
@@ -734,7 +756,7 @@ async function vaultRecover() {
     const r = await api("POST", "/api/vault/recover",
       { recovery_key: $("#v-rk").value, new_master_pw: $("#v-new-pw").value });
     showEmergencyKit(r.recovery_key, "Neues Master-Passwort gesetzt! Alter Schlüssel ist ungültig.");
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 
 function vaultRotateForm() {
@@ -748,7 +770,7 @@ async function vaultRotate() {
     await api("POST", "/api/vault/rotate-master",
       { old_pw: $("#v-old-pw").value, new_pw: $("#v-rot-pw").value });
     toast("Master-Passwort geändert — Wiederherstellungsschlüssel bleibt gültig"); loadVault();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function saveVaultEntry() {
@@ -761,12 +783,12 @@ async function saveVaultEntry() {
     $("#v-value").value = "";
     toast(`Gespeichert — im Chat nutzbar als {{tresor:${name}}}`);
     loadVault();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 async function deleteVaultEntry(name) {
   if (!confirm(`Eintrag "${name}" endgültig löschen?`)) return;
   try { await api("DELETE", "/api/vault/entries/" + encodeURIComponent(name)); loadVault(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- M365 ---------- */
@@ -843,17 +865,17 @@ async function loadM365() {
 }
 async function saveM365Cid() {
   try { await api("PUT", "/api/m365/setup-client", { client_id: $("#m365-cid").value.trim() }); toast("Gespeichert"); loadM365(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 async function saveM365Upn() {
   try {
     await api("PUT", "/api/m365/primary-user", { upn: $("#m365-upn").value });
     toast("Gespeichert — dein Operator nutzt jetzt die Daten dieses Benutzers");
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 async function m365Login() {
   try { const r = await api("POST", "/api/m365/auth/start"); window.open(r.auth_url, "_blank"); toast("Anmeldefenster geöffnet — danach hier fortfahren"); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 function collectM365Matrix() {
   const m = {};
@@ -904,12 +926,12 @@ async function m365Apply(connected) {
     loadM365();
   } else {
     try { const r = await api("PUT", "/api/m365/permissions", { permissions }); toast(`Rechte aktualisiert (+${r.added} / −${r.removed})`); loadM365(); }
-    catch (e) { toast(e.message, 1); }
+    catch (e) { toast(friendlyError(e), 1); }
   }
 }
 async function m365Delete() {
   if (!confirm("Connector-App im Entra löschen und Verbindung trennen?")) return;
-  try { await api("DELETE", "/api/m365"); toast("Getrennt"); loadM365(); } catch (e) { toast(e.message, 1); }
+  try { await api("DELETE", "/api/m365"); toast("Getrennt"); loadM365(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- Google ---------- */
@@ -955,15 +977,15 @@ async function loadGoogle() {
 }
 async function saveGoogleCfg() {
   try { await api("PUT", "/api/google/config", { client_id: $("#g-cid").value, client_secret: $("#g-secret").value }); toast("Gespeichert"); loadGoogle(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 async function googleConnect() {
   try { const r = await api("POST", "/api/google/auth/start", { write: $("#g-write").checked }); window.open(r.auth_url, "_blank"); toast("Google-Anmeldung geöffnet"); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 async function googleDisconnect() {
   if (!confirm("Google-Zugriff widerrufen und Tokens löschen?")) return;
-  try { await api("DELETE", "/api/google"); toast("Getrennt"); loadGoogle(); } catch (e) { toast(e.message, 1); }
+  try { await api("DELETE", "/api/google"); toast("Getrennt"); loadGoogle(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- Verlauf (A1) ---------- */
@@ -1029,15 +1051,15 @@ async function saveCron(id) {
     await api(id ? "PUT" : "POST", "/api/cron" + (id ? "/" + id : ""), payload);
     $("#cron-editor").classList.add("hidden");
     toast("Gespeichert"); loadCron();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 async function runCron(id) {
   try { await api("POST", `/api/cron/${id}/run`); toast("Gestartet — Ergebnis kommt in den Matrix-Raum und in den Verlauf"); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 async function deleteCron(id) {
   if (!confirm("Automation löschen?")) return;
-  try { await api("DELETE", "/api/cron/" + id); loadCron(); } catch (e) { toast(e.message, 1); }
+  try { await api("DELETE", "/api/cron/" + id); loadCron(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- Ereignis-Regeln (#47) ---------- */
@@ -1089,11 +1111,11 @@ async function saveTrigger(id) {
     await api(id ? "PUT" : "POST", "/api/triggers" + (id ? "/" + id : ""), payload);
     $("#trigger-editor").classList.add("hidden");
     toast("Gespeichert"); loadTriggers();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 async function deleteTrigger(id) {
   if (!confirm("Ereignis-Regel löschen?")) return;
-  try { await api("DELETE", "/api/triggers/" + id); loadTriggers(); } catch (e) { toast(e.message, 1); }
+  try { await api("DELETE", "/api/triggers/" + id); loadTriggers(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- Retro-Statusbanner (Pixel-Art) ---------- */
@@ -1163,10 +1185,10 @@ async function addMemory() {
   const text = $("#mem-new").value.trim();
   if (!text) return;
   try { await api("POST", "/api/memory", { text }); $("#mem-new").value = ""; toast("Gespeichert"); loadMemory(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 async function forgetMemory(id) {
-  try { await api("DELETE", "/api/memory/" + id); loadMemory(); } catch (e) { toast(e.message, 1); }
+  try { await api("DELETE", "/api/memory/" + id); loadMemory(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- Logs (A5) ---------- */
@@ -1293,21 +1315,21 @@ async function saveProvider(id) {
     const r = await api("PUT", "/api/models/" + id, body);
     renderProviderStatus(id, r);
     toast("Gespeichert");
-  } catch (e) { if (st) st.innerHTML = ""; toast(e.message, 1); }
+  } catch (e) { if (st) st.innerHTML = ""; toast(friendlyError(e), 1); }
 }
 async function delProvider(id) {
   if (!confirm("Provider „" + id + "\" entfernen (inkl. Key)?")) return;
-  try { await api("DELETE", "/api/models/" + id); toast("Entfernt"); loadModels(); } catch (e) { toast(e.message, 1); }
+  try { await api("DELETE", "/api/models/" + id); toast("Entfernt"); loadModels(); } catch (e) { toast(friendlyError(e), 1); }
 }
 async function saveFallback() {
   const body = { enabled: $("#mp-fb-en").checked };
   const k = $("#mp-fb-key"); if (k && k.value) body.key = k.value;
-  try { await api("PUT", "/api/models/anthropic-fallback", body); toast("Gespeichert"); loadModels(); } catch (e) { toast(e.message, 1); }
+  try { await api("PUT", "/api/models/anthropic-fallback", body); toast("Gespeichert"); loadModels(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function saveOwnerVerify() {
   const body = { enabled: $("#ov-en").checked, model: $("#ov-model").value || null };
-  try { await api("PUT", "/api/owner-verify", body); toast(body.enabled ? "Prüfung aktiv" : "Prüfung aus"); loadModels(); } catch (e) { toast(e.message, 1); }
+  try { await api("PUT", "/api/owner-verify", body); toast(body.enabled ? "Prüfung aktiv" : "Prüfung aus"); loadModels(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function loadN8n() {
@@ -1326,11 +1348,11 @@ async function n8nSave() {
     await api("PUT", "/api/n8n/config", { url: $("#n8n-url").value, api_key: $("#n8n-key").value });
     toast("n8n verbunden ✓ — dein Operator kann es ab der nächsten Nachricht nutzen");
     loadN8n();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) { toast(friendlyError(e), 1); }
 }
 async function n8nDisconnect() {
   if (!confirm("n8n-Verbindung trennen und API-Key löschen?")) return;
-  try { await api("DELETE", "/api/n8n"); toast("Getrennt"); loadN8n(); } catch (e) { toast(e.message, 1); }
+  try { await api("DELETE", "/api/n8n"); toast("Getrennt"); loadN8n(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- System: Backup + MCP (B1/B2) ---------- */
@@ -1382,16 +1404,16 @@ async function addCatalogMcp(id) {
   inputs.forEach((el) => { if (el.tagName === "INPUT") fields[el.id.replace("cat-" + id + "-", "")] = el.value; });
   if (st) st.textContent = "…";
   try { await api("POST", "/api/mcp/catalog/" + id, { fields }); toast("Eingerichtet"); loadSystem(); }
-  catch (e) { if (st) st.textContent = ""; toast(e.message, 1); }
+  catch (e) { if (st) st.textContent = ""; toast(friendlyError(e), 1); }
 }
 async function createBackup() {
   try { const r = await api("POST", "/api/backup"); toast(`Backup erstellt: ${r.name} (${(r.size / 1e6).toFixed(1)} MB)`); loadSystem(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 async function restoreBackup(name) {
   if (!confirm(`Backup "${name}" zur Prüfung entpacken? (Überschreibt nichts automatisch)`)) return;
   try { const r = await api("POST", "/api/backup/restore", { name }); toast("Entpackt nach: " + r.dest); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 async function addMcp() {
   const name = $("#mcp-name").value.trim(), target = $("#mcp-target").value.trim();
@@ -1401,17 +1423,17 @@ async function addMcp() {
     ? { name, url: target }
     : { name, command: target.split(" ")[0], args: target.split(" ").slice(1) };
   try { await api("POST", "/api/mcp", payload); toast("Hinzugefügt"); $("#mcp-name").value = ""; $("#mcp-target").value = ""; loadSystem(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 async function deleteMcp(name) {
-  try { await api("DELETE", "/api/mcp/" + name); loadSystem(); } catch (e) { toast(e.message, 1); }
+  try { await api("DELETE", "/api/mcp/" + name); loadSystem(); } catch (e) { toast(friendlyError(e), 1); }
 }
 
 /* ---------- Verhalten & Datenschutz ---------- */
 async function loadVerhalten() { $("#verhalten-text").value = (await api("GET", "/api/verhalten")).content; }
 async function saveVerhalten() {
   try { await api("PUT", "/api/verhalten", { content: $("#verhalten-text").value }); toast("Gespeichert — wirkt ab der nächsten Nachricht"); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 const PII_MODES = [
   ["standard", "Sicher & genau (empfohlen)", "Namen, Orte, Firmen + E-Mail/Telefon/IBAN werden durch realistische Platzhalter ersetzt. Bester Kompromiss."],
@@ -1455,7 +1477,7 @@ async function savePii(withLists) {
     body.deny = $("#pii-deny").value.split("\n").map((x) => x.trim()).filter(Boolean);
   }
   try { await api("PUT", "/api/pseudonymize", body); toast("Gespeichert — wirkt ab der nächsten Nachricht"); if (withLists) loadPseudonymize(); }
-  catch (e) { toast(e.message, 1); }
+  catch (e) { toast(friendlyError(e), 1); }
 }
 
 async function loadPrivacy() {
@@ -1513,7 +1535,7 @@ async function refresh() {
           "<pre class='mono' style='user-select:all;padding:12px'>operator</pre>" +
           "<p class='small' style='opacity:.8'>Öffnet dieses Dashboard automatisch mit Zugang. Falls »command not found«: der Operator ist auf diesem Rechner nicht installiert — nutz den Chat-Weg oben.</p>" +
         "</details></div></main>";
-    } else toast(e.message, 1);
+    } else toast(friendlyError(e), 1);
   }
 }
 loadStatus().catch(() => refresh());

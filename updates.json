@@ -1,9 +1,9 @@
 {
-  "version": "1.5.0",
+  "version": "1.5.1",
   "date": "2026-07-24",
   "highlights": [
-    "🤖 Agenten mit Werkzeugen: Coding-Agenten (z. B. Kimi) legen jetzt wirklich Dateien an, führen Befehle aus und testen — sicher im abgeschotteten Arbeitsordner (Pfad-Käfig, Sperrliste, Protokoll)",
-    "🧭 Einrichtungs-Assistent: neuer Chat im Dashboard, der beim Einrichten führt und Aktionen auf Bestätigung selbst ausführt — Geheimnisse nur über sichere Formulare",
-    "🔑 Einfacher & sicherer: Ein-Klick-Login per »dashboard«-Chatbefehl, Agenten als eigener Chat ohne Konto/Passwort, klare Fehlermeldungen — nach dem neuen Leitbild EINFACHHEIT.md"
+    "💬 Klartext-Fehler überall: Statt technischer Codes (»HTTP 502«, »M_FORBIDDEN«) siehst du jetzt einfache Sätze mit dem nächsten Schritt — an jedem Knopf im Dashboard und im Chat",
+    "🤖 Agenten mit Werkzeugen + 🧭 Einrichtungs-Assistent (aus 1.5.0)",
+    "🔑 Einfacherer & sicherer Login (aus 1.5.0)"
   ]
 }

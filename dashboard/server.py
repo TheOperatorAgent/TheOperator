@@ -261,7 +261,8 @@ def api_update_apply():
                          start_new_session=True, cwd=BOT_DIR,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception as e:
-        return err("update", f"Konnte Update nicht starten: {e}")
+        print(f"[update] Start fehlgeschlagen: {e}")
+        return err("update", "Das Update ließ sich gerade nicht starten. 👉 Bitte in einer Minute erneut versuchen.")
     _update_cache.update(at=0.0, data=None)   # Cache invalidieren
     audit("dashboard", "update.apply", "")
     return {"ok": True, "info": "Update läuft — Listener und Dashboard starten in ~15 s "
@@ -1324,7 +1325,8 @@ async def api_assistant(request: Request):
     except subprocess.TimeoutExpired:
         return err("timeout", "Der Assistent hat zu lange gebraucht — bitte nochmal.")
     except Exception as e:
-        return err("assistant", f"Assistent-Start fehlgeschlagen: {str(e)[:200]}")
+        print(f"[assistant] Start fehlgeschlagen: {e}")
+        return err("assistant", "Der Assistent ist gerade nicht erreichbar. 👉 Bitte kurz warten und erneut senden.")
     try:
         reply = str(json.loads(r.stdout).get("result", "")).strip()
     except ValueError:
@@ -1453,7 +1455,8 @@ async def api_skill_import(request: Request):
             with urllib.request.urlopen(url, timeout=15) as r:
                 text = r.read(200_000).decode("utf-8", "replace")   # 200-KB-Limit
         except Exception as e:
-            return err("import", f"Konnte die Adresse nicht laden: {e}")
+            print(f"[import] URL-Abruf fehlgeschlagen: {e}")
+            return err("import", "Diese Adresse ließ sich nicht laden. 👉 Bitte prüfe den Link und versuch es erneut.")
     if not text.strip():
         return err("validate", "url oder text angeben")
     p = skills_store.parse(text)

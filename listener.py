@@ -734,8 +734,9 @@ class BotSession(threading.Thread):
             log(f"[{self.bot_name}] {label} fertig ({dur}ms): {text[:120]}")
             rc, rec = 0, text[:4000]
         else:
-            self.send_message(f"⚠️ {label}: {out.get('error', 'Fehler beim Modell')}. "
-                              "Provider im Dashboard prüfen (Tab »Modelle & Provider«).")
+            self.send_message("⚠️ " + str(out.get("error", "Das Modell konnte gerade nicht antworten."))
+                              + " 👉 Bitte gleich nochmal versuchen; bleibt es so, prüf den Provider "
+                              "im Dashboard (Tab »Modelle & Provider«).")
             log(f"[{self.bot_name}] {label} Fehler: {str(out.get('error', ''))[:160]}")
             rc, rec = 1, "FEHLER: " + str(out.get("error", ""))[:300]
         if sessions_db:
