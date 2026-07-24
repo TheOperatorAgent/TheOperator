@@ -64,6 +64,23 @@ installieren. Deinstallation: `bash install.sh --uninstall`.
   wachsendem Wissen immer teurer wird. Der Operator speichert Merkenswertes selbst
   (Shell-Freigabe nötig) und kann Einträge korrigieren oder vergessen.
 
+## Neu in 1.5 — Agenten mit Werkzeugen, Einrichtungs-Assistent & Einfachheit
+
+- **Agenten, die wirklich arbeiten:** Fremd-Modelle (z. B. Kimi K2.7 Code über Ollama-Cloud,
+  lokale Modelle, OpenAI, Azure) können jetzt Dateien anlegen, Befehle ausführen und testen —
+  **sicher in einem abgeschotteten Arbeitsordner** (Pfad-Käfig, Befehls-Sperrliste, Schritt-
+  und Zeit-Limits, jede Aktion protokolliert). Pro Agent über die Werkzeug-Häkchen aktivierbar.
+- **🧭 Einrichtungs-Assistent:** ein Chat im Dashboard, der beim Einrichten führt, den
+  Live-Zustand kennt und Aktionen **auf Bestätigung** selbst ausführt — Passwörter/Keys nur
+  über sichere, maskierte Formulare, nie im Chat.
+- **Login ohne Terminal:** Schreib deinem Operator im Chat »dashboard« → Ein-Klick-Link.
+  Agenten werden als eigener Chat-Kontakt veröffentlicht — ein Klick, kein zweites Konto,
+  kein Passwort.
+- **Klartext statt Technik:** Fehlermeldungen sind einfache Sätze mit dem nächsten Schritt —
+  kein `HTTP 502` oder `M_FORBIDDEN` mehr für Endnutzer.
+- **Bedienbar ohne IT-Wissen:** verbindliches Leitbild [EINFACHHEIT.md](EINFACHHEIT.md)
+  (»Petra-Test«) — jedes Feature muss auch eine Büromitarbeiterin ohne Hilfe schaffen.
+
 ## Neu in v2.1 — Verlauf, Automationen, Nutzung & mehr
 
 - **Verlauf:** Jede Assistenten-Antwort wird lokal aufgezeichnet (SQLite) und ist im
@@ -101,6 +118,36 @@ Nachricht frisch geladen — Änderungen wirken sofort, ohne Neustart.
 - **Der Bot-Raum ist unverschlüsselt** (Ende-zu-Ende-Verschlüsselung steht auf der
   Roadmap). Schick deinem Assistenten keine Passwörter oder Geheimnisse.
 - Zugangsdaten liegen lokal unter `~/.claude/matrix-bot/credentials.json` (Rechte 600).
+
+## Sicherheit & Datenschutz — und wie wir uns abheben
+
+Beim Operator sind Datenschutz und Sicherheit der **Bauplan**, kein nachträglicher Schalter.
+Jede Nachricht durchläuft dieselbe Schutz-Pipeline, **bevor** sie ein Sprachmodell erreicht:
+
+```
+Nachricht → 🔑 Secret-Redaction → 🎭 Pseudonymisierung → Modell → ↩︎ Re-Identifikation → 🔑 Maskierung → Antwort
+```
+
+Ein externes Modell sieht **nie** echte Namen, E-Mails oder Passwörter — nur unverfängliche
+Platzhalter, die vor dem Versand automatisch zurückübersetzt werden. Wer ein lokales Modell
+(Ollama) wählt, dessen Daten verlassen den eigenen Rechner überhaupt nicht.
+
+### Operator vs. OpenClaw vs. Hermes
+
+| Kriterium | **Operator** | OpenClaw / Hermes (typischer Cloud-Agent) |
+|---|---|---|
+| Wo laufen die Daten? | **Auf deiner Hardware** (Mac/Linux/Windows), Dashboard nur localhost | Überwiegend in der Anbieter-Cloud |
+| PII-Schutz vor dem Modell | **Automatische Pseudonymisierung** bei jeder Nachricht | Selten — Daten gehen meist im Klartext ans Modell |
+| Geheimnis-Handling | Verschlüsselter Tresor + **FIDO2** + OS-Schlüsselbund | Variiert, oft Cloud-Secrets |
+| Werkzeug-Ausführung | **Abgeschottet** (Pfad-Käfig, Sperrliste, Limits, Audit) | Anbieterabhängig, oft intransparent |
+| Modell-Wahl | **Frei** — Claude, lokales Ollama, OpenAI, Azure (auch rein lokal) | Meist an einen Anbieter gebunden |
+| Nachvollziehbarkeit | Manipulationssicheres Audit-Log | Nicht durchgängig |
+| Antwort-Qualität | Optionale **Zweitmodell-Prüfung** vor dem Senden | Selten eingebaut |
+| Bedienbarkeit | **Für Nicht-Techniker** (kein Terminal, geführte Abläufe) | Häufig entwicklerzentriert |
+
+**Unser Alleinstellungsmerkmal:** die Kombination aus *Local-First*, *automatischem
+PII-Schutz* und *FIDO2-gestütztem Tresor*. Vollständiges Konzept mit Modul-Landkarte und
+Datenfluss: **[docs/SICHERHEIT_UND_ARCHITEKTUR.md](docs/SICHERHEIT_UND_ARCHITEKTUR.md)**.
 
 ## Fehlerbehebung
 
