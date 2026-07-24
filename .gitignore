@@ -5,6 +5,8 @@ credentials.json
 dashboard.json
 bots.json
 state.json
+persona.json
+profile.json
 manifest.local.json
 secrets/
 connections/

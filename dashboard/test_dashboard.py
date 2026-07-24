@@ -920,6 +920,54 @@ def test_wants_dashboard_command():
         assert m.wants_dashboard([no]) is False, no
 
 
+def _persona(tmp_path):
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "persona_mod", os.path.expanduser("~/.claude/matrix-bot/persona.py"))
+    P = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(P)
+    P.PERSONA_FILE = str(tmp_path / "persona.json")
+    P.PROFILE_FILE = str(tmp_path / "profile.json")
+    return P
+
+
+def test_persona_roundtrip_and_render(tmp_path):
+    P = _persona(tmp_path)
+    assert P.is_onboarded() is False
+    p = P.save_persona({"name": "Nova", "gender_presentation": "androgyn",
+                        "formality": "sie", "emoji": False, "soul": "Ruhig und klar."})
+    assert P.is_onboarded() is True
+    block = P.render_persona(p)
+    assert "»Nova«" in block and "androgyn" in block and "per Sie" in block
+    assert "keine Emojis" in block and "Ruhig und klar." in block
+    assert "KI bist" in block                      # Ehrlichkeits-Regel immer dabei
+    # ungültige Werte fallen auf Default zurück
+    assert P.save_persona({"gender_presentation": "quatsch"})["gender_presentation"] == "neutral"
+    # Profil: Komma-String → Liste; nur befüllte Felder im Block
+    pr = P.save_profile({"preferred_name": "Michi", "pronouns": "er/ihm",
+                         "interests": "KI, Datenschutz", "boundaries": "keine Mails ungefragt"})
+    assert pr["interests"] == ["KI", "Datenschutz"]
+    prof = P.render_profile(pr)
+    assert "Michi (er/ihm)" in prof and "KI, Datenschutz" in prof
+    assert P.render_profile({"preferred_name": "", "interests": [], "boundaries": [],
+                             "language": "Deutsch"}) == ""      # leer, wenn nichts gesetzt
+    # Löschen entfernt die PII-Datei
+    P.delete_profile()
+    assert not os.path.exists(P.PROFILE_FILE)
+
+
+def test_persona_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/persona.py")).read()
+    mods = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            mods.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            mods.add(node.module.split(".")[0])
+    assert mods <= {"json", "os"}, f"persona.py muss stdlib-only sein, fand: {mods}"
+
+
 def test_providers_is_stdlib_only():
     import ast
     src = open(os.path.expanduser("~/.claude/matrix-bot/providers.py")).read()

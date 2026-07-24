@@ -1,9 +1,9 @@
 {
-  "version": "1.5.1",
+  "version": "1.6.0",
   "date": "2026-07-24",
   "highlights": [
-    "💬 Klartext-Fehler überall: Statt technischer Codes (»HTTP 502«, »M_FORBIDDEN«) siehst du jetzt einfache Sätze mit dem nächsten Schritt — an jedem Knopf im Dashboard und im Chat",
-    "🤖 Agenten mit Werkzeugen + 🧭 Einrichtungs-Assistent (aus 1.5.0)",
-    "🔑 Einfacherer & sicherer Login (aus 1.5.0)"
+    "🎭 Persona & Profil: Gib deinem Operator eine eigene Persönlichkeit (Name, Ton, Förmlichkeit, Auftreten männlich/weiblich/androgyn/neutral) und ein Profil über dich — alles sichtbar, editierbar, löschbar. Live-Vorschau »So klingt dein Operator«",
+    "🤖 Agenten mit Werkzeugen + 🧭 Einrichtungs-Assistent (aus 1.5)",
+    "💬 Klartext-Fehlermeldungen überall (aus 1.5.1)"
   ]
 }

@@ -35,6 +35,7 @@ import secretstore                   # noqa: E402  (plattformübergreifender Sec
 import servicemgr                    # noqa: E402  (Dienst-Status/Neustart je OS)
 import platform_compat               # noqa: E402  (Plattform-Abstraktion)
 import providers as providers_reg    # noqa: E402  (Multi-LLM-Provider-Registry)
+import persona as persona_mod         # noqa: E402  (Operator-Persona + Nutzerprofil)
 import mcp_catalog                    # noqa: E402  (#55 kuratierte MCP-Integrationen)
 import triggers as triggers_mod       # noqa: E402  (#47 Event-Proaktivität)
 import skillguard                     # noqa: E402  (#48 Skill-Sicherheits-Scan)
@@ -350,6 +351,39 @@ async def api_verhalten_put(request: Request):
     open(p, "w").write(body.get("content", ""))
     audit("dashboard", "verhalten.update")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- Persona & Profil --
+@app.get("/api/persona")
+def api_persona_get():
+    """Persona + Nutzerprofil + Auswahloptionen + Live-Vorschau (was in den Prompt fließt)."""
+    return {"persona": persona_mod.load_persona(),
+            "profile": persona_mod.load_profile(),
+            "options": {"gender_presentation": list(persona_mod.GENDER_PRESENTATIONS),
+                        "tone": list(persona_mod.TONES), "formality": list(persona_mod.FORMALITY),
+                        "humor": list(persona_mod.HUMOR), "verbosity": list(persona_mod.VERBOSITY)},
+            "preview": persona_mod.render_block()}
+
+
+@app.put("/api/persona")
+async def api_persona_put(request: Request):
+    p = persona_mod.save_persona(await request.json())
+    audit("dashboard", "persona.update", p.get("gender_presentation", ""))
+    return {"ok": True, "persona": p, "preview": persona_mod.render_block()}
+
+
+@app.put("/api/profil")
+async def api_profil_put(request: Request):
+    pr = persona_mod.save_profile(await request.json())
+    audit("dashboard", "profil.update")
+    return {"ok": True, "profile": pr, "preview": persona_mod.render_block()}
+
+
+@app.delete("/api/profil")
+def api_profil_delete():
+    persona_mod.delete_profile()
+    audit("dashboard", "profil.delete")
+    return {"ok": True, "preview": persona_mod.render_block()}
 
 
 # ---------------------------------------------------------------- Agenten --

@@ -1431,6 +1431,45 @@ async function deleteMcp(name) {
 
 /* ---------- Verhalten & Datenschutz ---------- */
 async function loadVerhalten() { $("#verhalten-text").value = (await api("GET", "/api/verhalten")).content; }
+
+/* ---------- Persona & Profil ---------- */
+async function loadPersona() {
+  const d = await api("GET", "/api/persona");
+  const p = d.persona, pr = d.profile, o = d.options;
+  const opt = (id, arr, val) => { $(id).innerHTML = arr.map((x) => `<option ${x === val ? "selected" : ""}>${x}</option>`).join(""); };
+  $("#pn-name").value = p.name || "";
+  opt("#pn-gender", o.gender_presentation, p.gender_presentation);
+  opt("#pn-tone", o.tone, p.tone);
+  opt("#pn-formality", o.formality, p.formality);
+  opt("#pn-humor", o.humor, p.humor);
+  opt("#pn-verbosity", o.verbosity, p.verbosity);
+  $("#pn-emoji").checked = !!p.emoji;
+  $("#pn-soul").value = p.soul || "";
+  $("#pf-name").value = pr.preferred_name || ""; $("#pf-pronouns").value = pr.pronouns || "";
+  $("#pf-role").value = pr.role || ""; $("#pf-language").value = pr.language || "";
+  $("#pf-work").value = pr.work_context || ""; $("#pf-interests").value = (pr.interests || []).join(", ");
+  $("#pf-comm").value = pr.comm_prefs || ""; $("#pf-boundaries").value = (pr.boundaries || []).join(", ");
+  $("#pn-preview").textContent = d.preview || "(noch nichts gesetzt)";
+}
+async function savePersona() {
+  const body = { name: $("#pn-name").value, gender_presentation: $("#pn-gender").value,
+    tone: $("#pn-tone").value, formality: $("#pn-formality").value, humor: $("#pn-humor").value,
+    verbosity: $("#pn-verbosity").value, emoji: $("#pn-emoji").checked, soul: $("#pn-soul").value };
+  try { const r = await api("PUT", "/api/persona", body); $("#pn-preview").textContent = r.preview || ""; toast("Persona gespeichert — wirkt ab der nächsten Nachricht"); }
+  catch (e) { toast(friendlyError(e), 1); }
+}
+async function saveProfil() {
+  const body = { preferred_name: $("#pf-name").value, pronouns: $("#pf-pronouns").value,
+    role: $("#pf-role").value, language: $("#pf-language").value, work_context: $("#pf-work").value,
+    interests: $("#pf-interests").value, comm_prefs: $("#pf-comm").value, boundaries: $("#pf-boundaries").value };
+  try { const r = await api("PUT", "/api/profil", body); $("#pn-preview").textContent = r.preview || "(noch nichts gesetzt)"; toast("Profil gespeichert"); }
+  catch (e) { toast(friendlyError(e), 1); }
+}
+async function deleteProfil() {
+  if (!confirm("Dein Profil wirklich löschen? Der Operator vergisst dann diese Angaben über dich.")) return;
+  try { const r = await api("DELETE", "/api/profil"); $("#pn-preview").textContent = r.preview || "(noch nichts gesetzt)"; loadPersona(); toast("Profil gelöscht"); }
+  catch (e) { toast(friendlyError(e), 1); }
+}
 async function saveVerhalten() {
   try { await api("PUT", "/api/verhalten", { content: $("#verhalten-text").value }); toast("Gespeichert — wirkt ab der nächsten Nachricht"); }
   catch (e) { toast(friendlyError(e), 1); }
@@ -1513,6 +1552,7 @@ async function refresh() {
     if (active === "logs") await loadLogs();
     if (active === "system") await loadSystem();
     if (active === "verhalten") await loadVerhalten();
+    if (active === "persona") await loadPersona();
     if (active === "privacy") await loadPrivacy();
   } catch (e) {
     if (String(e.message).includes("Dashboard-Token")) {

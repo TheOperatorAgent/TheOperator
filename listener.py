@@ -476,6 +476,15 @@ class BotSession(threading.Thread):
                 verhalten = open(f"{BOT_DIR}/VERHALTEN.md").read()
             except OSError:
                 verhalten = "(VERHALTEN.md fehlt — antworte hilfsbereit auf Deutsch und sende per python3 ~/.claude/matrix-bot/send.py)"
+            # Persona (»Soul«) + Nutzerprofil vor VERHALTEN.md — nur was der Owner selbst gesetzt
+            # hat, pro Nachricht frisch, fail-open (ein Fehler hier darf den Bot nie blockieren).
+            try:
+                import persona as _persona
+                _pblock = _persona.render_block()
+                if _pblock:
+                    verhalten = _pblock + "\n\n---\n\n" + verhalten
+            except Exception as _e:
+                log(f"persona-Block übersprungen: {_e}")
             ov_on, ov_model = owner_verify_cfg() if verify_loop else (False, None)
             if ov_on:
                 # Owner erledigt alles mit Werkzeugen, gibt Text zurück (sendet nicht) → Prüfer.

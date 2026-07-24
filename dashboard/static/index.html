@@ -32,6 +32,7 @@
   <button data-tab="logs">Logs</button>
   <button data-tab="system">System</button>
   <button data-tab="verhalten">Verhalten</button>
+  <button data-tab="persona">🎭 Persona</button>
   <button data-tab="privacy">Datenschutz</button>
 </nav>
 
@@ -218,6 +219,51 @@
     <p class="hint">Wird bei jeder Nachricht frisch geladen — Änderungen wirken sofort. Vor jedem Speichern wird ein Backup (.bak) angelegt.</p>
     <textarea id="verhalten-text" rows="24" class="mono"></textarea>
     <button class="primary" onclick="saveVerhalten()">Speichern</button>
+  </section>
+
+  <section id="tab-persona" class="tab">
+    <h2>🎭 Persona & Profil</h2>
+    <p class="hint">Hier bestimmst du, <strong>wie</strong> dein Operator auftritt und <strong>wen</strong> er bedient.
+      Alles ist sichtbar, jederzeit änderbar und löschbar — nichts Verstecktes. Wirkt ab der nächsten Nachricht.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div class="card" style="padding:14px 16px">
+        <strong>Auftreten des Operators</strong>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div><label>Name</label><input id="pn-name"></div>
+          <div><label>Geschlechts-Präsentation</label><select id="pn-gender"></select></div>
+          <div><label>Ton</label><select id="pn-tone"></select></div>
+          <div><label>Ansprache</label><select id="pn-formality"></select></div>
+          <div><label>Humor</label><select id="pn-humor"></select></div>
+          <div><label>Antwortlänge</label><select id="pn-verbosity"></select></div>
+        </div>
+        <label class="switch" style="margin-top:8px"><input type="checkbox" id="pn-emoji"> Emojis verwenden</label>
+        <label style="margin-top:8px">In einem Satz: So soll sich dein Operator anfühlen</label>
+        <textarea id="pn-soul" rows="2" placeholder="z. B. ruhig, klar, mit trockenem Humor"></textarea>
+        <button class="primary" style="margin-top:10px" onclick="savePersona()">Persona speichern</button>
+      </div>
+      <div class="card" style="padding:14px 16px">
+        <strong>Über dich (Profil)</strong>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+          <div><label>Wie soll ich dich ansprechen?</label><input id="pf-name"></div>
+          <div><label>Pronomen</label><input id="pf-pronouns" placeholder="z. B. er/ihm"></div>
+          <div><label>Rolle</label><input id="pf-role"></div>
+          <div><label>Sprache</label><input id="pf-language"></div>
+        </div>
+        <label>Kontext (woran arbeitest du?)</label><input id="pf-work">
+        <label>Interessen (mit Komma)</label><input id="pf-interests">
+        <label>Wie magst du die Kommunikation?</label><input id="pf-comm" placeholder="z. B. kurz & direkt, keine Floskeln">
+        <label>Grenzen — was soll ich NIE tun? (mit Komma)</label><input id="pf-boundaries">
+        <div style="display:flex;gap:10px;margin-top:10px">
+          <button class="primary" onclick="saveProfil()">Profil speichern</button>
+          <button class="ghost" onclick="deleteProfil()">Profil löschen</button>
+        </div>
+      </div>
+    </div>
+    <div class="card" style="padding:14px 16px;margin-top:16px">
+      <strong>🔎 So klingt dein Operator</strong>
+      <p class="hint" style="margin:4px 0">Genau dieser Text fließt in den Prompt — nichts darüber hinaus.</p>
+      <pre id="pn-preview" class="mono" style="white-space:pre-wrap;background:#0009;padding:10px;border-radius:6px;margin:0">(noch nichts gesetzt)</pre>
+    </div>
   </section>
 
   <section id="tab-privacy" class="tab">
