@@ -1,4 +1,44 @@
+# === Geheimnisse & maschinenspezifische Konfiguration — NIEMALS ins Repo ===
+# Security by design: diese Dateien enthalten Zugangsdaten, Schlüssel oder
+# installationsspezifische Zustände und dürfen niemals ausgeliefert/committet werden.
 credentials.json
+dashboard.json
+bots.json
 state.json
+manifest.local.json
+secrets/
+connections/
+*.key
+*.pem
+id_*
+*_token*
+
+# Provider-/Verbindungs-Konfiguration (pro Installation individuell, kann Endpunkte enthalten)
+connections/models.json
+
+# Laufzeit-Daten & Datenbanken
+*.db
+*.db-wal
+*.db-shm
+sessions.db*
+memory.db*
 *.log
-.DS_Store
+audit.log
+audit.seal
+pseudonymize-stats.json
+skills_proposals.json
+updates.json
+
+# Nutzer-Arbeitsbereich der Agenten (Sandbox-Inhalte, Nutzerdaten)
+workspace/agent-*/
+workspace/.claude/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+dashboard/venv/
+
+# Backups des Updaters
+*.bak
+*.tmp

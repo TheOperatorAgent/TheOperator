@@ -216,6 +216,19 @@ def dashboard_link():
         return "http://127.0.0.1:8737"
 
 
+def wants_dashboard(bodies):
+    """Erkennt eine Bitte um den Dashboard-Zugang (Login-Kurzbefehl im Chat).
+    Bewusst eng, damit normale Sätze mit dem Wort »Dashboard« NICHT auslösen."""
+    t = " ".join(bodies or []).strip().lower().strip("!.?/ ")
+    if not t:
+        return False
+    if t in ("dashboard", "dashboard link", "dashboard-link", "dashboard öffnen",
+             "dashboard entsperren", "zugang", "login", "anmelden", "einloggen"):
+        return True
+    return "dashboard" in t and any(w in t for w in (
+        "link", "öffn", "zugang", "login", "entsperr", "anmeld", "einlogg", "freischalt"))
+
+
 def reidentify(text, mapping):
     """Surrogate → echte Werte (stdlib). #60: nutzt reid.apply — erfasst auch
     abgeleitete Formen (Nachname allein, kleingeschrieben in Dateinamen) case-insensitiv."""
@@ -480,12 +493,22 @@ class BotSession(threading.Thread):
         # Fremd-Modell (Ollama/OpenAI/Azure)? → text-orientierter Prompt OHNE Werkzeuge.
         plan = providers.resolve(agent.get("model")) if providers else {"kind": "claude"}
         if plan.get("kind") == "foreign":
-            system = (agent["body"].strip() + "\n\nWICHTIG: Du hast KEINE Werkzeuge — nur Text. "
-                      "Antworte direkt, knapp und auf Deutsch; deine Antwort wird 1:1 in den "
-                      "Matrix-Chat gesendet. Keine Erklärungen über dich selbst.")
+            # Werkzeuge für Fremd-Modelle: eigene Runner-Schleife im Pfad-Käfig (llm_runner).
+            f_tools = [t for t in agent.get("tools", []) if t in ("Bash", "Read", "Write")]
+            if f_tools:
+                system = (agent["body"].strip() + "\n\nDu hast Werkzeuge (Befehle ausführen, "
+                          "Dateien lesen/schreiben/auflisten) — sie wirken NUR in deinem "
+                          "Arbeitsordner. Arbeite die Aufgabe damit wirklich ab (Code anlegen, "
+                          "ausführen, testen) und fasse am Ende kurz auf Deutsch zusammen, was "
+                          "du getan hast und was das Ergebnis ist. Die Zusammenfassung wird in "
+                          "den Matrix-Chat gesendet.")
+            else:
+                system = (agent["body"].strip() + "\n\nWICHTIG: Du hast KEINE Werkzeuge — nur Text. "
+                          "Antworte direkt, knapp und auf Deutsch; deine Antwort wird 1:1 in den "
+                          "Matrix-Chat gesendet. Keine Erklärungen über dich selbst.")
             user = ((history + "\n") if history else "") \
                 + f"{OWNER.split(':')[0]} schreibt dir:\n{messages_p}"
-            return user, [], agent.get("model"), mapping, messages_p, system, verify
+            return user, f_tools, agent.get("model"), mapping, messages_p, system, verify
         # Claude-Agent (voller Werkzeugkasten)
         tools = [t for t in agent["tools"] if t in OWNER_TOOLS or t == "Read"]
         model = agent["model"]   # roh; providers.resolve() in execute() macht Claude-Aliase/-IDs/None
@@ -506,6 +529,15 @@ class BotSession(threading.Thread):
 
     # ---------- Claude ----------
     def answer(self, bodies, last_event_id):
+        # Login-Kurzbefehl: »dashboard« → Ein-Klick-Link, ohne Claude-Lauf (nur für den Owner).
+        if self.kind == "owner" and wants_dashboard(bodies):
+            self.mark_read(last_event_id)
+            self.send_message(
+                "🔓 Dein Ein-Klick-Link zum Dashboard (10 Min gültig, einmal verwendbar):\n"
+                f"{dashboard_link()}\n"
+                "Öffne ihn auf dem Rechner, auf dem dein Operator läuft — der Browser merkt "
+                "sich den Zugang danach dauerhaft, du musst das nur einmal machen.")
+            return
         prompt, tools, model, mapping, msg_rec, system, verify = self.build(bodies)
         self.mark_read(last_event_id)
         if mapping is False:
@@ -555,7 +587,8 @@ class BotSession(threading.Thread):
         map_path = None
         try:
             if plan.get("kind") == "foreign":
-                self._run_foreign(plan, prompt, system, messages_label, kind, mapping, verify)
+                self._run_foreign(plan, prompt, system, messages_label, kind, mapping, verify,
+                                  tools=tools)
                 return
             # ---------- Claude (voller Werkzeugkasten) ----------
             cmd = [CLAUDE, "-p", prompt, "--output-format", "json", "--allowedTools", *tools]
@@ -659,17 +692,27 @@ class BotSession(threading.Thread):
                 except OSError:
                     pass
 
-    def _run_foreign(self, plan, prompt, system, messages_label, kind, mapping, verify=None):
+    def _run_foreign(self, plan, prompt, system, messages_label, kind, mapping, verify=None,
+                     tools=None):
         """Fremd-Modell (Ollama/OpenAI/Azure) über llm_runner (venv): Text holen,
-        Surrogate zurückübersetzen, in den Chat senden. Keine lokalen Werkzeuge."""
+        Surrogate zurückübersetzen, in den Chat senden. Mit `tools` läuft der Runner
+        in einer Werkzeugschleife — begrenzt auf den Arbeitsordner des Agenten."""
         label = f"{plan['provider']}/{plan['model_id']}"
-        req = json.dumps({"provider": plan["provider"], "base_url": plan["base_url"],
-                          "key": plan.get("key", ""), "model_id": plan["model_id"],
-                          "prompt": prompt, "system": system or ""})
+        req_d = {"provider": plan["provider"], "base_url": plan["base_url"],
+                 "key": plan.get("key", ""), "model_id": plan["model_id"],
+                 "prompt": prompt, "system": system or ""}
+        run_timeout = 180
+        if tools:
+            req_d["tools"] = True
+            req_d["workdir"] = f"{WORKSPACE}/agent-{self.bot_name}"
+            req_d["timeout"] = 120       # pro Modell-Aufruf innerhalb der Schleife
+            run_timeout = 600            # gesamte Werkzeugschleife
+        req = json.dumps(req_d)
         start = time.time()
         try:
             r = subprocess.run([VENV_PY, f"{BOT_DIR}/llm_runner.py"], input=req,
-                               capture_output=True, text=True, timeout=180, env=dict(os.environ))
+                               capture_output=True, text=True, timeout=run_timeout,
+                               env=dict(os.environ))
         except subprocess.TimeoutExpired:
             self.send_message(f"⚠️ Das Modell {label} hat zu lange gebraucht — abgebrochen.")
             return
@@ -686,6 +729,8 @@ class BotSession(threading.Thread):
                 foot = verify_loop.footer(v_model, revised)
             text = redact_text(reidentify(raw, mapping)) + foot   # Surrogate→echt, dann Secrets maskieren
             self.send_message(text)
+            for a in out.get("actions", [])[:30]:                 # Audit: jede Werkzeug-Aktion
+                log(f"[{self.bot_name}] 🔧 {a}")
             log(f"[{self.bot_name}] {label} fertig ({dur}ms): {text[:120]}")
             rc, rec = 0, text[:4000]
         else:
@@ -794,6 +839,15 @@ def load_bot_sessions():
         bots = []
     for b in bots:
         if b.get("enabled"):
+            if b.get("via") == "main":
+                # Massentauglicher Weg: Agent wohnt in einem eigenen RAUM des Operator-Kontos —
+                # kein eigenes Matrix-Konto, kein Admin, kein Passwort nötig.
+                tok = keychain_token("matrix-owner", CREDS.get("access_token", ""))
+                if tok:
+                    sessions[b["agent"]] = BotSession(
+                        "agent", b["agent"], CREDS["homeserver"], tok,
+                        b["room_id"], CREDS["user_id"])
+                continue
             tok = keychain_token("matrix-bot-" + b["agent"], b["access_token"])
             if not tok:
                 log(f"[{b['agent']}] Kein Token im Keychain — Bot übersprungen")

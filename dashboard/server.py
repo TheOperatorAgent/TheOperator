@@ -135,8 +135,29 @@ def mx(homeserver: str, method: str, path: str, body=None, token: str = None, ok
 # in secrets/ott.json hinterlegt, im Chat verlinkt) gegen einen Sitzungs-Token. Der echte
 # Dashboard-Token landet so nie im Chatverlauf; ein benutzter/abgelaufener Link ist wertlos.
 OTT_FILE = os.path.join(BOT_DIR, "secrets", "ott.json")
+SESS_FILE = os.path.join(BOT_DIR, "secrets", "dash_sessions.json")
 _SESSIONS: dict = {}          # sha256(session_token) -> Ablauf-Timestamp
 SESSION_TTL = 24 * 3600
+
+# Sitzungen überleben Neustarts (nur Hashes + Ablauf, keine Geheimnisse) — sonst wird
+# der Nutzer bei jedem Dienst-Neustart kommentarlos ausgeloggt (EINFACHHEIT.md).
+try:
+    _SESSIONS.update({k: v for k, v in json.load(open(SESS_FILE)).items()
+                      if isinstance(v, (int, float)) and v > time.time()})
+except (OSError, ValueError):
+    pass
+
+
+def _save_sessions() -> None:
+    try:
+        os.makedirs(os.path.dirname(SESS_FILE), mode=0o700, exist_ok=True)
+        live = {k: v for k, v in _SESSIONS.items() if v > time.time()}
+        fd = os.open(SESS_FILE + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(live, f)
+        os.replace(SESS_FILE + ".tmp", SESS_FILE)
+    except OSError:
+        pass
 
 
 def _session_valid(sha: str) -> bool:
@@ -201,6 +222,7 @@ async def api_auth_ott(request: Request):
     import secrets as _sec
     sess = _sec.token_hex(32)
     _SESSIONS[hashlib.sha256(sess.encode()).hexdigest()] = now + SESSION_TTL
+    _save_sessions()
     audit("dashboard", "auth.ott", "Einmal-Link eingelöst")
     return {"token": sess}
 
@@ -402,6 +424,30 @@ async def api_agent_publish(name: str, request: Request):
     if any(b["agent"] == name for b in bots["bots"]):
         return err("exists", "Agent ist bereits veröffentlicht", 409)
 
+    # Standard-Weg (EINFACHHEIT.md, massentauglich): KEIN eigenes Matrix-Konto nötig —
+    # der Operator legt mit seinem vorhandenen Konto einen eigenen Chat-Raum für den
+    # Agenten an. Ein Klick, kein Admin, kein Passwort. Der Konto-Weg unten bleibt als
+    # Experten-Option erhalten (wenn admin_user/password mitgegeben werden).
+    if not body.get("admin_user") and not body.get("password"):
+        owner_tok = keychain_get("matrix-owner", c.get("access_token", ""))
+        if not owner_tok:
+            return err("matrix", "Der Operator-Zugang wurde nicht gefunden — bitte einmal "
+                       "den Listener-Dienst prüfen (Tab System).", 500)
+        try:
+            room = mx(hs, "POST", "/_matrix/client/v3/createRoom", {
+                "is_direct": True, "invite": [c["owner_id"]],
+                "preset": "trusted_private_chat", "name": f"{name} (Operator-Agent)"},
+                token=owner_tok)
+        except RuntimeError as e:
+            audit("dashboard", "agent.publish", name, False)
+            return err("matrix", str(e), 502)
+        bots["bots"].append({"agent": name, "via": "main", "user_id": c["user_id"],
+                             "access_token": "", "room_id": room["room_id"], "enabled": True,
+                             "created": time.strftime("%Y-%m-%dT%H:%M:%S")})
+        save_bots(bots)
+        audit("dashboard", "agent.publish", f"{name} -> eigener Raum (via main)")
+        return {"ok": True, "user_id": c["user_id"], "room_id": room["room_id"], "via": "main"}
+
     try:
         if body.get("admin_user"):
             admin_tok = mx(hs, "POST", "/_matrix/client/v3/login", {
@@ -440,13 +486,14 @@ def api_agent_unpublish(name: str):
     if not entry:
         return err("notfound", "Agent ist nicht veröffentlicht", 404)
     c = creds()
-    try:
-        tok = keychain_get("matrix-bot-" + name, entry["access_token"])
-        if tok:
-            mx(c["homeserver"], "POST", "/_matrix/client/v3/logout", {}, token=tok)
-    except RuntimeError:
-        pass  # Token evtl. schon tot
-    keychain_delete("matrix-bot-" + name)
+    if entry.get("via") != "main":     # Raum-Agenten nutzen das Operator-Konto → NIE ausloggen
+        try:
+            tok = keychain_get("matrix-bot-" + name, entry["access_token"])
+            if tok:
+                mx(c["homeserver"], "POST", "/_matrix/client/v3/logout", {}, token=tok)
+        except RuntimeError:
+            pass  # Token evtl. schon tot
+        keychain_delete("matrix-bot-" + name)
     bots["bots"] = [b for b in bots["bots"] if b["agent"] != name]
     save_bots(bots)
     audit("dashboard", "agent.unpublish", name)
@@ -1154,9 +1201,18 @@ async def api_models_put(provider: str, request: Request):
             key=(b.get("key") or "").strip() or None)
     except ValueError as e:
         return err("validate", str(e))
-    ok, msg = providers_reg.test(provider)     # sofort live prüfen
+    ok, msg, hint = providers_reg.test(provider)     # sofort live prüfen
     audit("dashboard", "models.config", provider, ok)
-    return {"ok": True, "test_ok": ok, "test_msg": msg}
+    return {"ok": True, "test_ok": ok, "test_msg": msg, "test_hint": hint}
+
+
+@app.get("/api/models/{provider}/test")
+def api_models_test(provider: str):
+    """Live-Verbindung prüfen, ohne etwas zu speichern (für Status-Ampel beim Laden)."""
+    if provider not in providers_reg.PROVIDERS:
+        return err("validate", "Unbekannter Provider")
+    ok, msg, hint = providers_reg.test(provider)
+    return {"test_ok": ok, "test_msg": msg, "test_hint": hint}
 
 
 @app.delete("/api/models/{provider}")
@@ -1176,6 +1232,119 @@ async def api_models_fallback(request: Request):
                                          key=(b.get("key") or "").strip() or None)
     audit("dashboard", "models.fallback", "on" if b.get("enabled") else "off")
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- Einrichtungs-Assistent --
+# Chat-Assistent im Dashboard: läuft über Claude (Abo), sieht einen Live-Snapshot des Systems
+# und schlägt WHITELIST-Aktionen vor. Ausführung + Geheimnis-Eingaben passieren im Frontend
+# (schreibende Aktionen nur nach Bestätigung; Passwörter/Keys nur über maskierte Formulare).
+WORKSPACE_DIR = os.path.join(BOT_DIR, "workspace")
+
+
+def _claude_bin() -> str:
+    try:
+        return creds().get("claude_bin") or shutil.which("claude") or "claude"
+    except Exception:
+        return shutil.which("claude") or "claude"
+
+
+def _assistant_snapshot() -> dict:
+    """Kompakter Ist-Zustand, den der Assistent ohne eigene Werkzeuge lesen kann."""
+    bots = {b["agent"]: b for b in load_bots().get("bots", []) if b.get("enabled")}
+    agents = agents_store.list_agents()
+    for a in agents:
+        a["published_as"] = bots.get(a["name"], {}).get("user_id")
+    try:
+        listener = servicemgr.status("listener")
+    except Exception:
+        listener = None
+    return {"providers": providers_reg.get_config(),
+            "agents": agents,
+            "listener_service": listener}
+
+
+ASSISTANT_SYSTEM = """Du bist der »Einrichtungs-Assistent« im Operator-Dashboard von Michi.
+Du hilfst ihm, den Operator einzurichten und Probleme zu lösen — freundlich, kurz, auf Deutsch.
+
+Du hast KEINE direkten Werkzeuge. Wenn eine prüfende oder ändernde Aktion nötig ist, hänge ans
+ENDE deiner Antwort GENAU EINEN Codeblock an, der EIN EINZIGES JSON-Objekt mit den Schlüsseln
+"action" und "args" enthält — exakt so:
+```action
+{"action": "test_provider", "args": {"provider": "ollama"}}
+```
+Das Dashboard führt sie aus (schreibende Aktionen erst nach Michis Klick) und schickt dir das
+Ergebnis als »System«-Nachricht zurück. Danach machst du weiter. Höchstens EINE Aktion pro Antwort.
+
+WICHTIG: Wenn du ankündigst, etwas zu tun (»ich prüfe…«, »ich veröffentliche…«, »ich starte…«),
+MUSST du in DERSELBEN Antwort den ```action```-Block anhängen. Ohne Block passiert NICHTS —
+eine Ankündigung allein bewirkt gar nichts. Kündige also nie eine Aktion an, ohne den Block
+mitzuschicken.
+
+Verfügbare Aktionen (Name → args):
+- test_provider → {"provider": "ollama|openai|azure"} — Verbindung live prüfen (lesend, läuft sofort).
+- set_provider → {"provider": "...", "base_url"?: "...", "models"?: ["..."], "enabled"?: true} —
+  Provider konfigurieren. Trag hier NIEMALS Keys/Passwörter ein (die args enthalten keine Geheimnisse).
+- publish_agent → {"name": "<agent>"} — gibt dem Agenten einen eigenen Chat-Raum in Element.
+  Ein Klick, KEIN Konto, KEIN Passwort nötig (der Operator nutzt seinen vorhandenen Zugang).
+- unpublish_agent → {"name": "<agent>"} — veröffentlichten Bot wieder entfernen.
+- restart_listener → {} — den Listener-Dienst neu starten (z. B. damit neue Befehle aktiv werden).
+
+REGELN:
+- Nenne oder erfrage NIEMALS Passwörter/API-Keys im Chat-Text. Aber die Aktions-Blöcke (die KEINE
+  Geheimnisse enthalten) sendest du ganz normal — auch publish_agent.
+- Sag in einem kurzen Satz, was du vorhast, und hänge SOFORT den Aktions-Block an.
+- Stütze dich auf den AKTUELLEN ZUSTAND unten statt zu raten. Ist etwas schon erledigt, sag das.
+"""
+
+
+def _assistant_prompt(messages: list) -> str:
+    snap = json.dumps(_assistant_snapshot(), ensure_ascii=False, indent=1)
+    lines = [ASSISTANT_SYSTEM, "\nAKTUELLER ZUSTAND (JSON):", snap, "\nGESPRÄCH:"]
+    role_de = {"user": "Michi", "assistant": "Assistent", "tool": "System (Ergebnis)",
+               "system": "System (Ergebnis)"}
+    for m in messages[-24:]:
+        who = role_de.get(m.get("role"), "Michi")
+        lines.append(f"{who}: {str(m.get('content',''))[:4000]}")
+    lines.append("Assistent:")
+    return "\n".join(lines)
+
+
+@app.post("/api/assistant")
+async def api_assistant(request: Request):
+    b = await request.json()
+    messages = b.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return err("validate", "Keine Nachrichten übergeben")
+    prompt = _assistant_prompt(messages)
+    try:
+        cmd = [_claude_bin(), "-p", prompt, "--output-format", "json"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
+                           cwd=WORKSPACE_DIR if os.path.isdir(WORKSPACE_DIR) else BOT_DIR,
+                           env=os.environ)
+    except subprocess.TimeoutExpired:
+        return err("timeout", "Der Assistent hat zu lange gebraucht — bitte nochmal.")
+    except Exception as e:
+        return err("assistant", f"Assistent-Start fehlgeschlagen: {str(e)[:200]}")
+    try:
+        reply = str(json.loads(r.stdout).get("result", "")).strip()
+    except ValueError:
+        reply = (r.stdout or r.stderr or "").strip()[:2000]
+    if not reply:
+        return err("assistant", "Der Assistent hat keine Antwort geliefert.")
+    action = None
+    mm = re.search(r"```action\s*(.*?)```", reply, re.DOTALL)
+    if mm:
+        jm = re.search(r"\{.*\}", mm.group(1), re.DOTALL)   # erstes/größtes JSON-Objekt im Block
+        if jm:
+            try:
+                cand = json.loads(jm.group(0))
+                if isinstance(cand, dict) and cand.get("action"):
+                    action = {"action": cand["action"], "args": cand.get("args") or {}}
+            except ValueError:
+                action = None
+        reply = (reply[:mm.start()] + reply[mm.end():]).strip()
+    audit("dashboard", "assistant.reply", (action or {}).get("action", "-"))
+    return {"reply": reply, "action": action}
 
 
 # ---------------------------------------------------------------- Pseudonymisierung --
@@ -1461,16 +1630,21 @@ def api_agent_export(name: str):
 
 
 # ---------------------------------------------------------------- Static --
+# no-cache = vor Gebrauch per ETag revalidieren (unverändert → 304, geändert → frisch).
+# So bekommt der Browser App-Updates sofort, statt eine alte app.js/style.css zu behalten.
+_NOCACHE = {"Cache-Control": "no-cache"}
+
+
 @app.get("/")
 def index():
-    return FileResponse(os.path.join(STATIC, "index.html"))
+    return FileResponse(os.path.join(STATIC, "index.html"), headers=_NOCACHE)
 
 
 @app.get("/{fn}")
 def static_file(fn: str):
     p = os.path.join(STATIC, os.path.basename(fn))
     if os.path.exists(p) and os.path.isfile(p):
-        return FileResponse(p)
+        return FileResponse(p, headers=_NOCACHE)
     return Response(status_code=404)
 
 

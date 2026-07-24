@@ -892,6 +892,34 @@ def test_providers_fallback_key(tmp_path, monkeypatch):
     assert p.fallback_key() == "sk-ant-test"                         # aktiv + Key → einspringbar
 
 
+def test_providers_test_hints(tmp_path, monkeypatch):
+    p = _providers(tmp_path, monkeypatch)
+    assert p._has_cloud_model({"models": ["kimi-k2.7-code:cloud"]}) is True
+    assert p._has_cloud_model({"models": ["llama3"]}) is False
+    # Ollama nicht erreichbar → freundlicher down-Hint (Port 1 wird sofort abgelehnt)
+    p.set_provider("ollama", base_url="http://127.0.0.1:1", models=["x"], enabled=True)
+    ok, msg, hint = p.test("ollama")
+    assert ok is False and hint == "down" and "Ollama" in msg
+    # OpenAI ohne Key → nokey (kein Netz nötig)
+    monkeypatch.setattr(p.secretstore, "get", lambda a: None)
+    p.set_provider("openai", models=["gpt-4o"], enabled=True)
+    ok, msg, hint = p.test("openai")
+    assert ok is False and hint == "nokey"
+
+
+def test_wants_dashboard_command():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "listener_mod", os.path.expanduser("~/.claude/matrix-bot/listener.py"))
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    for yes in ("dashboard", "Dashboard!", "gib mir den dashboard link", "einloggen",
+                "wie entsperre ich das dashboard"):
+        assert m.wants_dashboard([yes]) is True, yes
+    for no in ("", "hallo", "schau im dashboard welche agenten laufen", "erklär mir das dashboard"):
+        assert m.wants_dashboard([no]) is False, no
+
+
 def test_providers_is_stdlib_only():
     import ast
     src = open(os.path.expanduser("~/.claude/matrix-bot/providers.py")).read()

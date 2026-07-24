@@ -156,29 +156,47 @@ def _http(url: str, headers: dict, timeout: float = 8.0):
         return r.status, r.read()
 
 
+def _has_cloud_model(cfg: dict) -> bool:
+    """Ist mindestens ein Cloud-Modell (…:cloud / …-cloud) konfiguriert? Die brauchen `ollama signin`."""
+    return any(str(m).endswith(("-cloud", ":cloud")) for m in cfg.get("models", []))
+
+
 def test(provider: str) -> tuple:
-    """Live-Erreichbarkeit prüfen. Rückgabe: (ok: bool, meldung: str)."""
+    """Live-Erreichbarkeit prüfen. Rückgabe: (ok: bool, meldung: str, hint: str).
+
+    hint steuert die geführte Hilfe im Dashboard:
+      down | nourl | nokey | auth | cloud | ok
+    """
     cfg = _load().get(provider, {})
     base = (cfg.get("base_url") or DEFAULT_BASE[provider]).rstrip("/")
     if not base:
-        return False, "Keine Server-Adresse hinterlegt."
+        return False, "Keine Server-Adresse hinterlegt.", "nourl"
     try:
         if provider == "ollama":
             # OpenAI-Kompatschicht liegt unter /v1 — der native Tags-Endpoint unter der Wurzel
             root = base[:-3] if base.endswith("/v1") else base
             st, _ = _http(root + "/api/tags", {})
-            return (st == 200), ("Ollama erreichbar" if st == 200 else f"HTTP {st}")
+            if st != 200:
+                return False, f"Ollama antwortet unerwartet (HTTP {st}).", "down"
+            if _has_cloud_model(cfg):
+                return (True, "Ollama läuft. Für Cloud-Modelle (…:cloud) einmal im Terminal "
+                        "»ollama signin« ausführen — sonst kann Kimi & Co. nicht antworten.", "cloud")
+            return True, "Ollama läuft und ist erreichbar.", "ok"
         key = secretstore.get(KEY_ACCOUNT[provider]) or ""
         if not key:
-            return False, "Kein API-Key hinterlegt."
+            return False, "Noch kein API-Key hinterlegt — trag ihn oben ein und speichere.", "nokey"
         if provider == "openai":
             st, _ = _http(base + "/models", {"Authorization": "Bearer " + key})
         else:  # azure (v1-Endpoint, api-key-Header)
             st, _ = _http(base + "/models", {"api-key": key})
-        return (st == 200), ("Verbindung OK" if st == 200 else f"HTTP {st}")
+        return (st == 200), ("Verbindung OK." if st == 200 else f"HTTP {st}"), ("ok" if st == 200 else "down")
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
-            return False, "Zugangsschlüssel abgelehnt (401/403) — bitte prüfen."
-        return False, f"HTTP {e.code}"
+            return False, "Der API-Key wurde abgelehnt (401/403) — bitte Key prüfen.", "auth"
+        return False, f"Server antwortet mit HTTP {e.code}.", "down"
     except (urllib.error.URLError, socket.timeout, OSError) as e:
-        return False, f"Nicht erreichbar: {str(getattr(e, 'reason', e))[:120]}"
+        reason = str(getattr(e, "reason", e))[:120]
+        if provider == "ollama":
+            return (False, "Ollama läuft nicht oder ist nicht erreichbar — starte die Ollama-App "
+                    "(oder »ollama serve« im Terminal).", "down")
+        return False, f"Server nicht erreichbar: {reason}", "down"

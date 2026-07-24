@@ -199,18 +199,49 @@ async function deleteAgent(name) {
   catch (e) { toast(e.message, 1); }
 }
 
+// Kleines Overlay-Modal (kein Klartext-prompt() mehr — Passwörter gehören maskiert).
+function opModal(title, innerHtml) {
+  const ov = document.createElement("div");
+  ov.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;"
+    + "align-items:center;justify-content:center;z-index:9999";
+  ov.innerHTML = `<div class="card" style="max-width:460px;width:92%">
+    <h2 style="margin-top:0">${title}</h2>${innerHtml}
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">
+      <button class="ghost" data-op="cancel">Abbrechen</button>
+      <button class="primary" data-op="ok">Veröffentlichen</button>
+    </div></div>`;
+  document.body.appendChild(ov);
+  const close = () => ov.remove();
+  ov.querySelector('[data-op="cancel"]').onclick = close;
+  ov.addEventListener("click", (e) => { if (e.target === ov) close(); });
+  document.addEventListener("keydown", function esc(e) {
+    if (e.key === "Escape") { close(); document.removeEventListener("keydown", esc); } });
+  return { ov, close, ok: ov.querySelector('[data-op="ok"]') };
+}
+
+// Nutzer-Eingabe → Matrix-Name: nimmt auch »@michael:server« oder »michael@server.de« an
+// und macht daraus den reinen Namen (»michael«). Büro-Regel: jede plausible Schreibweise zählt.
+function mxLocalpart(s) {
+  s = (s || "").trim().replace(/^@/, "");
+  if (s.includes(":")) s = s.split(":")[0];
+  if (s.includes("@")) s = s.split("@")[0];
+  return s.toLowerCase();
+}
+
+// Ein Klick, kein Konto, kein Passwort: der Operator legt mit seinem vorhandenen Zugang
+// einen eigenen Chat-Raum für den Agenten an (EINFACHHEIT.md — massentauglicher Standard).
 async function publishAgent(name) {
-  const localpart = prompt("Matrix-Benutzername für den Bot:", name);
-  if (!localpart) return;
-  const admin_user = prompt("Admin-Benutzer deines Homeservers (für die Account-Anlage; leer lassen, wenn der Account schon existiert):", "");
-  let admin_password = "", password = "";
-  if (admin_user) admin_password = prompt("Admin-Passwort:") || "";
-  else password = prompt("Passwort des bestehenden Bot-Accounts:") || "";
   try {
-    const r = await api("POST", `/api/agents/${name}/publish`, { localpart, admin_user, admin_password, password });
-    toast(`Veröffentlicht: ${r.user_id} — Einladung in deiner Matrix-App annehmen!`);
+    await api("POST", `/api/agents/${name}/publish`, {});
+    toast(`Fertig! »${name}« hat jetzt einen eigenen Chat. Öffne Element — dort wartet die Einladung »${name} (Operator-Agent)«.`);
     loadAgents();
-  } catch (e) { toast(e.message, 1); }
+  } catch (e) {
+    let msg = e.message || "";
+    if (msg.includes("bereits veröffentlicht")) {
+      msg = `»${name}« hat schon einen eigenen Chat — schau in Element nach »${name} (Operator-Agent)«.`;
+    }
+    toast(msg, 1);
+  }
 }
 
 async function unpublishAgent(name) {
@@ -1146,7 +1177,55 @@ async function loadLogs() {
   v.scrollTop = v.scrollHeight;
 }
 
-/* ---------- n8n ---------- */
+/* ---------- Modelle & Provider ---------- */
+// Geführte Schritt-für-Schritt-Hilfe je Provider (immer sichtbar, damit niemand raten muss).
+function providerSteps(id) {
+  const steps = {
+    ollama: [
+      "<strong>Ollama starten:</strong> öffne die Ollama-App (Symbol in der Menüleiste) — oder im Terminal <code>ollama serve</code>.",
+      "<strong>Für Cloud-Modelle</strong> (z. B. <code>kimi-k2.7-code:cloud</code>): einmalig im Terminal <code>ollama signin</code> — meldet dich bei deinem Ollama-Konto an. Cloud-Modelle rechnen auf Ollamas Servern, nicht auf deinem Mac.",
+      "<strong>Modell eintragen:</strong> oben in »Modelle« den Namen, mehrere mit Komma trennen.",
+      "<strong>Speichern &amp; testen</strong> — die Ampel unten zeigt sofort, ob alles passt.",
+    ],
+    openai: [
+      "<strong>API-Key holen:</strong> auf platform.openai.com/api-keys einen Key erzeugen.",
+      "Key unten eintragen, Modelle (z. B. <code>gpt-4o</code>) mit Komma, dann <strong>Speichern &amp; testen</strong>.",
+    ],
+    azure: [
+      "<strong>Endpoint + Key</strong> aus deinem Azure-AI-Foundry-Projekt eintragen (Server-Adresse endet meist auf <code>/openai/v1/</code>).",
+      "Deployment-Namen als Modell eintragen, dann <strong>Speichern &amp; testen</strong>.",
+    ],
+  }[id] || [];
+  if (!steps.length) return "";
+  return `<details class="mp-help" style="margin-top:6px"><summary class="small" style="cursor:pointer;color:var(--accent)">So verbindest du das — Schritt für Schritt</summary>
+    <ol class="small" style="margin:6px 0 0;padding-left:18px;line-height:1.6">${steps.map(s => `<li>${s}</li>`).join("")}</ol></details>`;
+}
+
+// hint → farbige Ampel + konkreter nächster Schritt (aus providers.test()).
+function renderProviderStatus(id, r) {
+  const el = $("#mp-" + id + "-status"); if (!el) return;
+  const ok = r.test_ok, hint = r.test_hint || (ok ? "ok" : "down");
+  const next = {
+    down: "👉 Nächster Schritt: Ollama-App starten (bzw. Server-Adresse prüfen), dann erneut testen.",
+    nourl: "👉 Trag oben eine Server-Adresse ein.",
+    nokey: "👉 Trag oben deinen API-Key ein und speichere.",
+    auth: "👉 Der Key stimmt nicht — kopiere ihn frisch aus dem Anbieter-Konto.",
+    cloud: "👉 Falls Kimi & Co. nicht antworten: einmal <code>ollama signin</code> im Terminal.",
+    ok: "",
+  }[hint];
+  const color = ok ? "var(--accent)" : "#e66";
+  const dot = ok && hint !== "cloud" ? "🟢" : (hint === "cloud" ? "🟡" : "🔴");
+  el.innerHTML = `<div style="color:${color}">${dot} ${esc(r.test_msg || "")}</div>`
+    + (next ? `<div class="small" style="margin-top:3px;opacity:.85">${next}</div>` : "");
+}
+
+async function testProvider(id) {
+  const el = $("#mp-" + id + "-status");
+  if (el) el.innerHTML = '<span class="small">teste Verbindung…</span>';
+  try { renderProviderStatus(id, await api("GET", "/api/models/" + id + "/test")); }
+  catch (e) { if (el) el.innerHTML = `<div class="small" style="color:#e66">Test fehlgeschlagen: ${esc(e.message)}</div>`; }
+}
+
 async function loadModels() {
   const d = await api("GET", "/api/models");
   const p = d.providers;
@@ -1171,17 +1250,19 @@ async function loadModels() {
       <strong>${label}</strong>
       ${p[id].enabled ? '<span class="pill">aktiv</span>' : '<span class="pill">aus</span>'}
       ${needsKey ? (p[id].has_key ? '<span class="pill">Key ✓</span>' : '<span class="pill">kein Key</span>') : '<span class="pill">ohne Key</span>'}
+      ${providerSteps(id)}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
         <div><label>Server-Adresse</label><input id="mp-${id}-url" value="${esc(p[id].base_url)}"></div>
-        <div><label>Modelle (mit Komma trennen)</label><input id="mp-${id}-models" value="${esc((p[id].models || []).join(', '))}"></div>
+        <div><label>Modelle (mit Komma trennen)</label><input id="mp-${id}-models" value="${esc((p[id].models || []).join(', '))}" placeholder="${id === 'ollama' ? 'kimi-k2.7-code:cloud' : 'z. B. gpt-4o'}"></div>
       </div>
       ${needsKey ? `<label>API-Key ${p[id].has_key ? '(leer lassen = unverändert)' : ''}</label><input type="password" id="mp-${id}-key" autocomplete="new-password">` : ""}
       <div style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
         <label class="switch"><input type="checkbox" id="mp-${id}-en" ${p[id].enabled ? "checked" : ""}> aktiv</label>
         <button class="primary" onclick="saveProvider('${id}')">Speichern &amp; testen</button>
+        <button class="ghost" onclick="testProvider('${id}')">Nur Verbindung testen</button>
         <button class="ghost" onclick="delProvider('${id}')">Entfernen</button>
-        <span id="mp-${id}-status" class="small"></span>
       </div>
+      <div id="mp-${id}-status" class="mp-status" style="margin-top:8px"></div>
     </div>`;
   const fb = p.anthropic_fallback;
   $("#models-content").innerHTML =
@@ -1199,19 +1280,20 @@ async function loadModels() {
           <label class="switch"><input type="checkbox" id="mp-fb-en" ${fb.enabled ? "checked" : ""}> Reserve aktiv</label>
           <button class="primary" onclick="saveFallback()">Speichern</button>
         </div></div>`;
+  // Aktive Provider gleich live prüfen → Ampel zeigt Status ohne Klick.
+  ["ollama", "openai", "azure"].filter(id => p[id].enabled).forEach(testProvider);
 }
 
 async function saveProvider(id) {
   const body = { base_url: $("#mp-" + id + "-url").value.trim(), enabled: $("#mp-" + id + "-en").checked,
     models: $("#mp-" + id + "-models").value.split(",").map((x) => x.trim()).filter(Boolean) };
   const k = $("#mp-" + id + "-key"); if (k && k.value) body.key = k.value;
-  const st = $("#mp-" + id + "-status"); st.textContent = "teste Verbindung…"; st.style.color = "";
+  const st = $("#mp-" + id + "-status"); if (st) st.innerHTML = '<span class="small">speichere & teste…</span>';
   try {
     const r = await api("PUT", "/api/models/" + id, body);
-    st.textContent = (r.test_ok ? "✓ " : "✗ ") + r.test_msg;
-    st.style.color = r.test_ok ? "var(--accent)" : "#e66";
+    renderProviderStatus(id, r);
     toast("Gespeichert");
-  } catch (e) { st.textContent = ""; toast(e.message, 1); }
+  } catch (e) { if (st) st.innerHTML = ""; toast(e.message, 1); }
 }
 async function delProvider(id) {
   if (!confirm("Provider „" + id + "\" entfernen (inkl. Key)?")) return;
@@ -1397,6 +1479,7 @@ async function refresh() {
   try {
     if (active === "overview") await loadStatus();
     if (active === "agents") await loadAgents();
+    if (active === "assistant") asstGreet();
     if (active === "skills") await loadSkills();
     if (active === "vault") await loadVault();
     if (active === "sessions") await loadSessions();
@@ -1413,16 +1496,139 @@ async function refresh() {
     if (String(e.message).includes("Dashboard-Token")) {
       // Gespeicherter Token ungültig (z. B. nach Neuinstallation) → verwerfen + freundlich anleiten
       try { _store.removeItem("op_token"); sessionStorage.removeItem("op_token"); } catch (x) {}
-      document.body.innerHTML = "<main><div class='card' style='max-width:560px;margin:12vh auto'>" +
-        "<h2>🔒 Dashboard entsperren</h2><p class='hint'>Aus Sicherheitsgründen öffnest du das Dashboard einmalig über deinen Rechner — danach merkt sich dein Browser den Zugang dauerhaft.</p>" +
-        "<p>Im Terminal einfach eingeben:</p><pre class='mono' style='user-select:all;padding:12px'>operator</pre>" +
-        "<p class='small'>(Öffnet dieses Dashboard automatisch mit Zugang. Dieser Rechner merkt sich das dann.)</p></div></main>";
+      document.body.innerHTML = "<main><div class='card' style='max-width:600px;margin:10vh auto'>" +
+        "<h2>🔒 Dashboard entsperren</h2>" +
+        "<p class='hint'>Aus Sicherheitsgründen musst du dieses Dashboard einmal freischalten — danach merkt sich dein Browser den Zugang dauerhaft und du kommst direkt rein.</p>" +
+        "<div style='border:1px solid var(--accent);border-radius:10px;padding:14px 16px;margin:14px 0'>" +
+          "<div style='color:var(--accent);font-weight:600;margin-bottom:6px'>✅ Am einfachsten — über den Chat</div>" +
+          "<ol class='small' style='margin:0;padding-left:18px;line-height:1.7'>" +
+            "<li>Öffne den Chat mit deinem Operator im Matrix (Element-App).</li>" +
+            "<li>Schreib ihm einfach <strong>»dashboard«</strong>.</li>" +
+            "<li>Er antwortet mit einem <strong>Ein-Klick-Link</strong> — antippen, fertig. Kein Terminal, kein Tippen.</li>" +
+          "</ol>" +
+          "<p class='small' style='margin:8px 0 0;opacity:.8'>Der Link gilt 10 Minuten und wird beim ersten Klick verbraucht — sicher, auch wenn jemand später den Chat liest.</p>" +
+        "</div>" +
+        "<details><summary class='small' style='cursor:pointer;opacity:.85'>Lieber am Rechner? Terminal-Weg anzeigen</summary>" +
+          "<p class='small' style='margin:8px 0 4px'>Gib am Mac, auf dem der Operator läuft, im Terminal ein:</p>" +
+          "<pre class='mono' style='user-select:all;padding:12px'>operator</pre>" +
+          "<p class='small' style='opacity:.8'>Öffnet dieses Dashboard automatisch mit Zugang. Falls »command not found«: der Operator ist auf diesem Rechner nicht installiert — nutz den Chat-Weg oben.</p>" +
+        "</details></div></main>";
     } else toast(e.message, 1);
   }
 }
 loadStatus().catch(() => refresh());
 refresh();
 setInterval(() => { if (document.querySelector("nav button.active").dataset.tab === "overview") loadStatus().catch(() => {}); }, 15000);
+
+/* ---------- Einrichtungs-Assistent ---------- */
+let ASST = [];              // Gesprächsverlauf {role, content}
+let ASST_AUTO = 0;          // Zähler gegen Aktions-Endlosschleifen pro Nutzer-Nachricht
+const ASST_READ_ACTIONS = ["test_provider"];   // »Lesen frei« → ohne Bestätigung
+
+function asstGreet() {
+  if (!ASST.length) {
+    ASST.push({ role: "assistant", content: "Hi Michi 👋 Ich bin dein Einrichtungs-Assistent. "
+      + "Sag z. B. »prüf ob Kimi läuft«, »veröffentliche coder« oder »warum antwortet der Bot nicht?«." });
+  }
+  asstRender();
+}
+function asstReset() { ASST = []; ASST_PENDING = null; asstGreet(); }
+function asstPush(role, content) { ASST.push({ role, content }); asstRender(); }
+
+function asstFmt(t) {
+  return esc(t).replace(/```(\w*)\n?([\s\S]*?)```/g,
+    '<pre class="mono" style="background:#0009;padding:8px;border-radius:6px;overflow-x:auto;margin:4px 0">$2</pre>');
+}
+let ASST_PENDING = null;    // ausstehende Bestätigungskarte {name, args} — Teil des Renders,
+                            // damit kein Re-Render sie wegwischt
+function asstRender() {
+  const l = $("#asst-log"); if (!l) return;
+  l.innerHTML = ASST.map((m) => {
+    const mine = m.role === "user", sys = m.role === "tool" || m.role === "system";
+    const align = mine ? "flex-end" : "flex-start";
+    const label = mine ? "Du" : sys ? "System" : "Assistent";
+    const bg = mine ? "rgba(0,201,46,.16)" : sys ? "rgba(255,255,255,.03)" : "rgba(255,255,255,.05)";
+    return `<div style="align-self:${align};max-width:84%">
+      <div class="small" style="opacity:.5;margin-bottom:2px">${label}</div>
+      <div style="background:${bg};border:1px solid rgba(255,255,255,.08);border-radius:10px;padding:8px 11px">${asstFmt(m.content)}</div></div>`;
+  }).join("");
+  if (ASST_PENDING) {
+    const { name, args } = ASST_PENDING;
+    const div = document.createElement("div");
+    div.style.cssText = "align-self:flex-start;max-width:84%";
+    div.innerHTML = `<div class="card" style="border-color:var(--accent);padding:10px 12px">
+      <div class="small" style="opacity:.7">Der Assistent möchte ausführen:</div>
+      <div style="margin:5px 0"><strong>${esc(asstActionLabel(name, args))}</strong></div>
+      <div style="display:flex;gap:8px"><button class="primary" data-x="ok">Ausführen</button>
+        <button class="ghost" data-x="no">Ablehnen</button></div></div>`;
+    div.querySelector('[data-x="ok"]').onclick = async () => { ASST_PENDING = null; await asstExec(name, args); };
+    div.querySelector('[data-x="no"]').onclick = () => { ASST_PENDING = null; asstPush("system", "Aktion abgelehnt."); asstTurn(); };
+    l.appendChild(div);
+  }
+  l.scrollTop = l.scrollHeight;
+}
+
+async function asstSend() {
+  const inp = $("#asst-input"); const text = (inp.value || "").trim(); if (!text) return;
+  inp.value = ""; ASST_AUTO = 0; asstPush("user", text); await asstTurn();
+}
+async function asstTurn() {
+  const btn = $("#asst-send"); if (btn) btn.disabled = true;
+  asstPush("assistant", "…denkt nach…");
+  const msgs = ASST.filter((m) => m.content !== "…denkt nach…");
+  try {
+    const r = await api("POST", "/api/assistant", { messages: msgs });
+    ASST = ASST.filter((m) => m.content !== "…denkt nach…");
+    asstPush("assistant", r.reply || "(keine Antwort)");
+    if (r.action && r.action.action) await asstHandleAction(r.action);
+  } catch (e) {
+    ASST = ASST.filter((m) => m.content !== "…denkt nach…");
+    asstPush("system", "Fehler: " + e.message);
+  } finally { if (btn) btn.disabled = false; asstRender(); }
+}
+
+function asstActionLabel(name, a) {
+  return ({
+    test_provider: `Verbindung testen: ${a.provider}`,
+    set_provider: `Provider konfigurieren: ${a.provider}`,
+    publish_agent: `Als Bot veröffentlichen: ${a.name}`,
+    unpublish_agent: `Bot entfernen: ${a.name}`,
+    restart_listener: "Listener-Dienst neu starten",
+  })[name] || name;
+}
+async function asstHandleAction(action) {
+  if (ASST_AUTO++ > 6) { asstPush("system", "(Aktions-Limit erreicht — bitte weiter per Nachricht.)"); return; }
+  const { action: name, args = {} } = action;
+  if (ASST_READ_ACTIONS.includes(name)) { await asstExec(name, args); return; }  // Lesen frei
+  ASST_PENDING = { name, args };   // Schreibend → Bestätigungskarte (übersteht Re-Render)
+  asstRender();
+}
+async function asstExec(name, args) {
+  try {
+    let result;
+    if (name === "test_provider") {
+      const d = await api("GET", "/api/models/" + encodeURIComponent(args.provider) + "/test");
+      result = `Test ${args.provider}: ${d.test_ok ? "OK" : "FEHLER"} — ${d.test_msg}`;
+    } else if (name === "set_provider") {
+      const body = {}; ["base_url", "models", "enabled", "default"].forEach((k) => { if (args[k] !== undefined) body[k] = args[k]; });
+      const d = await api("PUT", "/api/models/" + encodeURIComponent(args.provider), body);
+      result = `Provider ${args.provider} gespeichert. Test: ${d.test_ok ? "OK" : "FEHLER"} — ${d.test_msg}`;
+    } else if (name === "unpublish_agent") {
+      await api("DELETE", "/api/agents/" + encodeURIComponent(args.name) + "/publish");
+      result = `Bot ${args.name} entfernt.`;
+    } else if (name === "restart_listener") {
+      await api("POST", "/api/listener/restart");
+      result = "Listener-Dienst neu gestartet.";
+    } else if (name === "publish_agent") {
+      const d = await api("POST", "/api/agents/" + encodeURIComponent(args.name) + "/publish", {});
+      result = `»${args.name}« hat jetzt einen eigenen Chat-Raum (${d.room_id}). `
+        + "In Element wartet die Einladung — annehmen, losschreiben. Kein Passwort nötig.";
+      loadAgents();
+    } else { result = "Unbekannte Aktion: " + name; }
+    asstPush("tool", result);
+    await asstTurn();
+  } catch (e) { asstPush("system", "Aktion fehlgeschlagen: " + e.message); await asstTurn(); }
+}
 
 /* ---------- Matrix-Code-Regen (dezent, im Hintergrund) ---------- */
 (function rain() {

@@ -13,7 +13,90 @@ Protokoll (JSON über stdin → JSON über stdout):
   ← {"error": "..."}   + exit 1    (Fehler; der Listener fällt dann sauber zurück/meldet)
 """
 import json
+import os
+import re
+import subprocess
 import sys
+
+# ---------------------------------------------------------------- Werkzeuge (optional) --
+# Kimi & Co. können nativ Werkzeuge aufrufen (OpenAI-Tool-Calling). Security by Design:
+# Datei-Werkzeuge nur im Arbeitsordner (Pfad-Käfig), Befehle mit Timeout + Ausgabe-Kappung
+# + Sperrliste für destruktive Muster, max. 15 Schritte pro Nachricht, alles protokolliert.
+MAX_STEPS = 15
+CMD_TIMEOUT = 60
+FORBIDDEN_CMD = re.compile(
+    r"\bsudo\b|\brm\s+(-\w+\s+)*(/|~)(\s|$)|\bmkfs|\bdd\s+.*of=/dev|"
+    r"\bshutdown\b|\breboot\b|\blaunchctl\b|\bkillall\b|\bdiskutil\b", re.IGNORECASE)
+
+TOOLS_SPEC = [
+    {"type": "function", "function": {"name": "run_command",
+        "description": "Führt einen Shell-Befehl im Arbeitsordner aus (Timeout 60 s).",
+        "parameters": {"type": "object", "properties": {"command": {"type": "string"}},
+                       "required": ["command"]}}},
+    {"type": "function", "function": {"name": "write_file",
+        "description": "Schreibt eine Datei (relativer Pfad im Arbeitsordner).",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"},
+                       "content": {"type": "string"}}, "required": ["path", "content"]}}},
+    {"type": "function", "function": {"name": "read_file",
+        "description": "Liest eine Datei aus dem Arbeitsordner.",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}},
+                       "required": ["path"]}}},
+    {"type": "function", "function": {"name": "list_files",
+        "description": "Listet Dateien im Arbeitsordner (rekursiv, max. 200).",
+        "parameters": {"type": "object", "properties": {"path": {"type": "string"}},
+                       "required": []}}},
+]
+
+
+def _jail(workdir: str, path: str) -> str:
+    """Pfad-Käfig: Datei-Zugriffe außerhalb des Arbeitsordners sind technisch unmöglich."""
+    p = os.path.realpath(os.path.join(workdir, path or "."))
+    root = os.path.realpath(workdir)
+    if p != root and not p.startswith(root + os.sep):
+        raise ValueError("Pfad liegt außerhalb des Arbeitsordners — nicht erlaubt")
+    return p
+
+
+def _exec_tool(name: str, args: dict, workdir: str, actions: list) -> str:
+    try:
+        if name == "run_command":
+            cmd = str(args.get("command", ""))
+            if FORBIDDEN_CMD.search(cmd):
+                actions.append("BLOCKIERT: " + cmd[:120])
+                return "FEHLER: Dieser Befehl ist aus Sicherheitsgründen gesperrt."
+            actions.append("$ " + cmd[:200])
+            r = subprocess.run(["/bin/sh", "-c", cmd], cwd=workdir, capture_output=True,
+                               text=True, timeout=CMD_TIMEOUT)
+            out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
+            return f"exit={r.returncode}\n{out[:8000]}"
+        if name == "write_file":
+            p = _jail(workdir, args.get("path", ""))
+            os.makedirs(os.path.dirname(p) or workdir, exist_ok=True)
+            content = str(args.get("content", ""))
+            with open(p, "w") as f:
+                f.write(content)
+            actions.append(f"write {args.get('path')} ({len(content)} B)")
+            return "geschrieben"
+        if name == "read_file":
+            p = _jail(workdir, args.get("path", ""))
+            actions.append(f"read {args.get('path')}")
+            with open(p) as f:
+                return f.read()[:16000]
+        if name == "list_files":
+            p = _jail(workdir, args.get("path", "."))
+            actions.append(f"ls {args.get('path', '.')}")
+            names = []
+            for base, _dirs, files in os.walk(p):
+                rel = os.path.relpath(base, workdir)
+                names += [os.path.normpath(os.path.join(rel, fn)) for fn in files]
+                if len(names) > 200:
+                    break
+            return "\n".join(sorted(names)[:200]) or "(leer)"
+        return "unbekanntes Werkzeug"
+    except subprocess.TimeoutExpired:
+        return f"FEHLER: Befehl abgebrochen (über {CMD_TIMEOUT} s)"
+    except Exception as e:
+        return "FEHLER: " + str(e)[:200]
 
 
 def main() -> int:
@@ -28,8 +111,12 @@ def main() -> int:
     key = req.get("key") or ""
     prompt = req.get("prompt", "")
     system = req.get("system") or ""
-    max_tokens = int(req.get("max_tokens", 2000))
+    # Höheres Default-Budget: Thinking-Modelle (z. B. Kimi K2.7) verbrauchen einen Teil fürs
+    # interne »reasoning«; zu wenig Tokens → Antwort-Text (content) bleibt leer/abgeschnitten.
+    max_tokens = int(req.get("max_tokens", 4096))
     timeout = float(req.get("timeout", 90))
+    use_tools = bool(req.get("tools"))
+    workdir = req.get("workdir") or ""
 
     # Ollama spricht OpenAI-kompatibel unter /v1; Dummy-Key, da das SDK einen verlangt.
     if provider == "ollama":
@@ -53,11 +140,50 @@ def main() -> int:
 
     try:
         client = OpenAI(base_url=base_url, api_key=key, timeout=timeout, max_retries=1)
+
+        # ---------- Werkzeug-Modus: kleine agentische Schleife im Pfad-Käfig ----------
+        if use_tools and workdir:
+            os.makedirs(workdir, exist_ok=True)
+            actions = []
+            for _ in range(MAX_STEPS):
+                resp = client.chat.completions.create(model=model_id, messages=messages,
+                                                      tools=TOOLS_SPEC, max_tokens=max_tokens)
+                msg = resp.choices[0].message
+                if getattr(msg, "tool_calls", None):
+                    messages.append({"role": "assistant", "content": msg.content or "",
+                                     "tool_calls": [{"id": tc.id, "type": "function",
+                                                     "function": {"name": tc.function.name,
+                                                                  "arguments": tc.function.arguments}}
+                                                    for tc in msg.tool_calls]})
+                    for tc in msg.tool_calls:
+                        try:
+                            targs = json.loads(tc.function.arguments or "{}")
+                        except ValueError:
+                            targs = {}
+                        res = _exec_tool(tc.function.name, targs, workdir, actions)
+                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": res})
+                    continue
+                text = (msg.content or "").strip()
+                if text:
+                    print(json.dumps({"text": text, "actions": actions}))
+                    return 0
+                break
+            print(json.dumps({"error": "Werkzeug-Limit erreicht — bitte die Aufgabe kleiner "
+                              "stellen.", "actions": actions}))
+            return 1
+
+        # ---------- Text-Modus (ohne Werkzeuge) ----------
         resp = client.chat.completions.create(model=model_id, messages=messages,
                                               max_tokens=max_tokens)
-        text = (resp.choices[0].message.content or "").strip()
+        choice = resp.choices[0]
+        text = (choice.message.content or "").strip()
         if not text:
-            print(json.dumps({"error": "Modell lieferte leere Antwort"}))
+            # Thinking-Modell: hat evtl. das ganze Budget fürs Denken verbraucht → content leer.
+            if getattr(choice, "finish_reason", "") == "length":
+                print(json.dumps({"error": "Die Antwort wurde abgeschnitten (Token-Limit erreicht) "
+                                  "— bitte die Aufgabe kürzer/kleiner stellen."}))
+            else:
+                print(json.dumps({"error": "Modell lieferte leere Antwort"}))
             return 1
         print(json.dumps({"text": text}))
         return 0

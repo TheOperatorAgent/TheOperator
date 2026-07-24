@@ -1,9 +1,9 @@
 {
-  "version": "1.4.0",
-  "date": "2026-07-23",
+  "version": "1.5.0",
+  "date": "2026-07-24",
   "highlights": [
-    "⚡ Proaktiv: Operator meldet sich von selbst bei neuen Mails & Ereignissen — mit Zusammenfassung inkl. Anhang",
-    "🔎 Antwort-Prüfung: ein zweites Modell prüft Antworten auf Fehler, bevor sie zu dir gehen",
-    "🧠 Klügeres Gedächtnis (findet auch bei anderer Formulierung) + geprüfte Ein-Klick-Integrationen (Notion, Home Assistant, Kalender …)"
+    "🤖 Agenten mit Werkzeugen: Coding-Agenten (z. B. Kimi) legen jetzt wirklich Dateien an, führen Befehle aus und testen — sicher im abgeschotteten Arbeitsordner (Pfad-Käfig, Sperrliste, Protokoll)",
+    "🧭 Einrichtungs-Assistent: neuer Chat im Dashboard, der beim Einrichten führt und Aktionen auf Bestätigung selbst ausführt — Geheimnisse nur über sichere Formulare",
+    "🔑 Einfacher & sicherer: Ein-Klick-Login per »dashboard«-Chatbefehl, Agenten als eigener Chat ohne Konto/Passwort, klare Fehlermeldungen — nach dem neuen Leitbild EINFACHHEIT.md"
   ]
 }
