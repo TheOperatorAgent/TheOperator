@@ -99,6 +99,89 @@ def _exec_tool(name: str, args: dict, workdir: str, actions: list) -> str:
         return "FEHLER: " + str(e)[:200]
 
 
+# ---------------------------------------------------------------- Browser (nur Lesen/Navigieren) --
+# Bewusst OHNE Formular-Absenden/Ausfüllen (v1): der Agent kann Seiten öffnen, Links/Buttons
+# klicken und Text/Links extrahieren — aber nichts im Web auslösen. Headless, mit Timeouts.
+BROWSER_TOOLS = [
+    {"type": "function", "function": {"name": "open_page",
+        "description": "Öffnet eine Webseite (URL) und gibt Titel, Text und klickbare Elemente zurück. "
+                       "Nur Lesen/Navigieren — kein Absenden von Formularen.",
+        "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
+    {"type": "function", "function": {"name": "click_link",
+        "description": "Klickt ein sichtbares Link/Button-Element anhand seines Textes und gibt die neue "
+                       "Seite zurück. Keine Formular-Absendung.",
+        "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}},
+]
+BROWSER_TOOL_NAMES = {"open_page", "click_link"}
+
+
+def _browser_page(state):
+    if state.get("page"):
+        return state["page"]
+    from playwright.sync_api import sync_playwright
+    pw = sync_playwright().start()
+    br = pw.chromium.launch(headless=True)
+    ctx = br.new_context(accept_downloads=False)
+    page = ctx.new_page()
+    page.set_default_timeout(30000)
+    state.update(pw=pw, browser=br, page=page)
+    return page
+
+
+def _browser_close(state):
+    for k in ("browser", "pw"):
+        try:
+            obj = state.get(k)
+            if obj:
+                obj.stop() if k == "pw" else obj.close()
+        except Exception:
+            pass
+
+
+def _page_summary(page):
+    try:
+        text = page.inner_text("body")
+    except Exception:
+        text = ""
+    links, seen = [], set()
+    try:
+        for el in page.query_selector_all("a, button"):
+            t = (el.inner_text() or "").strip().replace("\n", " ")
+            if t and len(t) < 80 and t not in seen:
+                seen.add(t); links.append(t)
+            if len(links) >= 40:
+                break
+    except Exception:
+        pass
+    return (f"URL: {page.url}\nTitel: {page.title()}\n\n{text[:6000]}"
+            + ("\n\n[Klickbar] " + " · ".join(links) if links else ""))
+
+
+def _browse_tool(name, args, state, actions):
+    try:
+        page = _browser_page(state)
+        if name == "open_page":
+            url = str(args.get("url", "")).strip()
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
+            actions.append("🌐 open " + url[:120])
+            page.goto(url, wait_until="domcontentloaded")
+            return _page_summary(page)
+        if name == "click_link":
+            t = str(args.get("text", "")).strip()
+            actions.append("🖱️ click »" + t[:60] + "«")
+            page.get_by_text(t, exact=False).first.click(timeout=15000)
+            page.wait_for_load_state("domcontentloaded", timeout=15000)
+            return _page_summary(page)
+        return "unbekanntes Browser-Werkzeug"
+    except Exception as e:
+        m = str(e)
+        if "Executable doesn't exist" in m or "playwright install" in m:
+            return ("Browser ist noch nicht installiert. Einmalig im Terminal ausführen: "
+                    "»~/.claude/matrix-bot/dashboard/venv/bin/playwright install chromium«.")
+        return "Browser-Fehler: " + m[:200]
+
+
 def main() -> int:
     try:
         req = json.load(sys.stdin)
@@ -116,6 +199,7 @@ def main() -> int:
     max_tokens = int(req.get("max_tokens", 4096))
     timeout = float(req.get("timeout", 90))
     use_tools = bool(req.get("tools"))
+    use_browser = bool(req.get("browser"))
     workdir = req.get("workdir") or ""
 
     # Ollama spricht OpenAI-kompatibel unter /v1; Dummy-Key, da das SDK einen verlangt.
@@ -141,33 +225,41 @@ def main() -> int:
     try:
         client = OpenAI(base_url=base_url, api_key=key, timeout=timeout, max_retries=1)
 
-        # ---------- Werkzeug-Modus: kleine agentische Schleife im Pfad-Käfig ----------
-        if use_tools and workdir:
-            os.makedirs(workdir, exist_ok=True)
-            actions = []
-            for _ in range(MAX_STEPS):
-                resp = client.chat.completions.create(model=model_id, messages=messages,
-                                                      tools=TOOLS_SPEC, max_tokens=max_tokens)
-                msg = resp.choices[0].message
-                if getattr(msg, "tool_calls", None):
-                    messages.append({"role": "assistant", "content": msg.content or "",
-                                     "tool_calls": [{"id": tc.id, "type": "function",
-                                                     "function": {"name": tc.function.name,
-                                                                  "arguments": tc.function.arguments}}
-                                                    for tc in msg.tool_calls]})
-                    for tc in msg.tool_calls:
-                        try:
-                            targs = json.loads(tc.function.arguments or "{}")
-                        except ValueError:
-                            targs = {}
-                        res = _exec_tool(tc.function.name, targs, workdir, actions)
-                        messages.append({"role": "tool", "tool_call_id": tc.id, "content": res})
-                    continue
-                text = (msg.content or "").strip()
-                if text:
-                    print(json.dumps({"text": text, "actions": actions}))
-                    return 0
-                break
+        # ---------- Werkzeug-Modus: kleine agentische Schleife (Pfad-Käfig + optional Browser) ----------
+        if (use_tools and workdir) or use_browser:
+            if use_tools and workdir:
+                os.makedirs(workdir, exist_ok=True)
+            tools_active = (TOOLS_SPEC if (use_tools and workdir) else []) + (BROWSER_TOOLS if use_browser else [])
+            actions, bstate = [], {}
+            try:
+                for _ in range(MAX_STEPS):
+                    resp = client.chat.completions.create(model=model_id, messages=messages,
+                                                          tools=tools_active, max_tokens=max_tokens)
+                    msg = resp.choices[0].message
+                    if getattr(msg, "tool_calls", None):
+                        messages.append({"role": "assistant", "content": msg.content or "",
+                                         "tool_calls": [{"id": tc.id, "type": "function",
+                                                         "function": {"name": tc.function.name,
+                                                                      "arguments": tc.function.arguments}}
+                                                        for tc in msg.tool_calls]})
+                        for tc in msg.tool_calls:
+                            try:
+                                targs = json.loads(tc.function.arguments or "{}")
+                            except ValueError:
+                                targs = {}
+                            if tc.function.name in BROWSER_TOOL_NAMES:
+                                res = _browse_tool(tc.function.name, targs, bstate, actions)
+                            else:
+                                res = _exec_tool(tc.function.name, targs, workdir, actions)
+                            messages.append({"role": "tool", "tool_call_id": tc.id, "content": res})
+                        continue
+                    text = (msg.content or "").strip()
+                    if text:
+                        print(json.dumps({"text": text, "actions": actions}))
+                        return 0
+                    break
+            finally:
+                _browser_close(bstate)
             print(json.dumps({"error": "Werkzeug-Limit erreicht — bitte die Aufgabe kleiner "
                               "stellen.", "actions": actions}))
             return 1

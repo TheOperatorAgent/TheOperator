@@ -956,6 +956,19 @@ def test_persona_roundtrip_and_render(tmp_path):
     assert not os.path.exists(P.PROFILE_FILE)
 
 
+def test_browser_tools_are_readonly():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "lr_mod", os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"))
+    lr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lr)
+    names = {t["function"]["name"] for t in lr.BROWSER_TOOLS}
+    assert names == {"open_page", "click_link"}          # v1: nur Lesen/Navigieren
+    assert names == lr.BROWSER_TOOL_NAMES
+    # Sicherheits-Garantie: KEIN Formular-Absenden/Ausfüllen/Upload im v1-Werkzeugsatz
+    assert not (names & {"submit", "fill", "type", "post", "download", "upload", "press"})
+
+
 def test_persona_is_stdlib_only():
     import ast
     src = open(os.path.expanduser("~/.claude/matrix-bot/persona.py")).read()

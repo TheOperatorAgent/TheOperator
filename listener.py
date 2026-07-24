@@ -503,13 +503,17 @@ class BotSession(threading.Thread):
         plan = providers.resolve(agent.get("model")) if providers else {"kind": "claude"}
         if plan.get("kind") == "foreign":
             # Werkzeuge für Fremd-Modelle: eigene Runner-Schleife im Pfad-Käfig (llm_runner).
-            f_tools = [t for t in agent.get("tools", []) if t in ("Bash", "Read", "Write")]
+            f_tools = [t for t in agent.get("tools", []) if t in ("Bash", "Read", "Write", "Browser")]
             if f_tools:
-                system = (agent["body"].strip() + "\n\nDu hast Werkzeuge (Befehle ausführen, "
-                          "Dateien lesen/schreiben/auflisten) — sie wirken NUR in deinem "
-                          "Arbeitsordner. Arbeite die Aufgabe damit wirklich ab (Code anlegen, "
-                          "ausführen, testen) und fasse am Ende kurz auf Deutsch zusammen, was "
-                          "du getan hast und was das Ergebnis ist. Die Zusammenfassung wird in "
+                _caps = []
+                if any(t in ("Bash", "Read", "Write") for t in f_tools):
+                    _caps.append("Befehle ausführen, Dateien lesen/schreiben/auflisten (nur in deinem Arbeitsordner)")
+                if "Browser" in f_tools:
+                    _caps.append("im Browser navigieren: Seiten öffnen (open_page), Links/Buttons klicken "
+                                 "(click_link) und Text/Daten extrahieren — NUR Lesen/Navigieren, KEINE Formulare absenden")
+                system = (agent["body"].strip() + "\n\nDu hast Werkzeuge: " + "; ".join(_caps)
+                          + ". Arbeite die Aufgabe damit wirklich ab und fasse am Ende kurz auf Deutsch "
+                          "zusammen, was du getan und herausgefunden hast. Die Zusammenfassung wird in "
                           "den Matrix-Chat gesendet.")
             else:
                 system = (agent["body"].strip() + "\n\nWICHTIG: Du hast KEINE Werkzeuge — nur Text. "
@@ -711,9 +715,13 @@ class BotSession(threading.Thread):
                  "key": plan.get("key", ""), "model_id": plan["model_id"],
                  "prompt": prompt, "system": system or ""}
         run_timeout = 180
-        if tools:
+        tools = tools or []
+        if any(t in ("Bash", "Read", "Write") for t in tools):
             req_d["tools"] = True
             req_d["workdir"] = f"{WORKSPACE}/agent-{self.bot_name}"
+        if "Browser" in tools:
+            req_d["browser"] = True      # nur Lesen/Navigieren (open_page/click_link)
+        if req_d.get("tools") or req_d.get("browser"):
             req_d["timeout"] = 120       # pro Modell-Aufruf innerhalb der Schleife
             run_timeout = 600            # gesamte Werkzeugschleife
         req = json.dumps(req_d)

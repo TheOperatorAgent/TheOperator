@@ -64,6 +64,15 @@ installieren. Deinstallation: `bash install.sh --uninstall`.
   wachsendem Wissen immer teurer wird. Der Operator speichert Merkenswertes selbst
   (Shell-Freigabe nötig) und kann Einträge korrigieren oder vergessen.
 
+## Neu in 1.7 — Browser-Agent (im Web navigieren)
+
+- Agenten können jetzt nicht nur Webseiten *lesen*, sondern im **Browser navigieren**: Seiten
+  öffnen, Links/Buttons klicken, mehrstufig recherchieren und Daten extrahieren — mitgeliefert
+  als Agent **»websurfer«**.
+- **Bewusst eingegrenzt (v1):** nur Lesen/Navigieren — **kein** Absenden von Formularen, keine
+  Käufe, keine Zugangsdaten-Eingabe. Headless, mit Timeouts, jede Navigation im Log. (Aktionen
+  mit Bestätigung sind als spätere, gegatete Ausbaustufe vorgesehen.)
+
 ## Neu in 1.6 — Persona & Profil (eigene Persönlichkeit)
 
 - **Gib deinem Operator eine Persönlichkeit:** Name, Ton, Förmlichkeit (du/Sie) und Auftreten

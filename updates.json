@@ -1,9 +1,8 @@
 {
-  "version": "1.6.1",
+  "version": "1.7.0",
   "date": "2026-07-24",
   "highlights": [
-    "🎭 Persona & Profil: eigene Persönlichkeit für den Operator (Name, Ton, Auftreten) + Profil über dich — mit überspringbarem Willkommens-Interview, transparent & löschbar",
-    "🤖 Agenten mit Werkzeugen + 🧭 Einrichtungs-Assistent (aus 1.5)",
-    "💬 Klartext-Fehlermeldungen + einfacher Login (aus 1.5.1)"
+    "🌐 Browser-Agent: der Operator kann jetzt im Web NAVIGIEREN — Seiten öffnen, Links/Buttons klicken, Daten extrahieren (nur Lesen/Navigieren, kein Formular-Absenden). Neuer »websurfer«-Agent",
+    "🎭 Persona & Profil (aus 1.6) · 🤖 Agenten mit Werkzeugen + 🧭 Assistent (aus 1.5)"
   ]
 }

@@ -93,6 +93,12 @@ ohne zum Risiko zu werden, laufen alle Werkzeuge in einem mehrfach abgesicherten
 *Belegt:* Der Agent legt Dateien an und führt sie aus; Ausbruchsversuche (`../../etc/passwd`,
 `sudo rm -rf /`) werden nachweislich abgewiesen.
 
+**Browser-Werkzeug (v1, bewusst eingegrenzt):** Agenten mit dem `Browser`-Werkzeug können im
+headless-Browser **navigieren** (`open_page`, `click_link`) und Text/Daten extrahieren — aber
+**nur Lesen/Navigieren**, kein Formular-Absenden, keine Käufe, keine Zugangsdaten-Eingabe. Jede
+Navigation landet im Log; Timeouts greifen. Web-*Aktionen* mit Bestätigung sind als spätere,
+gegatete Stufe vorgesehen (bounded risk statt vollem Desktop-Zugriff).
+
 ---
 
 ## 6. Abgrenzung: Operator vs. OpenClaw vs. Hermes
