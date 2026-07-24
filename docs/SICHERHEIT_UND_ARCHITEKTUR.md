@@ -73,6 +73,7 @@ echter Name raus — die Zuordnung existiert nur flüchtig und lokal.
 | **audit_log.py** (+ `audit.seal`) | Schreibt jede sicherheits­relevante Aktion in ein **manipulations­evidentes** Log (Siegelkette). | Nachträgliche Änderungen am Protokoll sind erkennbar. |
 | **listener.py** | Kern-Daemon **ausschließlich mit Python-Standardbibliothek** — kleine, prüfbare Angriffsfläche. | Weniger Abhängigkeiten = weniger Lieferketten-Risiko. |
 | **skillguard.py** | Sicherheits-Scan neuer/geänderter Skills. | Schutz vor riskanten Automatisierungen. |
+| **persona.py** | Persona (Auftreten) + Nutzerprofil, rein lokal (`persona.json`/`profile.json`). | Personalisierung **transparent**: sichtbar, editierbar, jederzeit löschbar, auditiert — keine verdeckte Bindungs-Mechanik (bewusst; vgl. EU AI Act / EDPS zu KI-Companions). |
 
 ---
 

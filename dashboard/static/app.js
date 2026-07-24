@@ -1525,6 +1525,8 @@ async function loadPrivacy() {
   $("#privacy-tables").innerHTML = `<div class="card"><table class="kv">
     <tr><td>Chat-Verarbeitung</td><td>Nachrichten werden zur Beantwortung an die Claude-API (Anthropic) übertragen — über dein persönliches Abo</td></tr>
     <tr><td>Gedächtnis</td><td>${s.memory_count} Fakten, lokal in <span class="mono">~/.claude/matrix-bot/memory.db</span> — verlässt deinen Mac nie</td></tr>
+    <tr><td>Persona</td><td>wie dein Operator auftritt, lokal in <span class="mono">persona.json</span> — kein Personenbezug; im Tab »🎭 Persona« änderbar</td></tr>
+    <tr><td>Dein Profil</td><td>deine Angaben (Ansprache, Rolle, Interessen), lokal in <span class="mono">profile.json</span> — verlässt deinen Mac nie, im Tab »🎭 Persona« jederzeit <strong>löschbar</strong></td></tr>
     <tr><td>Matrix-Zugangsdaten</td><td>im macOS-Schlüsselbund (nicht mehr als Klartext-Datei)</td></tr>
     <tr><td>OAuth-Tokens (Google/M365)</td><td>AES-256-verschlüsselt in <span class="mono">secrets/</span>, Schlüssel im macOS-Schlüsselbund</td></tr>
     <tr><td>Microsoft 365</td><td>${s.m365.connected ? "Aktive Rechte: <span class='mono'>" + esc(s.m365.active_values.join(", ")) + "</span>" : "nicht verbunden — keine Daten"}</td></tr>
@@ -1587,14 +1589,82 @@ let ASST = [];              // Gesprächsverlauf {role, content}
 let ASST_AUTO = 0;          // Zähler gegen Aktions-Endlosschleifen pro Nutzer-Nachricht
 const ASST_READ_ACTIONS = ["test_provider"];   // »Lesen frei« → ohne Bestätigung
 
-function asstGreet() {
-  if (!ASST.length) {
-    ASST.push({ role: "assistant", content: "Hi Michi 👋 Ich bin dein Einrichtungs-Assistent. "
-      + "Sag z. B. »prüf ob Kimi läuft«, »veröffentliche coder« oder »warum antwortet der Bot nicht?«." });
-  }
+async function asstGreet() {
+  if (ASST.length || ASST_PENDING) { asstRender(); return; }
+  // Erst-Einrichtung: nur wenn Persona noch nicht gesetzt UND Willkommen noch nicht gezeigt.
+  let onboarded = true;
+  try { onboarded = !!(await api("GET", "/api/persona")).persona.onboarded; } catch (e) {}
+  let welcomed = false;
+  try { welcomed = localStorage.getItem("op_welcomed") === "1"; } catch (e) {}
+  if (!onboarded && !welcomed) { asstOnboardStart(); return; }
+  ASST.push({ role: "assistant", content: "Hi 👋 Ich bin dein Einrichtungs-Assistent. "
+    + "Sag z. B. »prüf ob Kimi läuft«, »veröffentliche coder« oder »richte meine Persona ein«." });
   asstRender();
 }
 function asstReset() { ASST = []; ASST_PENDING = null; asstGreet(); }
+
+/* ---------- Onboarding-Interview (Erst-Einrichtung, überspringbar) ---------- */
+const ONB_STEPS = [
+  { key: "pf_name", q: "Schön, dass du da bist! 👋 Wie soll ich dich ansprechen?", type: "text", ph: "z. B. Michi" },
+  { key: "formality", q: "Sollen wir per Du oder per Sie?", type: "pick", opts: ["du", "Sie"] },
+  { key: "gender", q: "Wie soll ich auftreten?", type: "pick", opts: ["neutral", "androgyn", "weiblich", "männlich"] },
+  { key: "tone", q: "Welcher Ton passt zu dir?", type: "pick", opts: ["freundlich", "professionell", "locker", "humorvoll", "direkt"] },
+  { key: "role", q: "Woran arbeitest du gerade? (hilft mir, dich besser zu unterstützen — optional)", type: "text", ph: "z. B. Gründer", optional: true },
+];
+let ONB = {};
+function asstOnboardStart() {
+  ONB = {};
+  const l = $("#asst-log");
+  l.innerHTML = `<div style="align-self:flex-start;max-width:88%">
+    <div class="card" style="border-color:var(--accent);padding:12px 14px">
+      <strong>Willkommen bei deinem Operator 🎭</strong>
+      <p class="small" style="margin:6px 0">Magst du mich in 5 kurzen Fragen einrichten? Dauert ~1 Minute,
+        du kannst jederzeit überspringen und alles später im Tab »🎭 Persona« ändern.</p>
+      <div style="display:flex;gap:8px"><button class="primary" data-x="go">Los geht's</button>
+        <button class="ghost" data-x="skip">Überspringen</button></div></div></div>`;
+  l.querySelector('[data-x="go"]').onclick = () => asstOnboardStep(0);
+  l.querySelector('[data-x="skip"]').onclick = () => asstOnboardSkip();
+}
+function asstOnboardSkip() {
+  try { localStorage.setItem("op_welcomed", "1"); } catch (e) {}
+  ASST = [{ role: "assistant", content: "Alles gut 🙂 Du kannst mich jederzeit im Tab »🎭 Persona« einrichten. "
+    + "Womit kann ich helfen?" }];
+  asstRender();
+}
+function asstOnboardStep(i) {
+  if (i >= ONB_STEPS.length) return asstOnboardFinish();
+  const s = ONB_STEPS[i], l = $("#asst-log");
+  const ctrl = s.type === "pick"
+    ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">${s.opts.map((o) =>
+        `<button class="ghost" data-opt="${esc(o)}">${esc(o)}</button>`).join("")}</div>`
+    : `<div style="display:flex;gap:8px;margin-top:8px"><input id="onb-in" placeholder="${esc(s.ph || "")}" style="flex:1"
+        onkeydown="if(event.key==='Enter')document.querySelector('[data-x=next]').click()">
+        <button class="primary" data-x="next">Weiter</button></div>`;
+  l.innerHTML = `<div style="align-self:flex-start;max-width:88%">
+    <div class="card" style="border-color:var(--accent);padding:12px 14px">
+      <div class="small" style="opacity:.6">Schritt ${i + 1} von ${ONB_STEPS.length}</div>
+      <div style="margin:4px 0"><strong>${esc(s.q)}</strong></div>${ctrl}
+      ${s.optional ? '<button class="ghost small" data-x="skipstep" style="margin-top:6px">Überspringen</button>' : ""}
+    </div></div>`;
+  if (s.type === "pick") l.querySelectorAll("[data-opt]").forEach((b) => { b.onclick = () => { ONB[s.key] = b.dataset.opt; asstOnboardStep(i + 1); }; });
+  else { l.querySelector('[data-x="next"]').onclick = () => { ONB[s.key] = $("#onb-in").value.trim(); asstOnboardStep(i + 1); }; setTimeout(() => { const el = $("#onb-in"); if (el) el.focus(); }, 30); }
+  const sk = l.querySelector('[data-x="skipstep"]'); if (sk) sk.onclick = () => asstOnboardStep(i + 1);
+}
+async function asstOnboardFinish() {
+  const persona = { formality: ONB.formality === "Sie" ? "sie" : "du",
+    gender_presentation: ONB.gender || "neutral", tone: ONB.tone || "freundlich" };
+  const profile = { preferred_name: ONB.pf_name || "", role: ONB.role || "" };
+  try { localStorage.setItem("op_welcomed", "1"); } catch (e) {}
+  try {
+    await api("PUT", "/api/persona", persona);
+    if (profile.preferred_name || profile.role) await api("PUT", "/api/profil", profile);
+  } catch (e) { /* fail-open: Onboarding darf nie hängen */ }
+  const anrede = ONB.pf_name ? ONB.pf_name : "";
+  ASST = [{ role: "assistant", content: `Perfekt${anrede ? ", " + anrede : ""} — eingerichtet! 🎉 `
+    + "Ich richte mich ab jetzt danach. Alles jederzeit änderbar im Tab »🎭 Persona«. Womit legen wir los?" }];
+  asstRender();
+  toast("Persona eingerichtet");
+}
 function asstPush(role, content) { ASST.push({ role, content }); asstRender(); }
 
 function asstFmt(t) {

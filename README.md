@@ -64,6 +64,17 @@ installieren. Deinstallation: `bash install.sh --uninstall`.
   wachsendem Wissen immer teurer wird. Der Operator speichert Merkenswertes selbst
   (Shell-Freigabe nötig) und kann Einträge korrigieren oder vergessen.
 
+## Neu in 1.6 — Persona & Profil (eigene Persönlichkeit)
+
+- **Gib deinem Operator eine Persönlichkeit:** Name, Ton, Förmlichkeit (du/Sie) und Auftreten
+  (neutral / androgyn / weiblich / männlich) — im Tab **»🎭 Persona«** mit Live-Vorschau
+  „So klingt dein Operator".
+- **Er lernt dich kennen:** ein kurzes, **überspringbares** Willkommens-Interview im 🧭 Assistenten
+  fragt Ansprache, Rolle und Vorlieben ab und legt ein Profil an.
+- **Transparent by design:** alles, was er über dich weiß und *ist*, bleibt sichtbar, editierbar
+  und **jederzeit löschbar** — keine verdeckten Bindungs-Mechaniken. Profil & Persona liegen
+  rein lokal (`profile.json`/`persona.json`), auditiert, im Datenschutz-Tab gelistet.
+
 ## Neu in 1.5 — Agenten mit Werkzeugen, Einrichtungs-Assistent & Einfachheit
 
 - **Agenten, die wirklich arbeiten:** Fremd-Modelle (z. B. Kimi K2.7 Code über Ollama-Cloud,

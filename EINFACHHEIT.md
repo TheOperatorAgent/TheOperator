@@ -80,11 +80,12 @@ Terminal, einen HTTP-Code oder ein englisches Fachwort.
 - ✅ Provider-Ampel mit nächstem Schritt; Kimi-/Cloud-Hinweis in Klartext
 - ✅ Veröffentlichen: verdecktes Passwort-Formular, verzeihende Schreibweisen, Klartext-Fehler
 - ✅ 🧭 Assistent: führt, prüft selbst, bestätigt vor Änderungen, Geheimnisse nur im Formular
-- ⬜ Alle restlichen `prompt()`/`confirm()`-Dialoge durch erklärende Formulare ersetzen
-- ⬜ Fehlertexte projektweit durch die Drei-Teile-Regel ersetzen (Audit aller `toast`/`err`)
-- ⬜ Anmeldung bleibt nach Server-Neustart erhalten (Sitzungen persistent statt im RAM)
+- ✅ Fehlertexte projektweit durch die Drei-Teile-Regel ersetzt (zentraler `friendlyError`, 1.5.1)
+- ✅ Anmeldung bleibt nach Server-Neustart erhalten (Sitzungen persistent, `secrets/dash_sessions.json`)
+- ✅ Erst-Einrichtung als geführte Strecke im 🧭 Assistenten (Persona/Profil-Interview, überspringbar, 1.6.x)
+- ✅ Persona & Profil sichtbar/editierbar/löschbar im Tab »🎭 Persona« + Datenschutz-Tab
+- ⬜ Restliche `prompt()`/`confirm()`-Dialoge durch erklärende Formulare ersetzen
 - ⬜ Tastatur-/Screenreader-Audit (Fokus-Reihenfolge, `label for`, `aria-live` für Ampeln)
-- ⬜ Erst-Einrichtung als geführte Strecke im Assistenten (»Willkommen — was möchtest du?«)
 
 ## 6. Definition of Done: der Petra-Test
 
