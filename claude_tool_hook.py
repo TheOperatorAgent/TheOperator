@@ -82,7 +82,14 @@ def main():
     fp = pb.fingerprint(tool, tool_input)
     log(f"Rückfrage im Chat: {beschreibung}")
     try:
-        ok = pb.ask_owner(beschreibung, fp, log=log)
+        # #104-B: Bei einem unbekannten (nicht gesperrten) Befehl darf der Owner mit
+        # »immer« antworten — der Broker merkt sich das Befehlswort dann dauerhaft.
+        merken = None
+        try:
+            merken = pb.merkbar(tool, tool_input)
+        except Exception:
+            pass
+        ok = pb.ask_owner(beschreibung, fp, log=log, merken=merken)
     except Exception as e:
         log(f"Rückfrage fehlgeschlagen ({e}) — Aktion abgelehnt")
         ok = False

@@ -76,6 +76,107 @@ RISKY_TOOLS = {
     "mcp__n8n__webhook_trigger": "einen Webhook auslösen",
 }
 SAFE_TOOLS = {"Read", "Glob", "Grep", "WebSearch", "Skill", "Agent", "TodoWrite"}
+
+# ---------------------------------------------------------------- Allowlist (#104-B) --
+# Fail-closed statt fail-open: Nur Befehle, die hier (oder in der gelernten Liste)
+# stehen, laufen ohne Rückfrage. Alles Unbekannte fragt nach — der Nutzer kann mit
+# »immer« antworten, dann merkt sich der Operator den Befehl in broker_allow.txt.
+# Die Sperrliste (DESTRUCTIVE_CMD) gewinnt IMMER — auch über gelernte Einträge.
+SAFE_COMMANDS = {
+    # lesen & anschauen
+    "ls", "cat", "head", "tail", "less", "more", "file", "stat", "wc", "tree",
+    "grep", "egrep", "fgrep", "rg", "find", "locate", "mdfind",
+    # Text verarbeiten
+    "awk", "sed", "sort", "uniq", "cut", "tr", "column", "diff", "comm", "jq",
+    "basename", "dirname", "realpath", "readlink", "xargs",
+    # Umgebung & System anschauen
+    "pwd", "cd", "echo", "printf", "date", "cal", "whoami", "id", "uname",
+    "hostname", "sw_vers", "df", "du", "ps", "uptime", "env", "printenv",
+    "which", "type", "true", "false", "test", "[", "seq", "sleep",
+    # Prüfsummen
+    "shasum", "sha256sum", "md5", "md5sum", "cksum",
+    # Arbeiten im Alltag (Schreiben fängt die Sperrliste bei Systempfaden ab)
+    "cp", "mv", "mkdir", "touch", "ln", "tar", "zip", "unzip", "gzip", "gunzip",
+    "tee", "open", "pbcopy", "pbpaste",
+    # Netz lesen (Pipe in eine Shell fängt die Sperrliste)
+    "curl", "wget", "ping", "dig", "host", "nslookup",
+    # Entwickeln (riskante Unterbefehle fängt die Sperrliste: clean/reset --hard/push -f)
+    "git", "python", "python3", "node", "make",
+}
+ALLOW_FILE = os.path.join(BOT_DIR, "broker_allow.txt")
+# Wrapper, hinter denen der eigentliche Befehl steht (sudo/doas fängt die Sperrliste)
+_WRAPPER = {"env", "command", "nohup", "nice", "time", "stdbuf", "timeout", "caffeinate"}
+
+
+def _gelernte():
+    try:
+        return {z.strip() for z in open(ALLOW_FILE) if z.strip() and not z.startswith("#")}
+    except OSError:
+        return set()
+
+
+def _merke_erlaubt(wort):
+    """»immer«-Antwort des Owners: Befehl dauerhaft erlauben (eine Zeile, Datei 0600)."""
+    wort = (wort or "").strip()
+    if not wort or wort in _gelernte():
+        return
+    neu = not os.path.exists(ALLOW_FILE)
+    with open(ALLOW_FILE, "a") as f:
+        f.write(wort + "\n")
+    if neu:
+        try:
+            os.chmod(ALLOW_FILE, 0o600)
+        except OSError:
+            pass
+
+
+def _segmente(cmd):
+    """Zerlegt eine Befehlszeile in ihre Teil-Befehle: Pipes, &&, ||, ;, Zeilen —
+    plus die Inhalte von $(…)-Ersetzungen und Backticks. Jedes Segment muss für
+    sich harmlos sein, sonst wird gefragt."""
+    teile = []
+    for sub in re.findall(r"\$\(([^()]*)\)|`([^`]*)`", cmd):
+        teile.extend(t for t in sub if t)
+    grob = re.split(r"\|\||&&|;|\||\n", re.sub(r"\$\([^()]*\)|`[^`]*`", " ", cmd))
+    teile.extend(grob)
+    return [t.strip() for t in teile if t.strip()]
+
+
+def _befehlswort(segment):
+    """Erstes echtes Wort eines Segments: VAR=x-Zuweisungen und Wrapper überspringen,
+    Pfad-Präfix entfernen (/usr/bin/ls → ls)."""
+    for w in segment.split():
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=\S*", w):
+            continue                      # Env-Zuweisung
+        wort = w.rsplit("/", 1)[-1].lower()
+        if wort in _WRAPPER:
+            continue
+        return wort
+    return ""
+
+
+def unbekannte_befehle(cmd):
+    """→ Liste der Befehlsworte, die weder eingebaut noch gelernt erlaubt sind."""
+    erlaubt = SAFE_COMMANDS | _gelernte()
+    fremd = []
+    for seg in _segmente(cmd):
+        wort = _befehlswort(seg)
+        if wort and wort not in erlaubt and wort not in fremd:
+            fremd.append(wort)
+    return fremd
+
+
+def merkbar(tool, tool_input):
+    """Das Wort, das eine »immer«-Antwort dauerhaft erlauben würde (None = nicht lernbar).
+    Nur für unbekannte Bash-Befehle — Sperrlisten-Treffer sind NIE lernbar."""
+    if tool != "Bash":
+        return None
+    cmd = str((tool_input or {}).get("command", ""))
+    for muster, _ in DESTRUCTIVE_CMD:
+        if re.search(muster, cmd, re.IGNORECASE):
+            return None
+    fremd = unbekannte_befehle(cmd)
+    return fremd[0] if len(fremd) == 1 else None
 # WebFetch ist NICHT pauschal harmlos: Der Operator läuft in deinem Netz und könnte darüber
 # interne Adressen abrufen (Dashboard, Router, Gitea). #82 prüft die Adresse — interne Ziele
 # werden gar nicht erst zur Rückfrage, sondern direkt abgelehnt.
@@ -111,6 +212,13 @@ def classify(tool, tool_input):
         for muster, was in DESTRUCTIVE_CMD:
             if re.search(muster, cmd, re.IGNORECASE):
                 return True, f"{was} — Befehl: {_shorten(cmd, 90)}"
+        # #104-B: fail-closed — was nicht als harmlos bekannt ist, fragt nach.
+        # Vorher galt »im Zweifel nicht fragen«; eine Sperrliste gegen einen
+        # generativen Prozess ist aber strukturell zu schwach (Security-Review 29.07.).
+        fremd = unbekannte_befehle(cmd)
+        if fremd:
+            return True, (f"einen Befehl ausführen, den ich nicht als harmlos kenne "
+                          f"(»{', '.join(fremd[:3])}«) — Befehl: {_shorten(cmd, 90)}")
         return False, ""
     if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         pfad = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
@@ -235,18 +343,21 @@ def _antwort_aus_text(text):
     return None
 
 
-def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None):
+def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None, merken=None):
     """Fragt im Matrix-Chat nach und wartet auf die Antwort.
-    Rückgabe True nur bei ausdrücklichem Ja des Owners — sonst immer False."""
+    Rückgabe True nur bei ausdrücklichem Ja des Owners — sonst immer False.
+    merken (#104-B): Befehlswort, das eine »immer«-Antwort dauerhaft erlaubt."""
     m = _matrix()
     if not m:
         log("Permission-Broker: Matrix nicht konfiguriert → abgelehnt (fail-closed)")
         return False
     hs, tok, raum, owner = m
     raum_q = urllib.parse.quote(raum)
+    extra = (f" — oder **immer**, dann merke ich mir »{merken}« dauerhaft als harmlos"
+             if merken else "")
     frage = ("🔐 **Kurze Rückfrage — ich brauche dein Okay.**\n"
              f"Ich möchte {beschreibung}.\n\n"
-             "👉 Antworte **ja**, wenn ich das machen soll — oder **nein**, wenn nicht.\n"
+             f"👉 Antworte **ja**, wenn ich das machen soll — oder **nein**, wenn nicht{extra}.\n"
              f"(Ohne Antwort mache ich es nicht. Ich warte {int(wait / 60)} Minuten.)")
     try:
         gesendet = _api(hs, tok, f"/_matrix/client/v3/rooms/{raum_q}/send/m.room.message/"
@@ -278,7 +389,22 @@ def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None):
                     if key in ("❌", "👎", "🛑"):
                         return _entscheidung(False, fp, log)
             elif e.get("type") == "m.room.message":
-                a = _antwort_aus_text(e.get("content", {}).get("body"))
+                body = e.get("content", {}).get("body")
+                if merken and " ".join(str(body or "").lower().split()) in ("immer", "ja immer", "immer ja"):
+                    mark_reply_used(e.get("event_id"))
+                    _merke_erlaubt(merken)
+                    log(f"Permission-Broker: »{merken}« dauerhaft erlaubt (immer)")
+                    try:
+                        _api(hs, tok, f"/_matrix/client/v3/rooms/{raum_q}/send/"
+                             f"m.room.message/{time.time_ns()}", method="PUT",
+                             body={"msgtype": "m.text",
+                                   "body": f"✅ Gemerkt — »{merken}« führe ich künftig ohne "
+                                           "Rückfrage aus. (Ändern: broker_allow.txt "
+                                           "im Operator-Ordner.)"})
+                    except Exception:
+                        pass
+                    return _entscheidung(True, fp, log)
+                a = _antwort_aus_text(body)
                 if a is not None:
                     # Diese Nachricht war die Antwort auf die Rückfrage — der Listener
                     # soll sie nicht zusätzlich als normalen Chat beantworten.

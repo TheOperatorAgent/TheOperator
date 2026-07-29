@@ -98,23 +98,86 @@ def check():
             "highlights": info.get("highlights", []), "date": info.get("date", "")}
 
 
-def apply(restart=True, log=print):
-    """Manifest holen, alle Dateien aktualisieren (Backup), VERSION schreiben, Neustart.
-    Rückgabe: (ok, meldung)."""
+PUBKEY_FILE = os.path.join(BOT_DIR, "update_pubkey.txt")
+
+
+def _venv_python():
+    for p in (os.path.join(BOT_DIR, "dashboard", "venv", "bin", "python3"),
+              os.path.join(BOT_DIR, "dashboard", "venv", "Scripts", "python.exe")):
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def _signatur_pruefen(manifest_bytes, log):
+    """#103: Signatur des Manifests gegen den gepinnten Schlüssel prüfen.
+    Rückgabe (ok, grund). Gepinnter Schlüssel + keine/kaputte Signatur → hart ablehnen.
+    Noch kein Schlüssel gepinnt (Alt-Installation vor 1.10): einmalig durchlassen —
+    dieses Update liefert Schlüssel und Prüfung mit, danach ist die Tür zu (TOFU)."""
+    if not os.path.exists(PUBKEY_FILE):
+        log("Hinweis: noch kein Update-Schlüssel gepinnt — dieses Update pinnt ihn.")
+        return True, ""
     try:
-        manifest = json.loads(_fetch("manifest.json"))
+        sig = _fetch("manifest.sig")
+    except Exception as e:
+        return False, f"Signatur nicht ladbar ({e}) — Update abgelehnt."
+    py = _venv_python()
+    if not py:
+        return False, ("Signaturprüfung braucht die Dashboard-Umgebung (venv fehlt) — "
+                       "Update abgelehnt. 👉 Installer erneut ausführen.")
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        mp, sp = os.path.join(td, "m.json"), os.path.join(td, "m.sig")
+        with open(mp, "wb") as f:
+            f.write(manifest_bytes)
+        with open(sp, "w") as f:
+            f.write(sig.strip() + "\n")
+        r = subprocess.run([py, os.path.join(BOT_DIR, "update_verify.py"),
+                            "verify", PUBKEY_FILE, mp, sp],
+                           capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        return False, "Signatur UNGÜLTIG — Update abgelehnt (Quelle manipuliert?)."
+    return True, ""
+
+
+def apply(restart=True, log=print):
+    """Manifest holen, Signatur + Datei-Hashes prüfen (#103), alle Dateien
+    aktualisieren (Backup), VERSION schreiben, Neustart. Rückgabe: (ok, meldung)."""
+    try:
+        manifest_bytes = _fetch("manifest.json", binary=True)
+        manifest = json.loads(manifest_bytes.decode("utf-8"))
     except Exception as e:
         return False, f"Manifest nicht ladbar: {e}"
+    ok, grund = _signatur_pruefen(manifest_bytes, log)
+    if not ok:
+        return False, grund
+    signiert = os.path.exists(PUBKEY_FILE)
+    # #103: kein Downgrade — eine alte (verwundbare) Version darf nicht als "Update" kommen.
+    ziel = str(manifest.get("version", "0"))
+    if _parse(ziel) < _parse(local_version()) \
+            and os.environ.get("OPERATOR_ALLOW_DOWNGRADE") != "1":
+        return False, (f"Angebotene Version {ziel} ist älter als die installierte "
+                       f"{local_version()} — abgelehnt (Downgrade-Schutz).")
     files = manifest.get("files", [])
     staged = []                       # (zielpfad, neuer_inhalt-bytes)
+    import hashlib
     for entry in files:
         src, dst = entry.get("src"), entry.get("dst")
         if not src or not dst or ".." in dst or dst.startswith("/"):
             return False, f"Ungültiger Manifest-Eintrag: {entry}"
         try:
-            staged.append((os.path.join(BOT_DIR, dst), _fetch(src, binary=True)))
+            inhalt = _fetch(src, binary=True)
         except Exception as e:
             return False, f"Download fehlgeschlagen ({src}): {e}"   # nichts angefasst
+        # Bei signiertem Manifest sichert der Datei-Hash jede einzelne Datei ab.
+        soll = entry.get("sha256", "")
+        if signiert:
+            if not soll:
+                return False, f"Manifest ohne Prüfsumme für {src} — Update abgelehnt."
+            if hashlib.sha256(inhalt).hexdigest() != soll:
+                return False, f"Prüfsumme falsch für {src} — Update abgelehnt."
+        staged.append((os.path.join(BOT_DIR, dst), inhalt))
     # Erst nach vollständigem Download schreiben (atomarer als Datei für Datei)
     for path, content in staged:
         os.makedirs(os.path.dirname(path), exist_ok=True)

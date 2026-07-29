@@ -1611,6 +1611,7 @@ def test_updater_apply_writes_files_and_version(monkeypatch, tmp_path):
     up = _updater()
     monkeypatch.setattr(up, "BOT_DIR", str(tmp_path))
     monkeypatch.setattr(up, "VERSION_FILE", str(tmp_path / "VERSION"))
+    monkeypatch.setattr(up, "PUBKEY_FILE", str(tmp_path / "update_pubkey.txt"))  # #103: kein Pin → Übergang
     fake = {"manifest.json": '{"version":"1.4.0","files":[{"src":"listener.py","dst":"listener.py"},{"src":"VERSION","dst":"VERSION"}]}',
             "listener.py": "print('neu')", "VERSION": "1.4.0"}
     monkeypatch.setattr(up, "_fetch", lambda p, binary=False: fake[p].encode() if binary else fake[p])
@@ -1625,8 +1626,12 @@ def test_updater_apply_writes_files_and_version(monkeypatch, tmp_path):
 def test_updater_apply_rejects_path_traversal(monkeypatch, tmp_path):
     up = _updater()
     monkeypatch.setattr(up, "BOT_DIR", str(tmp_path))
+    monkeypatch.setattr(up, "PUBKEY_FILE", str(tmp_path / "update_pubkey.txt"))
+    monkeypatch.setattr(up, "VERSION_FILE", str(tmp_path / "VERSION"))    # lokal 0.0.0
+    mani = '{"version":"1.0","files":[{"src":"x","dst":"../evil.py"}]}'
     monkeypatch.setattr(up, "_fetch", lambda p, binary=False:
-                        '{"files":[{"src":"x","dst":"../evil.py"}]}' if p == "manifest.json" else "x")
+                        (mani.encode() if binary else mani)
+                        if p == "manifest.json" else (b"x" if binary else "x"))
     ok, msg = up.apply(restart=False)
     assert not ok and "Ungültig" in msg
     assert not (tmp_path.parent / "evil.py").exists()
@@ -2713,3 +2718,178 @@ def test_uninstall_nutzt_keinen_vorhersagbaren_tmp_pfad():
         src = open(pfad).read()
         assert "/tmp/operator-uninstall.sh" not in src
         assert "mktemp" in src
+
+
+# ------------------------------------------------ #104-B Allowlist fail-closed --
+def _broker():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker
+    return permission_broker
+
+
+def test_allowlist_unbekanntes_fragt_bekanntes_laeuft(tmp_path, monkeypatch):
+    """Kernwende von #104-B: fail-closed. Unbekannte Befehle fragen nach,
+    der bekannte Alltag läuft frei (Petra: keine Frage-Flut)."""
+    pb = _broker()
+    monkeypatch.setattr(pb, "ALLOW_FILE", str(tmp_path / "allow.txt"))
+    frei = ["ls -la | grep foo", "git status && git log", "PATH=/x/bin ls",
+            "nohup python3 skript.py", "echo `whoami`", "curl -s https://x | jq .",
+            "find . -name '*.py' | head", "tar -czf a.tgz ordner/"]
+    fragt = ["npx create-react-app x", "ssh server 'uptime'", "brew install wget",
+             "echo $(fremdes_tool --x)", "ls; fremdes_tool"]
+    for cmd in frei:
+        riskant, _ = pb.classify("Bash", {"command": cmd})
+        assert not riskant, f"fälschlich gefragt: {cmd}"
+    for cmd in fragt:
+        riskant, besch = pb.classify("Bash", {"command": cmd})
+        assert riskant, f"fälschlich frei: {cmd}"
+        assert "nicht als harmlos" in besch
+
+
+def test_allowlist_sperrliste_gewinnt_immer(tmp_path, monkeypatch):
+    """Auch ein GELERNTER Befehl bleibt gesperrt, wenn er auf ein Risiko-Muster passt —
+    und Sperrlisten-Treffer sind nie per »immer« lernbar."""
+    pb = _broker()
+    monkeypatch.setattr(pb, "ALLOW_FILE", str(tmp_path / "allow.txt"))
+    (tmp_path / "allow.txt").write_text("rm\nfind\n")
+    riskant, besch = pb.classify("Bash", {"command": "rm -rf /tmp/x"})
+    assert riskant and "löschen" in besch.lower()
+    riskant, _ = pb.classify("Bash", {"command": "find . -delete"})
+    assert riskant
+    assert pb.merkbar("Bash", {"command": "rm -rf /x"}) is None
+    assert pb.merkbar("Bash", {"command": "sudo ls"}) is None
+
+
+def test_allowlist_immer_lernt_dauerhaft(tmp_path, monkeypatch):
+    pb = _broker()
+    monkeypatch.setattr(pb, "ALLOW_FILE", str(tmp_path / "allow.txt"))
+    cmd = {"command": "hugo build --minify"}
+    riskant, _ = pb.classify("Bash", cmd)
+    assert riskant and pb.merkbar("Bash", cmd) == "hugo"
+    pb._merke_erlaubt("hugo")
+    riskant, _ = pb.classify("Bash", cmd)
+    assert not riskant, "gelernter Befehl muss frei sein"
+    pb._merke_erlaubt("hugo")                       # doppelt lernen = eine Zeile
+    assert open(tmp_path / "allow.txt").read().count("hugo") == 1
+    # mehrere unbekannte Worte → nicht pauschal lernbar (welches wäre gemeint?)
+    assert pb.merkbar("Bash", {"command": "toolA | toolB"}) is None
+
+
+def test_allowlist_wrapper_und_pfade_verstecken_nichts(tmp_path, monkeypatch):
+    pb = _broker()
+    monkeypatch.setattr(pb, "ALLOW_FILE", str(tmp_path / "allow.txt"))
+    for cmd in ["/opt/schatten/evil --run", "env FOO=1 evil", "timeout 5 evil",
+                "nice -n 10 evil"]:
+        riskant, _ = pb.classify("Bash", {"command": cmd})
+        assert riskant, f"Wrapper/Pfad hat versteckt: {cmd}"
+
+
+# ------------------------------------------------ #103 Signierte Updates --
+import json as _json
+import shutil as _sh
+import subprocess as _sp
+
+
+def test_update_verify_roundtrip_und_manipulation(tmp_path):
+    """ed25519-Kern: signieren → prüfen ok; ein verändertes Byte → UNGÜLTIG."""
+    uv = os.path.expanduser("~/.claude/matrix-bot/update_verify.py")
+    keys = _sp.run([sys.executable, uv, "keygen"], capture_output=True, text=True,
+                   check=True).stdout.split()
+    priv, pub = keys[0], keys[1]
+    m = tmp_path / "manifest.json"; m.write_text('{"version":"9.9.9","files":[]}')
+    s = tmp_path / "manifest.sig"; p = tmp_path / "pub.txt"; p.write_text(pub + "\n")
+    _sp.run([sys.executable, uv, "sign", str(m), str(s)], check=True,
+            env={**os.environ, "OPERATOR_SIGN_KEY": priv}, capture_output=True)
+    ok = _sp.run([sys.executable, uv, "verify", str(p), str(m), str(s)],
+                 capture_output=True)
+    assert ok.returncode == 0
+    m.write_text('{"version":"9.9.8","files":[]}')          # 1 Byte anders
+    bad = _sp.run([sys.executable, uv, "verify", str(p), str(m), str(s)],
+                  capture_output=True)
+    assert bad.returncode != 0
+
+
+def _signiertes_repo(tmp_path, inhalt=b"print('hallo')\n", version="9.9.9"):
+    """Wegwerf-Release: Datei + Manifest mit sha256 + echte Signatur. Gibt
+    (repo_dir, botdir, pubkey_hex) zurück."""
+    import hashlib as _h
+    uv = os.path.expanduser("~/.claude/matrix-bot/update_verify.py")
+    keys = _sp.run([sys.executable, uv, "keygen"], capture_output=True, text=True,
+                   check=True).stdout.split()
+    priv, pub = keys[0], keys[1]
+    repo = tmp_path / "repo"; repo.mkdir()
+    (repo / "modul.py").write_bytes(inhalt)
+    man = {"version": version, "files": [
+        {"src": "modul.py", "dst": "modul.py",
+         "sha256": _h.sha256(inhalt).hexdigest()}]}
+    (repo / "manifest.json").write_text(_json.dumps(man))
+    _sp.run([sys.executable, uv, "sign", str(repo / "manifest.json"),
+             str(repo / "manifest.sig")], check=True,
+            env={**os.environ, "OPERATOR_SIGN_KEY": priv}, capture_output=True)
+    bot = tmp_path / "bot"; bot.mkdir()
+    (bot / "VERSION").write_text("1.0.0")
+    _sh.copy(uv, bot / "update_verify.py")
+    return repo, bot, pub
+
+
+def _updater_auf(monkeypatch, repo, bot):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import importlib, updater
+    importlib.reload(updater)
+    monkeypatch.setattr(updater, "BOT_DIR", str(bot))
+    monkeypatch.setattr(updater, "PUBKEY_FILE", str(bot / "update_pubkey.txt"))
+    monkeypatch.setattr(updater, "VERSION_FILE", str(bot / "VERSION"))
+    monkeypatch.setattr(updater, "REPO_RAW", "file://" + str(repo))
+    monkeypatch.setattr(updater, "_venv_python", lambda: sys.executable)
+    return updater
+
+
+def test_updater_e2e_signiert_ok(tmp_path, monkeypatch):
+    repo, bot, pub = _signiertes_repo(tmp_path)
+    (bot / "update_pubkey.txt").write_text(pub + "\n")
+    up = _updater_auf(monkeypatch, repo, bot)
+    ok, msg = up.apply(restart=False, log=lambda *_: None)
+    assert ok, msg
+    assert (bot / "modul.py").read_bytes() == b"print('hallo')\n"
+
+
+def test_updater_e2e_manipulierte_datei_abgelehnt(tmp_path, monkeypatch):
+    """Signatur stimmt, aber eine ausgelieferte Datei wurde ausgetauscht → Prüfsumme
+    schlägt an, NICHTS wird geschrieben."""
+    repo, bot, pub = _signiertes_repo(tmp_path)
+    (repo / "modul.py").write_bytes(b"import os; os.system('boese')\n")
+    (bot / "update_pubkey.txt").write_text(pub + "\n")
+    up = _updater_auf(monkeypatch, repo, bot)
+    ok, msg = up.apply(restart=False, log=lambda *_: None)
+    assert not ok and "Prüfsumme" in msg
+    assert not (bot / "modul.py").exists() or \
+        (bot / "modul.py").read_bytes() != b"import os; os.system('boese')\n"
+
+
+def test_updater_e2e_falsche_signatur_abgelehnt(tmp_path, monkeypatch):
+    repo, bot, _ = _signiertes_repo(tmp_path)
+    uv = os.path.expanduser("~/.claude/matrix-bot/update_verify.py")
+    fremd = _sp.run([sys.executable, uv, "keygen"], capture_output=True, text=True,
+                    check=True).stdout.split()[1]          # fremder öffentlicher Schlüssel
+    (bot / "update_pubkey.txt").write_text(fremd + "\n")
+    up = _updater_auf(monkeypatch, repo, bot)
+    ok, msg = up.apply(restart=False, log=lambda *_: None)
+    assert not ok and "UNGÜLTIG" in msg
+    assert not (bot / "modul.py").exists()
+
+
+def test_updater_e2e_downgrade_abgelehnt(tmp_path, monkeypatch):
+    repo, bot, pub = _signiertes_repo(tmp_path, version="0.5.0")
+    (bot / "update_pubkey.txt").write_text(pub + "\n")
+    up = _updater_auf(monkeypatch, repo, bot)
+    ok, msg = up.apply(restart=False, log=lambda *_: None)
+    assert not ok and "Downgrade" in msg
+
+
+def test_updater_altbestand_pinnt_beim_ersten_update(tmp_path, monkeypatch):
+    """Alt-Installation (kein Schlüssel gepinnt): das eine Übergangs-Update läuft
+    durch und liefert den Schlüssel mit — danach greift die Prüfung hart."""
+    repo, bot, pub = _signiertes_repo(tmp_path)
+    up = _updater_auf(monkeypatch, repo, bot)     # KEIN pubkey im Bot-Ordner
+    ok, msg = up.apply(restart=False, log=lambda *_: None)
+    assert ok, msg
