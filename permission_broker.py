@@ -182,8 +182,15 @@ def _schreibt_in_botdir(cmd):
     Konservativ: bei jedem Verdacht True (→ Rückfrage). Reines Lesen bleibt frei."""
     try:
         bd = os.path.realpath(BOT_DIR)
+        ws = os.path.realpath(os.path.join(BOT_DIR, "workspace"))
     except OSError:
         return True
+
+    def _im_botdir(pfad):
+        """Unter dem Bot-Ordner, aber NICHT im Arbeitsordner. Der liegt darunter
+        und ist der normale Arbeitsplatz — dort zu schreiben darf nie nerven."""
+        return (pfad == bd or pfad.startswith(bd + os.sep)) \
+            and not (pfad == ws or pfad.startswith(ws + os.sep))
     # Alle Formen, in denen der Bot-Ordner adressiert sein kann.
     marker = [bd, "~/.claude/matrix-bot", "$HOME/.claude/matrix-bot",
               "${HOME}/.claude/matrix-bot", ".claude/matrix-bot"]
@@ -191,18 +198,23 @@ def _schreibt_in_botdir(cmd):
         return False
     # Redirect irgendwohin in den Bot-Ordner? (> … , >> …)
     for ziel in re.findall(r">>?\s*([^\s;|&>]+)", cmd):
-        z = os.path.realpath(os.path.expanduser(os.path.expandvars(ziel)))
-        if z == bd or z.startswith(bd + os.sep):
+        if _im_botdir(os.path.realpath(os.path.expanduser(os.path.expandvars(ziel)))):
             return True
-    # Schreibendes Kommando mit Bot-Ordner als Argument?
+    # Schreibendes Kommando, dessen Ziel im Bot-Ordner (außerhalb workspace) liegt?
     for seg in _segmente(cmd):
         wort = _befehlswort(seg)
-        if wort in _SCHREIB_CMD and any(m in seg for m in marker):
-            # cat/sed/python nur, wenn sie wirklich schreiben (Redirect, -i, >file)
-            if wort in ("cat", "python", "python3", "perl", "ruby", "awk") \
-                    and ">" not in seg and "-i" not in seg:
+        if wort not in _SCHREIB_CMD:
+            continue
+        # cat/sed/python nur, wenn sie wirklich schreiben (Redirect, -i)
+        if wort in ("cat", "python", "python3", "perl", "ruby", "awk") \
+                and ">" not in seg and "-i" not in seg:
+            continue
+        for w in seg.split():
+            if not any(m in w for m in marker):
                 continue
-            return True
+            p = os.path.realpath(os.path.expanduser(os.path.expandvars(w.strip("'\"" ))))
+            if _im_botdir(p) or (w.rstrip("/").endswith("matrix-bot")):
+                return True
     return False
 
 

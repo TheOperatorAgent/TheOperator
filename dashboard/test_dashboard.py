@@ -2922,3 +2922,111 @@ def test_broker_schuetzt_eigenen_ordner_ueber_bash(tmp_path, monkeypatch):
                 "tail -20 ~/.claude/matrix-bot/listener.log"]:
         riskant, _ = pb.classify("Bash", {"command": cmd})
         assert not riskant, f"Lesen wurde fälschlich gegated: {cmd}"
+
+
+# ------------------------------------------------ #104-A OS-Sandbox --
+def _sandbox():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import sandbox
+    return sandbox
+
+
+def test_sandbox_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/sandbox.py")).read()
+    imports = set()
+    for n in ast.walk(ast.parse(src)):
+        if isinstance(n, ast.Import):
+            imports.update(a.name.split(".")[0] for a in n.names)
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            imports.add(n.module.split(".")[0])
+    assert imports <= {"os", "shutil", "subprocess", "sys", "tempfile",
+                       "platform_compat"}, imports
+
+
+def test_sandbox_selbsttest_auf_diesem_system():
+    """Der eigentliche Beweis: Schreiben im Arbeitsordner klappt, daneben nicht.
+    Wo keine Sandbox verfügbar ist (Windows, Linux ohne bubblewrap), MUSS das
+    ehrlich gemeldet werden statt Schutz vorzutäuschen."""
+    sb = _sandbox()
+    verfuegbar, grund = sb.verfuegbar()
+    ok, meldung = sb.selbsttest()
+    if verfuegbar:
+        assert ok, f"Sandbox verfügbar, greift aber nicht: {meldung}"
+        assert "Arbeitsordner" in meldung
+    else:
+        assert not ok and len(grund) > 20, "unehrliche/leere Begründung"
+
+
+def test_sandbox_blockiert_schreiben_in_botdir(tmp_path):
+    """Der Angriff aus #105 — diesmal nicht per Mustererkennung abgefangen,
+    sondern vom Betriebssystem verweigert. Auch für Enkelprozesse."""
+    sb = _sandbox()
+    if not sb.verfuegbar()[0]:
+        import pytest
+        pytest.skip("keine Sandbox auf diesem System")
+    import subprocess as sp
+    ziel = os.path.join(sb.BOT_DIR, ".sandbox-angriff-test")
+    skript = tmp_path / "angriff.sh"
+    skript.write_text(
+        "#!/bin/sh\n"                      # Enkelprozess: sh → python → schreiben
+        f"python3 -c \"open('{ziel}','w').write('boese')\" 2>/dev/null "
+        "&& echo DURCH || echo BLOCKIERT\n")
+    r = sp.run(sb.wrap(["/bin/sh", str(skript)]), capture_output=True, text=True, timeout=60)
+    try:
+        assert "BLOCKIERT" in r.stdout, f"Angriff kam durch: {r.stdout}"
+        assert not os.path.exists(ziel)
+    finally:
+        if os.path.exists(ziel):
+            os.remove(ziel)
+
+
+def test_sandbox_erlaubt_normales_arbeiten(tmp_path):
+    """Gegenprobe: Die Sandbox darf den Alltag nicht kaputtmachen —
+    Arbeitsordner beschreibbar, Lesen erlaubt."""
+    sb = _sandbox()
+    if not sb.verfuegbar()[0]:
+        import pytest
+        pytest.skip("keine Sandbox auf diesem System")
+    import subprocess as sp
+    ws = os.path.join(sb.BOT_DIR, "workspace")
+    os.makedirs(ws, exist_ok=True)
+    probe = os.path.join(ws, ".sandbox-alltag")
+    r = sp.run(sb.wrap(["/bin/sh", "-c",
+                        f"echo hallo > '{probe}' && cat '{probe}' && cat /etc/hosts | head -1"]),
+               capture_output=True, text=True, timeout=60)
+    try:
+        assert r.returncode == 0, r.stderr[:200]
+        assert "hallo" in r.stdout
+    finally:
+        if os.path.exists(probe):
+            os.remove(probe)
+
+
+def test_listener_und_runner_nutzen_die_sandbox():
+    """Die Sandbox muss auch wirklich verdrahtet sein — sonst existiert sie nur
+    als Modul. Claude-Lauf UND Fremd-Modell-Befehle laufen darin."""
+    li = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    teil = li.split("def _claude_run")[1][:600]
+    assert "sandbox.wrap(cmd)" in teil, "Claude-Lauf läuft nicht in der Sandbox"
+    lr = open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py")).read()
+    rc = lr.split('if name == "run_command"')[1][:900]
+    assert "_sb.wrap(argv)" in rc, "Fremd-Modell-Befehle laufen nicht in der Sandbox"
+
+
+def test_selbstschutz_laesst_arbeitsordner_frei(tmp_path, monkeypatch):
+    """Regression aus dem E2E-Lauf: Der Arbeitsordner liegt UNTER dem Bot-Ordner.
+    Beim ersten Wurf sperrte der Selbstschutz ihn mit — der Operator hätte bei
+    jedem normalen Schreibvorgang gefragt (Petra-Killer). Sensible Dateien bleiben
+    gesperrt, workspace/ bleibt frei."""
+    pb = _broker()
+    gesperrt = ["echo x > ~/.claude/matrix-bot/repo_raw.txt",
+                "cp /tmp/e.py ~/.claude/matrix-bot/permission_broker.py",
+                "cat /tmp/e > ~/.claude/matrix-bot/update_verify.py"]
+    frei = ["echo OK > ~/.claude/matrix-bot/workspace/bericht.txt",
+            "cp bericht.md ~/.claude/matrix-bot/workspace/out/",
+            "echo OK > workspace/datei.txt"]
+    for cmd in gesperrt:
+        assert pb.classify("Bash", {"command": cmd})[0], cmd
+    for cmd in frei:
+        assert not pb.classify("Bash", {"command": cmd})[0], f"Arbeitsordner gegated: {cmd}"

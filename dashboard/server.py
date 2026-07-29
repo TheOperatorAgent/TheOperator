@@ -271,6 +271,18 @@ def api_update_apply():
             "neu. Bitte die Seite danach neu laden."}
 
 
+def _sandbox_status():
+    """#104-A: Läuft eine echte OS-Sandbox unter den Agenten? Ehrlich melden —
+    lieber »nicht verfügbar« anzeigen als Schutz vortäuschen."""
+    try:
+        sys.path.insert(0, BOT_DIR)
+        import sandbox
+        an, grund = sandbox.verfuegbar()
+        return {"an": an, "grund": grund}
+    except Exception as e:
+        return {"an": False, "grund": f"Sandbox-Modul nicht ladbar ({e})"}
+
+
 @app.get("/api/status")
 def api_status():
     listener = servicemgr.status("listener")
@@ -318,6 +330,7 @@ def api_status():
         "claude_login": claude_login,
         "fair_use": fair_use,
         "aufbewahrung": aufbewahrung,
+        "sandbox": _sandbox_status(),
         "version": _app_version(),
         "author": PRODUCT_AUTHOR,
         "owner": c.get("owner_id"),

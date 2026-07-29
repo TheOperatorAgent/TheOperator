@@ -562,7 +562,7 @@ phase5_files() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
   local F A DEST
   for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
-           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py matrix_room.py dock_fenster.py update_verify.py update_pubkey.txt claude_health.py throttle.py retention.py permission_broker.py claude_tool_hook.py net_guard.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
+           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py matrix_room.py dock_fenster.py update_verify.py update_pubkey.txt sandbox.py claude_health.py throttle.py retention.py permission_broker.py claude_tool_hook.py net_guard.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
     if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
     else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
     ok "$F installiert"
@@ -760,6 +760,22 @@ PY
       || warn "Pseudonym-Daemon-Start fehlgeschlagen — Listener nutzt den Fallback"
     # FIDO-Sicherheitsschlüssel (Linux): EINE Frage statt Copy-Paste — wir richten die
     # udev-Regel selbst ein (sudo fragt einmal nach dem Nutzer-Passwort)
+    # #104-A: Schutzraum unter jedem Agenten-Lauf. macOS bringt ihn mit; unter Linux
+    # braucht es bubblewrap. EINE Frage statt Copy-Paste (EINFACHHEIT.md).
+    if [ "$OS" = Linux ] && ! command -v bwrap >/dev/null && command -v sudo >/dev/null; then
+      local SB_SETUP
+      ask_yesno SB_SETUP "Schutzraum einrichten? (verhindert, dass dein Assistent versehentlich ausserhalb seines Arbeitsordners schreibt)" "ja"
+      if [ "$SB_SETUP" = "ja" ]; then
+        if (command -v apt-get >/dev/null && sudo apt-get install -y bubblewrap >/dev/null 2>&1) \
+           || (command -v dnf >/dev/null && sudo dnf install -y bubblewrap >/dev/null 2>&1) \
+           || (command -v pacman >/dev/null && sudo pacman -S --noconfirm bubblewrap >/dev/null 2>&1); then
+          ok "Schutzraum eingerichtet (bubblewrap)"
+        else
+          warn "bubblewrap konnte nicht installiert werden — der Operator fragt trotzdem"
+          warn "vor riskanten Befehlen nach. Nachruesten: sudo apt install bubblewrap"
+        fi
+      fi
+    fi
     if [ "$OS" = Linux ] && [ ! -f /etc/udev/rules.d/70-operator-fido.rules ] && command -v sudo >/dev/null; then
       local FIDO_SETUP
       ask_yesno FIDO_SETUP "Möchtest du einen Sicherheitsschlüssel (z. B. YubiKey) für den Passwort-Tresor nutzen?" "nein"

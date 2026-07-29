@@ -93,7 +93,16 @@ def _exec_tool(name: str, args: dict, workdir: str, actions: list) -> str:
                 actions.append("BLOCKIERT: " + cmd[:120])
                 return "FEHLER: Dieser Befehl ist aus Sicherheitsgründen gesperrt."
             actions.append("$ " + cmd[:200])
-            r = subprocess.run(["/bin/sh", "-c", cmd], cwd=workdir, capture_output=True,
+            # #104-A: auch Fremd-Modell-Befehle laufen in der OS-Sandbox — der
+            # Pfad-Käfig oben ist Absicht des Codes, die Sandbox ist Durchsetzung
+            # des Betriebssystems (greift auch für Kind- und Enkelprozesse).
+            argv = ["/bin/sh", "-c", cmd]
+            try:
+                import sandbox as _sb
+                argv = _sb.wrap(argv)
+            except Exception:
+                pass
+            r = subprocess.run(argv, cwd=workdir, capture_output=True,
                                text=True, timeout=CMD_TIMEOUT)
             out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
             return f"exit={r.returncode}\n{out[:8000]}"

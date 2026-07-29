@@ -1,10 +1,10 @@
 {
- "version": "1.10.1",
+ "version": "1.11.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "94528781ea8da484c004582f0345ce86df1a64ff128989b9ef346b2b7e70b372"
+   "sha256": "7b42db271f1d76c6e49e58928a5a4df0afba08549a2f5f2931c4b2c2080649aa"
   },
   {
    "src": "matrix_room.py",
@@ -109,7 +109,12 @@
   {
    "src": "permission_broker.py",
    "dst": "permission_broker.py",
-   "sha256": "9cecde9da88a3b7e20a8ce0169a9bec28279e39ec84a020c29da7457b6053949"
+   "sha256": "ee1cde2f8e067dde55106df89b011f25ca588d5fe00f959505c2ff771be031e9"
+  },
+  {
+   "src": "sandbox.py",
+   "dst": "sandbox.py",
+   "sha256": "0e987859c10c11d2d3d39e8eca3b5c4374811365760e58fedccd2c619a504585"
   },
   {
    "src": "persona.py",
@@ -199,7 +204,7 @@
   {
    "src": "llm_runner.py",
    "dst": "llm_runner.py",
-   "sha256": "edf56b66da99c7462931ed49f516aa566941af210badf2f1ccd2eb0430a7272a"
+   "sha256": "be632b90a3cd6e99918ca2b55b5384705a62826acf4483b446c248f9d4059bc8"
   },
   {
    "src": "mail_watch.py",
@@ -209,7 +214,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "d1cb658cdd5bf88f3ea4a75cd96843555f96991a3a0f2dee3c1d481fba4f0793"
+   "sha256": "e8878a2c442ca030e0fc734e7f66cc8a29b58f35fb8228f993f4a12872f3ea84"
   },
   {
    "src": "dashboard/tokens.py",
@@ -244,12 +249,12 @@
   {
    "src": "dashboard/static/index.html",
    "dst": "dashboard/static/index.html",
-   "sha256": "d9055d6ca0d46b03d7d8ef26317ab464f1ecb389dd423cd76f05ce5c721750fe"
+   "sha256": "2826a5ebd600e2e426fdcb596064cbc9d0dd1dfb171958d5c2bf07a42d616edc"
   },
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "41fe81147b331ce184b72d67edc1c2cb5192906c304b9b8546042615dcacda7f"
+   "sha256": "989dccd8b8d647f90818197be9af9d0bf60da5ddc554c74d70df2c8398896dff"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -269,7 +274,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "6b56de731bba7d2a340b35e1f8639e880663c2192541e4ab81895bf0e1f11798"
+   "sha256": "f1deeb62e209be1a1fa35478861037ecdc5d1ad1d6f8fd692680f7f5cb1a4991"
   }
  ]
 }

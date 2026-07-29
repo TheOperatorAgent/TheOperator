@@ -1,7 +1,8 @@
 {
-  "version": "1.10.1",
+  "version": "1.11.0",
   "date": "2026-07-29",
   "highlights": [
-    "🔒 Der Operator schützt jetzt auch sich selbst: Jeder Versuch, in seinen eigenen Programmordner zu schreiben, braucht deine Zustimmung — egal auf welchem Weg. Dort liegen seine Sicherheitseinstellungen; wer sie ändern könnte, könnte alle anderen Schutzmaßnahmen aushebeln. Lesen bleibt frei, und diese eine Rückfrage lässt sich bewusst nicht dauerhaft abschalten."
+    "🧱 Schutzraum: Dein Operator arbeitet ab jetzt in einem abgeschirmten Bereich. Er darf nur in seinem Arbeitsordner Dateien anlegen und ändern — alles andere auf deinem Rechner ist für ihn schreibgeschützt, und zwar vom Betriebssystem erzwungen statt nur per Regel. Das gilt auch für Programme, die er selbst startet. Lesen und Internet funktionieren normal weiter.",
+    "👀 Die Übersicht im Dashboard zeigt dir ehrlich, ob der Schutzraum auf deinem Rechner aktiv ist — und was zu tun ist, falls nicht (unter Linux genügt bubblewrap, unter Windows gibt es kein passendes Bordmittel)."
   ]
 }

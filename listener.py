@@ -30,6 +30,10 @@ try:
 except Exception:
     providers = None
 try:
+    import sandbox                # noqa: E402  (#104-A OS-Sandbox unter jedem Agenten-Lauf)
+except Exception:
+    sandbox = None
+try:
     import verify_loop            # noqa: E402  (stdlib; A1 Verifikations-Schleife #46)
 except Exception:
     verify_loop = None
@@ -715,8 +719,15 @@ class BotSession(threading.Thread):
             start = time.time()
 
             def _claude_run(env):
+                # #104-A: Der GESAMTE Claude-Lauf läuft in der OS-Sandbox — damit gilt
+                # sie automatisch für jeden Befehl, den der Agent startet, und für
+                # dessen Kindprozesse. Das ist die Ebene UNTER der Mustererkennung:
+                # Sie entscheidet nicht, was ein Befehl bedeutet, sondern setzt durch,
+                # was er darf. Ohne verfügbare Sandbox läuft alles wie bisher (der
+                # Broker bleibt), und das Dashboard weist das ehrlich aus.
+                argv = sandbox.wrap(cmd) if sandbox else cmd
                 with CLAUDE_SLOTS:
-                    rr = subprocess.run(cmd, capture_output=True, text=True,
+                    rr = subprocess.run(argv, capture_output=True, text=True,
                                         timeout=600, cwd=WORKSPACE, env=env)
                 res, ti, to, du = "", 0, 0, int((time.time() - start) * 1000)
                 try:

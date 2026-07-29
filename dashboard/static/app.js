@@ -97,6 +97,7 @@ async function loadStatus() {
   const badge = $("#listener-badge");
   badge.textContent = STATUS.listener_running ? "● Listener läuft" : "● Listener aus";
   badge.className = "badge " + (STATUS.listener_running ? "ok" : "err");
+  renderSandbox();
   $("#overview-tiles").innerHTML = `
     <div class="tile ${STATUS.listener_running ? "ok" : "err"}"><div class="k">${STATUS.listener_running ? "aktiv" : "aus"}</div><div class="l">Listener · <a href="#" onclick="restartListener();return false">neu starten</a></div></div>
     <div class="tile"><div class="k">${STATUS.agents.length}</div><div class="l">Agenten (${Object.keys(STATUS.published).length} veröffentlicht)</div></div>
@@ -1857,3 +1858,32 @@ async function asstExec(name, args) {
     }
   }, 66);
 })();
+
+/* ---------- Schutzraum-Karte (#104-A): ehrlich zeigen, ob die OS-Sandbox greift ---------- */
+function renderSandbox() {
+  const el = document.getElementById("sandbox-card");
+  if (!el || !STATUS) return;
+  const s = STATUS.sandbox || { an: false, grund: "unbekannt" };
+  // Bewusst als Text zusammengebaut, damit der Grund-Text (kommt aus dem System)
+  // nie als Markup interpretiert werden kann.
+  el.textContent = "";
+  const h = document.createElement("h2");
+  h.textContent = s.an ? "🧱 Schutzraum aktiv" : "🧱 Schutzraum nicht verfügbar";
+  const p = document.createElement("p");
+  p.className = "small";
+  p.textContent = s.an
+    ? ("Dein Operator arbeitet in einem abgeschirmten Bereich: Er darf nur in seinem "
+       + "Arbeitsordner Dateien anlegen und ändern. Alles andere auf deinem Rechner — "
+       + "auch seine eigenen Sicherheitseinstellungen — ist für ihn schreibgeschützt, "
+       + "und zwar vom Betriebssystem erzwungen, nicht nur per Regel. Lesen und "
+       + "Internet bleiben normal möglich.")
+    : ("Auf diesem Rechner steht kein Schutzraum zur Verfügung. Der Operator fragt "
+       + "weiterhin bei riskanten Befehlen nach — aber ohne die zusätzliche Absicherung "
+       + "durch das Betriebssystem.");
+  const g = document.createElement("p");
+  g.className = "small mono";
+  g.textContent = s.grund || "";
+  el.appendChild(h); el.appendChild(p); el.appendChild(g);
+  if (!s.an) el.style.borderLeft = "3px solid var(--amber)";
+  else el.style.borderLeft = "3px solid var(--green)";
+}
