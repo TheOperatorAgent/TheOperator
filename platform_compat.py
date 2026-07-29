@@ -91,10 +91,21 @@ def venv_python(botdir: str) -> str:
 
 
 # ---------------------------------------------------------------- Browser --
-def open_url(url: str) -> None:
-    """URL im Standardbrowser öffnen — plattformübergreifend (macOS/Linux/Windows)."""
+def open_url(url: str) -> bool:
+    """URL im Standardbrowser öffnen — plattformübergreifend (macOS/Linux/Windows).
+
+    Gibt True zurück, wenn ein Browser gestartet werden konnte. Auf einem Linux-Rechner
+    ohne Bildschirm (z. B. per SSH auf einem Raspberry Pi) gibt es keinen — dann False,
+    damit der Aufrufer etwas Sinnvolles sagen kann statt stumm nichts zu tun.
+    """
     import webbrowser
-    webbrowser.open(url)
+    if not IS_WIN and not IS_MAC and not (os.environ.get("DISPLAY")
+                                          or os.environ.get("WAYLAND_DISPLAY")):
+        return False
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:
+        return False
 
 
 # ---------------------------------------------------------------- Dateirechte --

@@ -18,7 +18,8 @@ import re
 import subprocess
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+BOT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BOT_DIR)
 import net_guard                     # noqa: E402  (#82 Schutz vor Zugriffen ins eigene Netz)
 
 # ---------------------------------------------------------------- Werkzeuge (optional) --
@@ -142,12 +143,41 @@ BROWSER_TOOLS = [
 BROWSER_TOOL_NAMES = {"open_page", "click_link"}
 
 
+def _system_chromium():
+    """Pfad zu einem bereits installierten Chromium/Chrome, den Playwright mitbenutzen kann.
+
+    Playwright liefert nicht für jede Architektur ein eigenes Chromium mit — auf ARM-Linux
+    (z. B. Raspberry Pi) schlägt »playwright install chromium« fehl. Dort ist aber fast
+    immer ein System-Chromium da. Der Installer hinterlegt den Fund in browser_path.txt;
+    findet er nichts, suchen wir hier noch einmal selbst.
+    """
+    import shutil
+    merk = os.path.join(BOT_DIR, "browser_path.txt")
+    try:
+        p = open(merk).read().strip()
+        if p and os.path.exists(p):
+            return p
+    except OSError:
+        pass
+    for name in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable"):
+        p = shutil.which(name)
+        if p:
+            return p
+    return None
+
+
 def _browser_page(state):
     if state.get("page"):
         return state["page"]
     from playwright.sync_api import sync_playwright
     pw = sync_playwright().start()
-    br = pw.chromium.launch(headless=True)
+    try:
+        br = pw.chromium.launch(headless=True)
+    except Exception:
+        eigener = _system_chromium()
+        if not eigener:
+            raise
+        br = pw.chromium.launch(headless=True, executable_path=eigener)
     ctx = br.new_context(accept_downloads=False)
 
     # #82: JEDE Anfrage prüfen — nicht nur die erste. Eine harmlose Seite kann per
@@ -228,8 +258,9 @@ def _browse_tool(name, args, state, actions):
     except Exception as e:
         m = str(e)
         if "Executable doesn't exist" in m or "playwright install" in m:
-            return ("Browser ist noch nicht installiert. Einmalig im Terminal ausführen: "
-                    "»~/.claude/matrix-bot/dashboard/venv/bin/playwright install chromium«.")
+            return ("Mir fehlt noch ein Browser zum Surfen (dein eigener Browser und das "
+                    "Dashboard sind davon nicht betroffen). 👉 Ein Update über das Dashboard "
+                    "holt ihn nach — Reiter »Aktualisierung«.")
         return "Browser-Fehler: " + m[:200]
 
 

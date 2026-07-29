@@ -20,7 +20,7 @@ OS="$(uname)"                       # Darwin (macOS) | Linux
 BOT_DIR="$HOME/.claude/matrix-bot"
 STATE_FILE="$BOT_DIR/.install-state.json"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
-REPO_RAW="${REPO_RAW:-http://192.168.178.53:3000/root/the-operator/raw/branch/main}"
+REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main}"
 
 # curl|bash-Härtung: Bei Pipe-Start ist stdin die Pipe — interaktive Tools würden den
 # restlichen Skript-Text „aufessen". Darum: ohne TTY das Skript vollständig in eine
@@ -562,7 +562,7 @@ phase5_files() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
   local F A DEST
   for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
-           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py claude_health.py throttle.py permission_broker.py claude_tool_hook.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
+           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py claude_health.py throttle.py retention.py permission_broker.py claude_tool_hook.py net_guard.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
     if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
     else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
     ok "$F installiert"
@@ -660,6 +660,31 @@ phase6_start() {
     && ok "Daemon läuft und lauscht" || warn "Daemon gestartet, Log noch leer — später prüfen: tail -f $BOT_DIR/listener.log"
 }
 
+# Browser für den Agenten (nur zum Surfen — NICHT der Browser, mit dem du das Dashboard
+# öffnest; das ist immer dein normaler Standardbrowser). Playwright bringt für manche
+# Architekturen kein eigenes Chromium mit (z. B. ARM-Linux/Raspberry Pi) — dort nutzen wir
+# das System-Chromium und merken uns den Pfad in browser_path.txt.
+install_agent_browser() {
+  if "$DASH_DIR/venv/bin/playwright" install chromium >/dev/null 2>&1; then
+    ok "Browser für den Agenten eingerichtet"
+    return 0
+  fi
+  local sysb=""
+  for c in chromium chromium-browser google-chrome google-chrome-stable; do
+    command -v "$c" >/dev/null && { sysb=$(command -v "$c"); break; }
+  done
+  if [ -n "$sysb" ]; then
+    printf '%s' "$sysb" > "$BOT_DIR/browser_path.txt"
+    ok "Browser für den Agenten: bereits vorhandenes Chromium wird mitbenutzt ($sysb)"
+    return 0
+  fi
+  warn "Kein Browser zum Surfen gefunden — der Agent kann vorerst keine Webseiten öffnen."
+  if [ "$OS" = Linux ]; then
+    warn "Chromium nachinstallieren (empfohlen):  sudo apt install chromium"
+  fi
+  warn "Alles andere — Chat, Dashboard, Aufgaben — funktioniert davon unabhängig."
+}
+
 phase8_dashboard() {
   bold "Phase 8 — Web-Dashboard"
   [ "$DASH_OPTIN" = "ja" ] || { warn "Dashboard übersprungen (in Phase 3 abgewählt)"; return 0; }
@@ -698,6 +723,7 @@ phase8_dashboard() {
       "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" || DASH_OK=0
     "$DASH_DIR/venv/bin/pip" install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" \
       || warn "Deutsches Sprachmodell konnte nicht geladen werden — Pseudonymisierung meldet sich beim ersten Einsatz"
+    install_agent_browser
     "$VENV_PY" "$BOT_DIR/migrate_sessions.py" 2>/dev/null || true
   fi
   if [ "$DASH_OK" = "1" ]; then

@@ -1,7 +1,8 @@
 {
-  "version": "1.8.6",
+  "version": "1.8.7",
   "date": "2026-07-29",
   "highlights": [
-    "🔐 Arbeitsordner privat: Der Ordner, in dem Agenten ihre Ergebnisse ablegen, war für andere Konten auf dem Rechner lesbar. Er wird jetzt bei jedem Start automatisch abgesichert."
+    "🌐 Browser zum Surfen wird jetzt beim Einrichten gleich mitinstalliert — und auf Geräten, für die es keinen fertigen gibt (z. B. Raspberry Pi), nutzt der Operator ein bereits vorhandenes Chromium.",
+    "🖥️ Dashboard per SSH: Wer auf einem Rechner ohne Bildschirm arbeitet, bekommt jetzt eine verständliche Anleitung statt eines stumm fehlschlagenden Browser-Starts."
   ]
 }

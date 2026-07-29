@@ -11,7 +11,7 @@ $ErrorActionPreference = "Stop"
 $BotDir  = Join-Path $HOME ".claude\matrix-bot"
 $DashDir = Join-Path $BotDir "dashboard"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
-$RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "http://192.168.178.53:3000/root/the-operator/raw/branch/main" }
+$RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
 
 function Bold($m) { Write-Host $m -ForegroundColor Cyan }
@@ -263,7 +263,7 @@ else {
 Bold "Phase 5/7 - Dateien einrichten"
 New-Item -ItemType Directory -Force -Path $BotDir, "$BotDir\workspace\.claude\agents", "$BotDir\workspace\.claude\skills", "$BotDir\connections", "$BotDir\secrets" | Out-Null
 $core = @("listener.py","send.py","memory.py","skills.py","sessions.py","cron_runner.py","redact.py","reid.py",
-          "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py", "claude_health.py", "throttle.py", "permission_broker.py", "claude_tool_hook.py","persona.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py","updater.py","audit_log.py")
+          "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py", "claude_health.py", "throttle.py", "retention.py", "permission_broker.py", "claude_tool_hook.py", "net_guard.py","persona.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py","updater.py","audit_log.py")
 foreach ($f in $core) { Fetch-File $f (Join-Path $BotDir $f); Ok "$f" }
 try { Fetch-File "VERSION" (Join-Path $BotDir "VERSION") } catch {}   # Self-Update #64
 # Update-Quelle hinterlegen: Updater zieht aus derselben Quelle wie die Installation
@@ -310,6 +310,31 @@ if ($dashOptin -eq "ja") {
         "requests==2.32.*" "mcp==1.*" "starlette<0.49" "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker"
     try { & $pip install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
     catch { Warn "Deutsches Sprachmodell nicht geladen - Pseudonymisierung meldet sich beim ersten Einsatz" }
+    # Browser fuer den Agenten (nur zum Surfen - das Dashboard oeffnest du weiter mit deinem
+    # normalen Standardbrowser). Schlaegt der Download fehl, nutzen wir ein vorhandenes
+    # Chrome/Chromium/Edge und merken uns den Pfad in browser_path.txt.
+    $pwexe = Join-Path $DashDir "venv\Scripts\playwright.exe"
+    $browserOk = $false
+    if (Test-Path $pwexe) {
+        & $pwexe install chromium 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { Ok "Browser fuer den Agenten eingerichtet"; $browserOk = $true }
+    }
+    if (-not $browserOk) {
+        $cands = @(
+            "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe",
+            "$env:ProgramFiles\Chromium\Application\chrome.exe",
+            "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe")
+        $found = $cands | Where-Object { Test-Path $_ } | Select-Object -First 1
+        if ($found) {
+            Set-Content -Path (Join-Path $BotDir "browser_path.txt") -Value $found -NoNewline
+            Ok "Browser fuer den Agenten: vorhandener Browser wird mitbenutzt ($found)"
+        } else {
+            Warn "Kein Browser zum Surfen gefunden - der Agent kann vorerst keine Webseiten oeffnen."
+            Warn "Chrome oder Chromium installieren, danach dieses Skript erneut ausfuehren."
+            Warn "Alles andere - Chat, Dashboard, Aufgaben - funktioniert davon unabhaengig."
+        }
+    }
     foreach ($f in @("server.py","tokens.py","agents_store.py","m365_setup.py","google_auth.py","open.py","mcp_catalog.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
     foreach ($f in @("index.html","app.js","style.css")) { Fetch-File "dashboard\static\$f" (Join-Path $DashDir "static\$f") }
     foreach ($f in @("m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
