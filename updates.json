@@ -1,8 +1,7 @@
 {
-  "version": "1.12.0",
+  "version": "1.12.1",
   "date": "2026-07-29",
   "highlights": [
-    "📂 Dein Arbeitsordner heißt jetzt »Operator« und liegt direkt in deinem Benutzerordner — vorher lag er versteckt in einem Systemordner, in dem dein Assistent gar keine Dateien anlegen durfte. Bestehende Installationen ziehen beim nächsten Start automatisch um, es geht nichts verloren.",
-    "✍️ Damit klappt endlich, was vorher still scheiterte: Dein Assistent kann Berichte und Ergebnisse per Befehl ablegen — und du findest sie ohne Umweg im Finder bzw. Explorer."
+    "✍️ Der Datenschutz-Filter hält sich jetzt an wörtliche Inhalte: Großgeschriebene Alltagswörter wie FERTIG, OK oder ERLEDIGT wurden bisher für Firmennamen gehalten und ersetzt — aus »Schreib FERTIG in die Datei« wurde ein erfundener Firmenname. Echte Firmen und Orte werden selbstverständlich weiterhin geschützt."
   ]
 }

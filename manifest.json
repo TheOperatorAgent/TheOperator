@@ -1,5 +1,5 @@
 {
- "version": "1.12.0",
+ "version": "1.12.1",
  "files": [
   {
    "src": "listener.py",
@@ -189,7 +189,7 @@
   {
    "src": "pseudonym.py",
    "dst": "pseudonym.py",
-   "sha256": "96a0569b6916eff17063ba36f67a51378aa71169663981c64103712029931611"
+   "sha256": "7750ef9f1b1a0606d54a1c392d024ec31611fb9b2f13af2e0a24ddb57cfb5d0d"
   },
   {
    "src": "pseudonym_daemon.py",
@@ -274,7 +274,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "331ce1e5c33189e88a2ba5ae9a0e344128968c1b5c643e5b36413fb01659835d"
+   "sha256": "fd9f682c3ff4e08433748117d1c8440b6273694c97ed71475945109029ce263c"
   }
  ]
 }

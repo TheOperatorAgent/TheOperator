@@ -3092,3 +3092,24 @@ def test_sandbox_schuetzt_neuen_arbeitsordner_nicht_fehlerhaft():
         pytest.skip("keine Sandbox")
     ok, meldung = sb.selbsttest()
     assert ok, meldung
+
+
+def test_pseudonym_verfaelscht_keine_alltagswoerter():
+    """#107 — gefunden beim #106-E2E: »Schreib FERTIG in die Datei« wurde zu
+    »Schreib Bien AG & Co. OHG in die Datei«; die Datei bekam den falschen Inhalt,
+    und das sah aus wie ein Fehler des Assistenten. Unterscheidung (gemessen):
+    Kleinschreibung von Alltagswörtern ist Adverb/Verb/Adjektiv, die echter Marken
+    ein Eigenname. Echte Firmen und Orte MÜSSEN weiter ersetzt werden."""
+    import pytest
+    pseudonym = pytest.importorskip("pseudonym")
+    unveraendert = ["Schreib FERTIG in die Datei", "Der Status ist ERLEDIGT",
+                    "Antworte mit OK", "Schreib GUT in den Bericht",
+                    "Ich verwende dich im Satelitenmodus"]     # #102 bleibt grün
+    ersetzt = ["Ich arbeite bei Siemens", "Ich wohne in Dinkelsbühl",
+               "Mein Auto ist von BMW", "Einkauf bei REWE"]
+    for satz in unveraendert:
+        out, _, _ = pseudonym.pseudonymize(satz, {}, "standard")
+        assert out == satz, f"fälschlich ersetzt: {satz} → {out}"
+    for satz in ersetzt:
+        out, _, _ = pseudonym.pseudonymize(satz, {}, "standard")
+        assert out != satz, f"Schutz verloren: {satz}"

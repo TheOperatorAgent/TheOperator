@@ -176,11 +176,34 @@ def pseudonymize(text: str, mapping: dict, mode: str = "standard",
     # Fail-safe: schlägt die Prüfung selbst fehl, wird weiter ersetzt (Datenschutz gewinnt).
     try:
         _doc = analyzer.nlp_engine.nlp["de"](text)
+        _nlp = analyzer.nlp_engine.nlp["de"]
+
         def _bekannt(sp):
             toks = [t for t in _doc if t.idx < sp.end and t.idx + len(t.text) > sp.start]
             return (not toks) or any(t.has_vector for t in toks)
+
+        def _alltagswort(sp):
+            """#107: GROSSGESCHRIEBENE Alltagswörter sind keine Firmennamen.
+            »Schreib FERTIG in die Datei« wurde zu »Schreib Bien AG & Co. OHG …« —
+            wörtliche Inhalte wurden still verfälscht, und der Nutzer hielt das
+            Ergebnis für einen Fehler des Assistenten.
+            Unterscheidungsmerkmal (gemessen, nicht geraten): Bei Alltagswörtern ist
+            die Kleinschreibung ein Adverb/Verb/Adjektiv (fertig, erledigt, gut),
+            bei echten Marken ein Eigenname (bmw, rewe, adac). Bewusst NUR für
+            durchgehend großgeschriebene Einzelwörter — »Siemens« und »München«
+            bleiben damit unangetastet."""
+            wort = text[sp.start:sp.end].strip()
+            if not wort.isupper() or " " in wort or len(wort) < 2:
+                return False
+            try:
+                t = _nlp(wort.lower())[0]
+            except Exception:
+                return False
+            return (not t.is_oov) and t.pos_ in ("ADV", "VERB", "ADJ", "AUX", "INTJ")
+
         spans = [sp for sp in spans
-                 if sp.entity_type not in ("LOCATION", "ORGANIZATION") or _bekannt(sp)]
+                 if sp.entity_type not in ("LOCATION", "ORGANIZATION")
+                 or (_bekannt(sp) and not _alltagswort(sp))]
     except Exception:
         pass
     # POS-Check: Verben/Hilfsverben nie als PERSON (zusätzlich zur Stopwort-Liste)
