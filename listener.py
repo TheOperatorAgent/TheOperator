@@ -38,6 +38,10 @@ try:
 except Exception:
     merker = None
 try:
+    import anhaenge               # noqa: E402  (Bilder/Dateien aus dem Chat)
+except Exception:
+    anhaenge = None
+try:
     import verify_loop            # noqa: E402  (stdlib; A1 Verifikations-Schleife #46)
 except Exception:
     verify_loop = None
@@ -1093,6 +1097,18 @@ class BotSession(threading.Thread):
                     m = (e.get("content") or {}).get(DASHBOARD_MARKER) or {}
                     if m.get("text"):
                         e["content"]["body"] = str(m["text"])
+                    # Bild/Datei? Herunterladen und dem Modell den Pfad nennen —
+                    # sonst sieht es nur den Dateinamen (»IMG_1234.jpg«) und rät.
+                    if anhaenge:
+                        try:
+                            an = anhaenge.empfange(e, self.hs, self.token, log)
+                            if an:
+                                text = e["content"].get("body") or ""
+                                if an["pfad"] and text.strip() == an["name"]:
+                                    text = ""       # nur die Datei, kein eigener Text
+                                e["content"]["body"] = (text + "\n" + an["hinweis"]).strip()
+                        except Exception as ex:
+                            log(f"[{self.bot_name}] Anhang übersprungen: {ex}")
                 if new:
                     # Erst als gesehen verbuchen, dann antworten — liefert der Server die
                     # Events nach einem Netzfehler erneut, gibt es keine zweite Antwort.

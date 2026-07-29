@@ -1,10 +1,10 @@
 {
- "version": "1.13.2",
+ "version": "1.14.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "19194c271370d8b2211ea87e3dd83dd9697596f832039c4638746ee865b4d2ab"
+   "sha256": "6b38e19cc1fbb6227aa9a8312d1449f1c75fe4bc47527c73e18ebc80d5cfce0a"
   },
   {
    "src": "matrix_room.py",
@@ -99,7 +99,12 @@
   {
    "src": "retention.py",
    "dst": "retention.py",
-   "sha256": "e2df21bec31820850088459c039255214597003df6efbfde3c49f2b6d3031abc"
+   "sha256": "a4d6f433c8bd64c2cce6315aadaf8e03dd1055fc983c1eb2caa8a1b07a959c70"
+  },
+  {
+   "src": "anhaenge.py",
+   "dst": "anhaenge.py",
+   "sha256": "97d84784ec03c6c58641f8e524aa094fa8fb4241a4fc242c763310e2ebf8eef8"
   },
   {
    "src": "claude_tool_hook.py",
@@ -259,7 +264,7 @@
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "b535495b34fc1ec6510108396d2dd86cd1e78313831ba8f3b5a556d2bc302ea2"
+   "sha256": "f1b01d1a6ab269a1a400fbfeef0e066df1106c065af34e682bfa8d7c2155c4bc"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -279,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "87729f1910e8eb02719463db46083e0f1a4c3cbade23b357806338b25df16a6a"
+   "sha256": "45b2d9dc7463345bd6fa29edce2c10899765b1d22fee137d902edd0bd9bf2d37"
   }
  ]
 }

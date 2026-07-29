@@ -1621,6 +1621,7 @@ async function loadPrivacy() {
   await loadPseudonymize();
   $("#privacy-tables").innerHTML = `<div class="card"><table class="kv">
     <tr><td>Chat-Verarbeitung</td><td>Nachrichten werden zur Beantwortung an die Claude-API (Anthropic) übertragen — über dein persönliches Abo</td></tr>
+    <tr><td>Bilder &amp; Dateien</td><td>Was du im Chat schickst, landet in deinem Arbeitsordner unter <span class="mono">eingang/</span> — nur für dich lesbar, und es wird nach derselben Frist gelöscht wie dein Gesprächsverlauf. <strong>Der Inhalt einer Datei wird nicht pseudonymisiert</strong>: Ein Foto geht so zum Modell, wie es ist.</td></tr>
     <tr><td>Gedächtnis</td><td>${s.memory_count} Fakten, lokal in <span class="mono">~/.claude/matrix-bot/memory.db</span> — verlässt deinen Mac nie</td></tr>
     <tr><td>Persona</td><td>wie dein Operator auftritt, lokal in <span class="mono">persona.json</span> — kein Personenbezug; im Tab »🎭 Persona« änderbar</td></tr>
     <tr><td>Dein Profil</td><td>deine Angaben (Ansprache, Rolle, Interessen), lokal in <span class="mono">profile.json</span> — verlässt deinen Mac nie, im Tab »🎭 Persona« jederzeit <strong>löschbar</strong></td></tr>

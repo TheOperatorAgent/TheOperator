@@ -133,6 +133,16 @@ def status():
     return out
 
 
+def _anhaenge_aufraeumen(tage, log):
+    """Empfangene Bilder/Dateien mit ausräumen — sie sind Nutzerdaten wie der
+    Gesprächsverlauf und dürfen nicht ewig liegen bleiben."""
+    try:
+        import anhaenge
+        return anhaenge.aufraeumen(tage, log=log)
+    except Exception:
+        return 0
+
+
 def aufraeumen(log=print, force=False):
     """Einmal aufräumen. Gibt zurück, was entfernt wurde."""
     cfg = config()
@@ -142,6 +152,7 @@ def aufraeumen(log=print, force=False):
         "sessions": _sessions_kuerzen(int(cfg["sessions_days"]), log),
         "log_zeilen": _kuerzen(os.path.join(BOT_DIR, "listener.log"), int(cfg["logs_days"]), log),
         "audit_zeilen": _kuerzen(os.path.join(BOT_DIR, "audit.log"), int(cfg["audit_days"]), log),
+        "anhaenge": _anhaenge_aufraeumen(int(cfg["sessions_days"]), log),
     }
     try:
         os.makedirs(os.path.dirname(STATE_FILE), exist_ok=True)

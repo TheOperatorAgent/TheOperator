@@ -1,7 +1,8 @@
 {
-  "version": "1.13.2",
+  "version": "1.14.0",
   "date": "2026-07-29",
   "highlights": [
-    "🪟 Windows: Fehlt Python auf dem Rechner, installiert der Operator es jetzt selbst — eine Ja/Nein-Frage, danach kein Handgriff mehr. Kein Herunterladen, keine Klickstrecke, kein »PowerShell neu öffnen«. Damit ist die Installation auch unter Windows wirklich ein Befehl."
+    "📎 Schick deinem Operator Bilder und Dateien! Fotos, PDFs, Tabellen — er speichert sie in deinem Arbeitsordner unter »eingang/«, sieht sie sich an und geht in seiner Antwort darauf ein. Vorher hat er nur den Dateinamen gesehen und an der Sache vorbeigeredet.",
+    "🔒 Dabei gilt: Dateien landen ausschließlich in deinem Arbeitsordner (nichts wird ausgeführt), zu große werden freundlich abgelehnt statt den Rechner vollzuschreiben, und sie werden nach derselben Frist gelöscht wie dein Gesprächsverlauf. Ehrlich dazu: Der Inhalt einer Datei wird nicht pseudonymisiert — ein Foto geht so zum Modell, wie es ist. Das steht auch im Datenschutz-Tab."
   ]
 }

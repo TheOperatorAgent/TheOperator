@@ -2295,7 +2295,8 @@ def test_retention_is_stdlib_only():
     src = open(os.path.expanduser("~/.claude/matrix-bot/retention.py")).read()
     imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
                if isinstance(n, ast.Import) for a in n.names}
-    assert imports <= {"json", "os", "time", "sqlite3", "sys"}
+    # anhaenge ist selbst stdlib-only (eigener Test) — die Aufräum-Brücke ist erlaubt
+    assert imports <= {"json", "os", "time", "sqlite3", "sys", "anhaenge"}
 
 
 # ------------------------------------------------ Browser: Dashboard vs. Agent-Surfen --
@@ -3285,3 +3286,78 @@ def test_windows_installer_gibt_umlaute_richtig_aus():
     assert "[Console]::OutputEncoding" in s
     assert s.index("[Console]::OutputEncoding") < s.index("function Test-Python"), \
         "Encoding wird zu spät gesetzt"
+
+
+# ------------------------------------------------ Anhänge (Bilder/Dateien) --
+def _anh():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import anhaenge
+    return anhaenge
+
+
+def test_anhang_dateiname_kann_nicht_ausbrechen():
+    """Ein Dateiname aus dem Chat ist Fremddaten. »../../.claude/matrix-bot/listener.py«
+    darf niemals aus dem Eingangsordner herausführen."""
+    a = _anh()
+    assert a._sicherer_name("../../.claude/matrix-bot/listener.py") == "listener.py"
+    assert a._sicherer_name("C:\\Windows\\evil.exe") == "evil.exe"
+    assert a._sicherer_name("..") == "anhang"
+    assert a._sicherer_name("") == "anhang"
+    assert a._sicherer_name("/etc/passwd") == "passwd"
+    assert "/" not in a._sicherer_name("a/b/c.txt") and "\\" not in a._sicherer_name("a\\b.txt")
+
+
+def test_anhang_erkennung():
+    """Bilder/Dateien werden erkannt, normaler Text nicht — und verschlüsselte
+    Anhänge werden ehrlich als »kann ich nicht öffnen« gemeldet statt still zu scheitern."""
+    a = _anh()
+    bild = a.erkenne({"content": {"msgtype": "m.image", "url": "mxc://hs/abc",
+                                  "body": "foto.jpg", "info": {"size": 100}}})
+    assert bild and bild["bild"] and bild["mxc"] == "mxc://hs/abc"
+    assert a.erkenne({"content": {"msgtype": "m.text", "body": "hallo"}}) is None
+    verschl = a.erkenne({"content": {"msgtype": "m.file", "file": {"url": "mxc://x/y"},
+                                     "body": "geheim.pdf"}})
+    assert verschl and verschl["verschluesselt"]
+
+
+def test_anhang_zu_gross_wird_freundlich_abgelehnt():
+    """Eine versehentlich geschickte Videodatei darf den Rechner nicht volllaufen lassen —
+    und der Nutzer muss erfahren, warum nichts passiert ist."""
+    a = _anh()
+    r = a.empfange({"content": {"msgtype": "m.file", "url": "mxc://hs/gross",
+                                "body": "video.mp4", "info": {"size": 999 * 1024 * 1024}}},
+                   "https://hs.example", "token")
+    assert r and not r["pfad"] and "MB" in r["hinweis"]
+
+
+def test_anhang_landet_im_arbeitsordner():
+    """Ziel ist ausschließlich der Arbeitsordner — dort darf der Operator laut
+    Sandbox (#104-A) schreiben, außerhalb nicht."""
+    a = _anh()
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import platform_compat
+    assert os.path.realpath(a.eingang()).startswith(
+        os.path.realpath(platform_compat.workspace()))
+
+
+def test_listener_verarbeitet_anhaenge():
+    """Ohne diesen Einbau sieht das Modell nur den Dateinamen (»IMG_1234.jpg«)
+    und antwortet daran vorbei — genau der Zustand vor diesem Feature."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    assert "anhaenge.empfange(" in src
+    assert 'an["hinweis"]' in src, "der Pfad wird dem Modell nicht mitgeteilt"
+
+
+def test_anhaenge_werden_aufgeraeumt():
+    """#18: Anhänge sind Nutzerdaten und dürfen nicht ewig liegen bleiben."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/retention.py")).read()
+    assert "_anhaenge_aufraeumen" in src and '"anhaenge"' in src
+
+
+def test_anhaenge_ist_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/anhaenge.py")).read()
+    imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
+               if isinstance(n, ast.Import) for a in n.names}
+    assert imports <= {"json", "os", "re", "sys", "time", "urllib",
+                       "platform_compat"}, imports
