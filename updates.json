@@ -3,6 +3,7 @@
   "date": "2026-07-29",
   "highlights": [
     "🌐 Browser zum Surfen wird jetzt beim Einrichten gleich mitinstalliert — und auf Geräten, für die es keinen fertigen gibt (z. B. Raspberry Pi), nutzt der Operator ein bereits vorhandenes Chromium.",
-    "🖥️ Dashboard per SSH: Wer auf einem Rechner ohne Bildschirm arbeitet, bekommt jetzt eine verständliche Anleitung statt eines stumm fehlschlagenden Browser-Starts."
+    "🖥️ Dashboard per SSH: Wer auf einem Rechner ohne Bildschirm arbeitet, bekommt jetzt eine verständliche Anleitung statt eines stumm fehlschlagenden Browser-Starts.",
+    "🔤 Dashboard-Hintergrund: Der Code-Regen bestand aus japanischen Schriftzeichen und wurde für Chinesisch gehalten — jetzt nur noch Zeichen, die jeder lesen kann."
   ]
 }

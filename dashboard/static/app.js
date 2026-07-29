@@ -1833,7 +1833,10 @@ async function asstExec(name, args) {
   const cv = document.getElementById("rain");
   if (!cv) return;
   const ctx = cv.getContext("2d");
-  const CHARS = "アィウェオカキクケコサシスセソタチツテトナニヌネノ01オペレータOPERATOR";
+  // Bewusst nur Zeichen, die jeder lesen kann. Vorher standen hier japanische Katakana
+  // (Matrix-Film-Zitat) — die wirkten wie fremde Schriftzeichen unklarer Herkunft und
+  // warfen im Dashboard eines Datenschutz-Produkts genau die falsche Frage auf.
+  const CHARS = "01ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<>/\\{}[]()#$%&*+=|OPERATOR";
   let cols, drops;
   function size() {
     cv.width = innerWidth; cv.height = innerHeight;

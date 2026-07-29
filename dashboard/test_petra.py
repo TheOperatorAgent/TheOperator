@@ -164,3 +164,21 @@ def test_arbeitsordner_ist_privat():
     ws = os.path.join(BOT, "workspace")
     if os.path.isdir(ws):
         assert not (os.stat(ws).st_mode & 0o077), "Arbeitsordner ist für andere lesbar"
+
+
+def test_dashboard_zeigt_keine_fremden_schriftzeichen():
+    """Der Hintergrund-Code-Regen bestand aus japanischen Katakana (Matrix-Film-Zitat).
+    Michi selbst hielt sie für chinesisch und fragte, was da läuft — in einem Produkt,
+    das mit Datenschutz wirbt, ist das genau die falsche Frage. Was im Dashboard steht,
+    muss jeder lesen können."""
+    import re
+    ostasiatisch = re.compile(r"[　-ヿ一-鿿＀-￯]")
+    basis = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    for datei in ("app.js", "index.html", "style.css"):
+        pfad = os.path.join(basis, datei)
+        if not os.path.exists(pfad):
+            continue
+        for nr, zeile in enumerate(open(pfad, encoding="utf-8"), 1):
+            treffer = ostasiatisch.search(zeile)
+            assert not treffer, (f"{datei}:{nr} enthält ein fremdes Schriftzeichen "
+                                 f"({treffer.group()!r}) — Dashboard-Text muss lesbar sein")
