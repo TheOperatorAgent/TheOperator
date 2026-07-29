@@ -35,7 +35,7 @@ BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
 import platform_compat  # noqa: E402
 
-WORKSPACE = os.path.join(BOT_DIR, "workspace")
+WORKSPACE = platform_compat.workspace()   # #106
 
 
 def _real(p):

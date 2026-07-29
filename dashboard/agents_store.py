@@ -13,7 +13,9 @@ import json
 import os
 import re
 
-AGENTS_DIR = os.path.expanduser("~/.claude/matrix-bot/workspace/.claude/agents")
+import sys as _sys; _sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+import platform_compat as _plat   # noqa: E402
+AGENTS_DIR = os.path.join(_plat.workspace(), ".claude", "agents")   # #106
 NAME_RE = re.compile(r"^[a-z0-9-]{2,32}$")
 KNOWN_MODELS = ("haiku", "sonnet", "opus", "inherit")
 KNOWN_TOOLS = ("Bash", "Read", "Write", "WebFetch", "WebSearch", "Agent", "Skill", "Browser")

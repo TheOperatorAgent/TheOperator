@@ -22,6 +22,14 @@ BOT = os.path.expanduser("~/.claude/matrix-bot")
 sys.path.insert(0, BOT)
 
 
+
+def _workspace():
+    """#106: Der Arbeitsordner liegt seit 1.12 außerhalb von ~/.claude."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import platform_compat
+    return platform_compat.workspace()
+
+
 def _lies(pfad):
     return open(os.path.join(BOT, pfad), encoding="utf-8").read()
 
@@ -38,7 +46,7 @@ def test_harmlose_arbeit_fragt_nie_nach():
         ("Bash", {"command": "ls -la"}),
         ("Bash", {"command": "python3 auswertung.py"}),
         ("Bash", {"command": "git status"}),
-        ("Write", {"file_path": os.path.join(BOT, "workspace", "notiz.txt")}),
+        ("Write", {"file_path": os.path.join(_workspace(), "notiz.txt")}),
         ("mcp__m365__mail_list", {}),
     ]
     for tool, args in harmlos:
@@ -161,7 +169,7 @@ def test_arbeitsordner_ist_privat():
     listener = _lies("listener.py")
     assert "def ensure_private_workspace" in listener
     assert "ensure_private_workspace()" in listener, "wird nie aufgerufen"
-    ws = os.path.join(BOT, "workspace")
+    ws = _workspace()
     if os.path.isdir(ws):
         assert not (os.stat(ws).st_mode & 0o077), "Arbeitsordner ist für andere lesbar"
 

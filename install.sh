@@ -18,6 +18,9 @@ set -uo pipefail
 
 OS="$(uname)"                       # Darwin (macOS) | Linux
 BOT_DIR="$HOME/.claude/matrix-bot"
+# #106: Arbeitsordner NICHT unter ~/.claude — Claude Code sperrt dort Schreibzugriffe,
+# und genau dort legen Agenten ihre Ergebnisse ab. Nebeneffekt: auffindbar statt versteckt.
+WORKSPACE="${OPERATOR_WORKSPACE:-$HOME/Operator}"
 STATE_FILE="$BOT_DIR/.install-state.json"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main}"
@@ -573,11 +576,11 @@ phase5_files() {
   # Update-Quelle hinterlegen: der Updater (updater.py) aktualisiert aus DERSELBEN Quelle,
   # aus der installiert wurde (GitHub bei Website-Installationen, Gitea intern bei uns).
   printf '%s' "$REPO_RAW" > "$BOT_DIR/repo_raw.txt"
-  mkdir -p "$BOT_DIR/workspace/.claude/agents"
+  mkdir -p "$WORKSPACE/.claude/agents"
   local AGENTS="recherche schreiber"
   [ "$BASH_OPTIN" = "ja" ] && AGENTS="$AGENTS sysadmin"
   for A in $AGENTS; do
-    DEST="$BOT_DIR/workspace/.claude/agents/$A.md"
+    DEST="$WORKSPACE/.claude/agents/$A.md"
     if [ -f "$DEST" ]; then ok "Agent $A existiert — bleibt unverändert"; continue; fi
     if [ -f "$SCRIPT_DIR/agents/$A.md" ]; then cp "$SCRIPT_DIR/agents/$A.md" "$DEST"
     else curl -fsSL "$REPO_RAW/agents/$A.md" -o "$DEST" || die "Agent-Vorlage $A.md nicht gefunden"; fi
@@ -589,7 +592,9 @@ bot = sys.argv[1]
 venv_py = os.path.join(bot, "dashboard", "venv",
                        "Scripts" if os.name == "nt" else "bin",
                        "python.exe" if os.name == "nt" else "python3")
-p = os.path.join(bot, "workspace", ".mcp.json")
+sys.path.insert(0, bot)
+import platform_compat
+p = os.path.join(platform_compat.workspace(), ".mcp.json")
 data = {"mcpServers": {}}
 if os.path.exists(p):
     try: data = json.load(open(p))
@@ -599,7 +604,7 @@ data["mcpServers"]["n8n"] = {"command": venv_py, "args": [os.path.join(bot, "mcp
 open(p, "w").write(json.dumps(data, indent=1))
 PYMCP
   ok "Standard-MCPs m365 + n8n registriert"
-  mkdir -p "$BOT_DIR/workspace/.claude/skills"
+  mkdir -p "$WORKSPACE/.claude/skills"
   python3 - "$BOT_DIR" <<'PYSCOUT'
 import hashlib, json, os, sys
 bot = sys.argv[1]; p = os.path.join(bot, "cron.json"); jobs = []

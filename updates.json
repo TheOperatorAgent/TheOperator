@@ -1,8 +1,8 @@
 {
-  "version": "1.11.0",
+  "version": "1.12.0",
   "date": "2026-07-29",
   "highlights": [
-    "🧱 Schutzraum: Dein Operator arbeitet ab jetzt in einem abgeschirmten Bereich. Er darf nur in seinem Arbeitsordner Dateien anlegen und ändern — alles andere auf deinem Rechner ist für ihn schreibgeschützt, und zwar vom Betriebssystem erzwungen statt nur per Regel. Das gilt auch für Programme, die er selbst startet. Lesen und Internet funktionieren normal weiter.",
-    "👀 Die Übersicht im Dashboard zeigt dir ehrlich, ob der Schutzraum auf deinem Rechner aktiv ist — und was zu tun ist, falls nicht (unter Linux genügt bubblewrap, unter Windows gibt es kein passendes Bordmittel)."
+    "📂 Dein Arbeitsordner heißt jetzt »Operator« und liegt direkt in deinem Benutzerordner — vorher lag er versteckt in einem Systemordner, in dem dein Assistent gar keine Dateien anlegen durfte. Bestehende Installationen ziehen beim nächsten Start automatisch um, es geht nichts verloren.",
+    "✍️ Damit klappt endlich, was vorher still scheiterte: Dein Assistent kann Berichte und Ergebnisse per Befehl ablegen — und du findest sie ohne Umweg im Finder bzw. Explorer."
   ]
 }

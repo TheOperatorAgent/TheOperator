@@ -1432,7 +1432,7 @@ async def api_models_fallback(request: Request):
 # Chat-Assistent im Dashboard: läuft über Claude (Abo), sieht einen Live-Snapshot des Systems
 # und schlägt WHITELIST-Aktionen vor. Ausführung + Geheimnis-Eingaben passieren im Frontend
 # (schreibende Aktionen nur nach Bestätigung; Passwörter/Keys nur über maskierte Formulare).
-WORKSPACE_DIR = os.path.join(BOT_DIR, "workspace")
+WORKSPACE_DIR = platform_compat.workspace()   # #106
 
 
 def _claude_bin() -> str:
@@ -1675,7 +1675,7 @@ def api_skill_proposal_reject(pid: str):
 
 
 # ---------------------------------------------------------------- MCP (B1) --
-MCP_FILE = os.path.join(BOT_DIR, "workspace", ".mcp.json")
+MCP_FILE = os.path.join(platform_compat.workspace(), ".mcp.json")
 
 
 def load_mcp() -> dict:

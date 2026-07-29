@@ -2110,7 +2110,7 @@ def test_broker_ist_stdlib_only():
     """Der Hook läuft ohne venv — Broker muss stdlib-only bleiben."""
     import ast
     erlaubt = {"hashlib", "json", "os", "re", "time", "urllib", "sys",
-               "secretstore", "net_guard"}
+               "secretstore", "net_guard", "platform_compat"}
     for datei in ("permission_broker.py", "claude_tool_hook.py"):
         src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
         imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
@@ -2721,6 +2721,12 @@ def test_uninstall_nutzt_keinen_vorhersagbaren_tmp_pfad():
 
 
 # ------------------------------------------------ #104-B Allowlist fail-closed --
+def _workspace_pfad():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import platform_compat
+    return platform_compat.workspace()
+
+
 def _broker():
     sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
     import permission_broker
@@ -2989,7 +2995,7 @@ def test_sandbox_erlaubt_normales_arbeiten(tmp_path):
         import pytest
         pytest.skip("keine Sandbox auf diesem System")
     import subprocess as sp
-    ws = os.path.join(sb.BOT_DIR, "workspace")
+    ws = sb.WORKSPACE
     os.makedirs(ws, exist_ok=True)
     probe = os.path.join(ws, ".sandbox-alltag")
     r = sp.run(sb.wrap(["/bin/sh", "-c",
@@ -3023,10 +3029,66 @@ def test_selbstschutz_laesst_arbeitsordner_frei(tmp_path, monkeypatch):
     gesperrt = ["echo x > ~/.claude/matrix-bot/repo_raw.txt",
                 "cp /tmp/e.py ~/.claude/matrix-bot/permission_broker.py",
                 "cat /tmp/e > ~/.claude/matrix-bot/update_verify.py"]
-    frei = ["echo OK > ~/.claude/matrix-bot/workspace/bericht.txt",
-            "cp bericht.md ~/.claude/matrix-bot/workspace/out/",
-            "echo OK > workspace/datei.txt"]
+    ws = _workspace_pfad()
+    frei = [f"echo OK > {ws}/bericht.txt", f"cp bericht.md {ws}/out/",
+            "echo OK > unterordner/datei.txt"]
     for cmd in gesperrt:
         assert pb.classify("Bash", {"command": cmd})[0], cmd
     for cmd in frei:
         assert not pb.classify("Bash", {"command": cmd})[0], f"Arbeitsordner gegated: {cmd}"
+
+
+# ------------------------------------------------ #106 Arbeitsordner außerhalb ~/.claude --
+def test_workspace_liegt_nicht_unter_claude_ordner():
+    """#106: Claude Code schützt ALLES unter ~/.claude/ als sensibel — dort konnten
+    Agenten per Shell-Befehl nichts anlegen (per Datei-Werkzeug schon, was den Fehler
+    still und verwirrend machte). Empirisch geprüft: auch mit
+    permissions.additionalDirectories NICHT überschreibbar. Also muss der
+    Arbeitsordner außerhalb liegen."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import platform_compat as pc
+    ws = os.path.realpath(pc.workspace())
+    claude = os.path.realpath(os.path.expanduser("~/.claude"))
+    assert not ws.startswith(claude + os.sep), f"Arbeitsordner wieder unter ~/.claude: {ws}"
+
+
+def test_alle_module_nutzen_denselben_arbeitsordner():
+    """Eine Quelle statt sieben — sonst driften Listener, Sandbox, Broker, Skills
+    und Dashboard beim nächsten Umzug auseinander."""
+    bot = os.path.expanduser("~/.claude/matrix-bot")
+    for datei in ("listener.py", "sandbox.py", "permission_broker.py", "skills.py",
+                  "dashboard/server.py", "dashboard/agents_store.py"):
+        src = open(os.path.join(bot, datei)).read()
+        assert "workspace()" in src, f"{datei} nutzt die zentrale Quelle nicht"
+        assert 'BOT_DIR, "workspace"' not in src or "_workspace_real" in src, \
+            f"{datei} hat noch einen eigenen Arbeitsordner-Pfad"
+
+
+def test_workspace_migration_ist_vorsichtig(tmp_path, monkeypatch):
+    """Der Umzug darf niemals Daten überschreiben und muss idempotent sein."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import platform_compat as pc
+    alt, neu = tmp_path / "alt", tmp_path / "neu"
+    alt.mkdir(); (alt / "datei.txt").write_text("inhalt")
+    monkeypatch.setattr(pc, "WORKSPACE_ALT", str(alt))
+    monkeypatch.setattr(pc, "workspace", lambda: str(neu))
+    assert pc.workspace_migrieren() is True
+    assert (neu / "datei.txt").read_text() == "inhalt"
+    assert not alt.exists()
+    assert pc.workspace_migrieren() is False           # zweiter Lauf: nichts zu tun
+    # Neuer Ordner hat schon Inhalt → alter bleibt unangetastet
+    alt.mkdir(); (alt / "wichtig.txt").write_text("nicht verlieren")
+    meldungen = []
+    assert pc.workspace_migrieren(log=meldungen.append) is False
+    assert (alt / "wichtig.txt").exists() and meldungen
+
+
+def test_sandbox_schuetzt_neuen_arbeitsordner_nicht_fehlerhaft():
+    """Gegenprobe nach dem Umzug: Die Sandbox muss den NEUEN Ordner beschreibbar
+    lassen — sonst wäre der Fix aus #106 durch #104-A wieder kaputt."""
+    sb = _sandbox()
+    if not sb.verfuegbar()[0]:
+        import pytest
+        pytest.skip("keine Sandbox")
+    ok, meldung = sb.selbsttest()
+    assert ok, meldung

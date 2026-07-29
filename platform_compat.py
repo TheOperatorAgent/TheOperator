@@ -191,3 +191,43 @@ def ipc_connect(timeout: float = 2.0):
     sock.settimeout(timeout)
     sock.connect(runtime_file(_PSEUDO_SOCK))
     return sock, None
+
+
+# ---------------------------------------------------------------- Arbeitsordner (#106) --
+# Der Arbeitsordner lag bis 1.11.0 unter ~/.claude/matrix-bot/workspace. Claude Code
+# schützt ALLES unter ~/.claude/ als sensibel — deshalb konnten Agenten dort per
+# Shell-Befehl keine Dateien anlegen (über das Datei-Werkzeug schon, was die Sache
+# still und verwirrend machte). Die Einstellung lässt sich nicht überschreiben,
+# also zieht der Arbeitsordner heraus. Nebeneffekt: Er ist jetzt auch für den
+# Nutzer auffindbar, statt in einem versteckten Ordner zu liegen.
+WORKSPACE_ALT = os.path.expanduser("~/.claude/matrix-bot/workspace")
+WORKSPACE_NEU = os.path.expanduser("~/Operator")
+
+
+def workspace():
+    """Der Arbeitsordner. Bestehende Installationen ziehen einmalig um."""
+    if os.environ.get("OPERATOR_WORKSPACE"):
+        return os.environ["OPERATOR_WORKSPACE"]
+    return WORKSPACE_NEU
+
+
+def workspace_migrieren(log=lambda *_: None):
+    """Einmaliger, idempotenter Umzug alt → neu. Gibt True zurück, wenn umgezogen
+    wurde. Konservativ: Gibt es den neuen Ordner schon mit Inhalt, wird NICHTS
+    überschrieben — dann bleibt der alte liegen und wird nur gemeldet."""
+    alt, neu = WORKSPACE_ALT, workspace()
+    if alt == neu or not os.path.isdir(alt):
+        return False
+    try:
+        if os.path.isdir(neu) and os.listdir(neu):
+            log(f"Arbeitsordner: {neu} existiert bereits — alter Ordner bleibt unter {alt}")
+            return False
+        import shutil
+        os.makedirs(os.path.dirname(neu), exist_ok=True)
+        shutil.move(alt, neu)
+        log(f"Arbeitsordner umgezogen: {alt} → {neu} "
+            "(dort darf dein Assistent jetzt auch per Befehl Dateien anlegen)")
+        return True
+    except OSError as e:
+        log(f"Arbeitsordner konnte nicht umziehen ({e}) — alles läuft weiter wie bisher")
+        return False

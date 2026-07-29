@@ -1,10 +1,10 @@
 {
- "version": "1.11.0",
+ "version": "1.12.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "7b42db271f1d76c6e49e58928a5a4df0afba08549a2f5f2931c4b2c2080649aa"
+   "sha256": "9d0ad7effb23647a04c4fcd6986a7aba228f13dad0006d620d6a26f7bd4adba3"
   },
   {
    "src": "matrix_room.py",
@@ -29,7 +29,7 @@
   {
    "src": "skills.py",
    "dst": "skills.py",
-   "sha256": "e1b649aa8acd12bcff6b8c79dc9b2b8e2f2794069b37ba51db5a0c9601188fd4"
+   "sha256": "fd43056e0a2c622ba42a18159beb31f5af1717db2826a299c0e2af858473ab8c"
   },
   {
    "src": "sessions.py",
@@ -64,7 +64,7 @@
   {
    "src": "platform_compat.py",
    "dst": "platform_compat.py",
-   "sha256": "680df4f9cafc9f85a5712efc89440325313eaf9b4430b1cae9970a9839cc2e73"
+   "sha256": "078518bbde989103ce41c0e12ff696371fc7099ba89f7983b21d2387c5c4a799"
   },
   {
    "src": "secretstore.py",
@@ -109,12 +109,12 @@
   {
    "src": "permission_broker.py",
    "dst": "permission_broker.py",
-   "sha256": "ee1cde2f8e067dde55106df89b011f25ca588d5fe00f959505c2ff771be031e9"
+   "sha256": "a730d619a7e47d596074be62b74a41e73b6d6312ad23fc53d35cd0f6bc926c91"
   },
   {
    "src": "sandbox.py",
    "dst": "sandbox.py",
-   "sha256": "0e987859c10c11d2d3d39e8eca3b5c4374811365760e58fedccd2c619a504585"
+   "sha256": "ce56630dcb7381547f6023f04512c8949116b85195adf5c67d381ac467804da3"
   },
   {
    "src": "persona.py",
@@ -214,7 +214,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "e8878a2c442ca030e0fc734e7f66cc8a29b58f35fb8228f993f4a12872f3ea84"
+   "sha256": "c751afcb7e587f9d6509a109c3398f695cb7af78fe83ea3a2168b7d95a4bdc74"
   },
   {
    "src": "dashboard/tokens.py",
@@ -224,7 +224,7 @@
   {
    "src": "dashboard/agents_store.py",
    "dst": "dashboard/agents_store.py",
-   "sha256": "171779326dd5000596b61558b1141cd905ba05e5cd383f38b78b4ad54e79db72"
+   "sha256": "c216d6cdd836218eea3377b68375e1af08aef06dcd9e9585a6a6c34bd937d5bf"
   },
   {
    "src": "dashboard/m365_setup.py",
@@ -274,7 +274,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "f1deeb62e209be1a1fa35478861037ecdc5d1ad1d6f8fd692680f7f5cb1a4991"
+   "sha256": "331ce1e5c33189e88a2ba5ae9a0e344128968c1b5c643e5b36413fb01659835d"
   }
  ]
 }

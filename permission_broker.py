@@ -104,6 +104,17 @@ SAFE_COMMANDS = {
     "git", "python", "python3", "node", "make",
 }
 ALLOW_FILE = os.path.join(BOT_DIR, "broker_allow.txt")
+
+
+def _workspace_real():
+    """#106: Der Arbeitsordner liegt seit 1.12 außerhalb von ~/.claude."""
+    try:
+        import platform_compat
+        return os.path.realpath(platform_compat.workspace())
+    except Exception:
+        return os.path.realpath(os.path.join(BOT_DIR, "workspace"))
+
+
 # Wrapper, hinter denen der eigentliche Befehl steht (sudo/doas fängt die Sperrliste)
 _WRAPPER = {"env", "command", "nohup", "nice", "time", "stdbuf", "timeout", "caffeinate"}
 
@@ -182,7 +193,7 @@ def _schreibt_in_botdir(cmd):
     Konservativ: bei jedem Verdacht True (→ Rückfrage). Reines Lesen bleibt frei."""
     try:
         bd = os.path.realpath(BOT_DIR)
-        ws = os.path.realpath(os.path.join(BOT_DIR, "workspace"))
+        ws = _workspace_real()
     except OSError:
         return True
 
@@ -289,7 +300,7 @@ def classify(tool, tool_input):
 
 def _ausserhalb_arbeitsordner(pfad):
     try:
-        ws = os.path.realpath(os.path.join(BOT_DIR, "workspace"))
+        ws = _workspace_real()
         p = os.path.realpath(os.path.expanduser(pfad))
         return not (p == ws or p.startswith(ws + os.sep))
     except OSError:

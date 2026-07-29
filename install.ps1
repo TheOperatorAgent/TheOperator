@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 
 $BotDir  = Join-Path $HOME ".claude\matrix-bot"
 $DashDir = Join-Path $BotDir "dashboard"
+# #106: Arbeitsordner NICHT unter ~/.claude (Claude Code sperrt dort Schreibzugriffe)
+$Workspace = if ($env:OPERATOR_WORKSPACE) { $env:OPERATOR_WORKSPACE } else { Join-Path $HOME "Operator" }
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 $RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
@@ -261,7 +263,7 @@ else {
 
 # ----------------------------------------------------------- Phase 5: DATEIEN
 Bold "Phase 5/7 - Dateien einrichten"
-New-Item -ItemType Directory -Force -Path $BotDir, "$BotDir\workspace\.claude\agents", "$BotDir\workspace\.claude\skills", "$BotDir\connections", "$BotDir\secrets" | Out-Null
+New-Item -ItemType Directory -Force -Path $BotDir, "$Workspace\.claude\agents", "$Workspace\.claude\skills", "$BotDir\connections", "$BotDir\secrets" | Out-Null
 $core = @("listener.py","send.py","memory.py","skills.py","sessions.py","cron_runner.py","redact.py","reid.py",
           "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py","matrix_room.py","dock_fenster.py","update_verify.py","update_pubkey.txt","sandbox.py", "claude_health.py", "throttle.py", "retention.py", "permission_broker.py", "claude_tool_hook.py", "net_guard.py","persona.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py","updater.py","audit_log.py")
 foreach ($f in $core) { Fetch-File $f (Join-Path $BotDir $f); Ok "$f" }
@@ -270,7 +272,7 @@ try { Fetch-File "VERSION" (Join-Path $BotDir "VERSION") } catch {}   # Self-Upd
 Set-Content -Path (Join-Path $BotDir "repo_raw.txt") -Value $RepoRaw -NoNewline
 $agents = @("recherche","schreiber"); if ($BashOptin -eq "ja") { $agents += "sysadmin" }
 foreach ($a in $agents) {
-    $dest = Join-Path $BotDir "workspace\.claude\agents\$a.md"
+    $dest = Join-Path $Workspace ".claude\agents\$a.md"
     if (-not (Test-Path $dest)) { Fetch-File "agents\$a.md" $dest; Ok "Agent $a" }
 }
 # VERHALTEN.md aus Template

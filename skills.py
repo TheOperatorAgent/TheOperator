@@ -29,7 +29,8 @@ import sys
 import time
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
-SKILLS_DIR = os.path.join(BOT_DIR, "workspace", ".claude", "skills")
+import platform_compat as _plat   # noqa: E402
+SKILLS_DIR = os.path.join(_plat.workspace(), ".claude", "skills")   # #106
 PROPOSALS_FILE = os.path.join(BOT_DIR, "skills_proposals.json")
 NAME_RE = re.compile(r"^[a-z0-9-]{2,40}$")
 

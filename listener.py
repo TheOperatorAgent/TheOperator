@@ -51,7 +51,7 @@ def keychain_token(account, fallback):
 CREDS = json.load(open(f"{BOT_DIR}/credentials.json"))
 BOTS_FILE = f"{BOT_DIR}/bots.json"
 CRON_FILE = f"{BOT_DIR}/cron.json"
-WORKSPACE = f"{BOT_DIR}/workspace"
+WORKSPACE = _plat.workspace()   # #106: nicht mehr unter ~/.claude (Claude Code sperrt das)
 
 _sys = sys  # Rückwärtskompatibler Alias (unten weiterhin genutzt)
 try:
@@ -272,6 +272,14 @@ DASHBOARD_MARKER = "bayern.vonaschenbrenner.operator.dashboard"
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
 # Owner-Verify (#46): opt-in, live umschaltbar über dashboard.json (owner_verify_cfg() liest frisch).
 CLAUDE_SLOTS = threading.Semaphore(2)
+
+# #106: Der Arbeitsordner wird dem Modell EXPLIZIT genannt. Sonst rät es den Pfad
+# aus dem Gesprächsverlauf — nach dem Umzug aus ~/.claude war das der alte, was den
+# Selbstschutz auslöste und wie ein Fehler aussah.
+ARBEITSORDNER_HINWEIS = (
+    "Dein Arbeitsordner ist {ws} (dein aktuelles Arbeitsverzeichnis). "
+    "Dort — und nur dort — legst du Dateien an; nutze am besten relative Pfade. "
+    "Der Programmordner ~/.claude/matrix-bot gehört NICHT dazu.\n\n")
 
 OWNER_PROMPT = """Deine Verhaltensregeln, Wissensquellen und wie du antwortest stehen hier \
 (strikt befolgen):
@@ -538,6 +546,8 @@ class BotSession(threading.Thread):
                     verhalten = _pblock + "\n\n---\n\n" + verhalten
             except Exception as _e:
                 log(f"persona-Block übersprungen: {_e}")
+            # #106: Arbeitsordner explizit voranstellen (siehe ARBEITSORDNER_HINWEIS)
+            verhalten = ARBEITSORDNER_HINWEIS.format(ws=WORKSPACE) + verhalten
             ov_on, ov_model = owner_verify_cfg() if verify_loop else (False, None)
             if ov_on:
                 # Owner erledigt alles mit Werkzeugen, gibt Text zurück (sendet nicht) → Prüfer.
@@ -582,6 +592,7 @@ class BotSession(threading.Thread):
                 + f"{OWNER.split(':')[0]} schreibt dir:\n{messages_p}"
             return user, f_tools, agent.get("model"), mapping, messages_p, system, verify
         # Claude-Agent (voller Werkzeugkasten)
+        agent["body"] = ARBEITSORDNER_HINWEIS.format(ws=WORKSPACE) + agent["body"]
         tools = [t for t in agent["tools"] if t in OWNER_TOOLS or t == "Read"]
         model = agent["model"]   # roh; providers.resolve() in execute() macht Claude-Aliase/-IDs/None
         if verify:
@@ -1031,6 +1042,16 @@ def load_bot_sessions():
     return sessions
 
 
+def ensure_workspace_location():
+    """#106: Einmaliger Umzug des Arbeitsordners aus ~/.claude heraus. Muss VOR
+    allem anderen laufen — Claude Code sperrt Schreibzugriffe unter ~/.claude, und
+    genau dort lag der Ordner, in dem Agenten ihre Ergebnisse ablegen sollen."""
+    try:
+        _plat.workspace_migrieren(log=log)
+    except Exception as e:
+        log(f"Arbeitsordner-Umzug übersprungen ({e})")
+
+
 def ensure_private_workspace():
     """#18: Der Arbeitsordner gehört nur dir. Dort legen Agenten ihre Ergebnisse ab —
     das können Auswertungen mit echten Kundendaten sein. Auf einem Rechner mit mehreren
@@ -1188,6 +1209,7 @@ def main():
     if not owner_token:
         log("FATAL: Owner-Token weder im Keychain noch in credentials.json")
         return
+    ensure_workspace_location()        # #106: Arbeitsordner aus ~/.claude heraus
     ensure_private_workspace()         # #18: Arbeitsordner privat halten
     ensure_tool_hook()                 # #65: Rückfrage-Hook aktuell halten
     hs = CREDS["homeserver"]
