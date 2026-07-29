@@ -3361,3 +3361,14 @@ def test_anhaenge_ist_stdlib_only():
                if isinstance(n, ast.Import) for a in n.names}
     assert imports <= {"json", "os", "re", "sys", "time", "urllib",
                        "platform_compat"}, imports
+
+
+def test_windows_installer_ist_reines_ascii():
+    """Beim echten Windows-Lauf blieben Umlaute verstümmelt (»fÃ¼r dich«), obwohl
+    [Console]::OutputEncoding auf UTF-8 stand. Ursache: Bei »irm … | iex« lädt
+    Windows PowerShell 5.1 den Skripttext mit einer anderen Codepage — die Zeichen
+    sind bereits im Speicher kaputt, bevor die Encoding-Zeile greift. Deshalb muss
+    das Skript selbst ASCII bleiben; das ist der einzige verlässliche Weg."""
+    s = _ps1()
+    schlimm = sorted({c for c in s if ord(c) > 127})
+    assert not schlimm, f"Nicht-ASCII im Windows-Installer: {schlimm[:10]}"

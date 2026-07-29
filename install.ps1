@@ -1,13 +1,13 @@
 # =============================================================================
-# install.ps1 — Operator: dein Claude-Assistent im Matrix-Chat (Windows)
-# Geführte Installation. Idempotent. Keine Adminrechte nötig.
+# install.ps1 - Operator: dein Claude-Assistent im Matrix-Chat (Windows)
+# Gefuehrte Installation. Idempotent. Keine Adminrechte noetig.
 # Aufruf:  irm <RAW-URL>/install.ps1 | iex        (Remote-Ein-Zeiler in PowerShell)
 #          .\install.ps1                          (aus geklontem Repo)
 #          .\install.ps1 -Uninstall               (alles entfernen)
 # =============================================================================
 param([switch]$Uninstall)
 $ErrorActionPreference = "Stop"
-# Ohne das erscheinen Umlaute als »fÃ¼r« / »geprÃ¼ft« (Windows-Konsole nutzt sonst
+# Ohne das erscheinen Umlaute als "fr" / "geprft" (Windows-Konsole nutzt sonst
 # eine Codepage, die unsere UTF-8-Texte falsch deutet).
 try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -28,12 +28,12 @@ function Warn($m) { Write-Host "  [!] $m" -ForegroundColor Yellow }
 function Die($m)  { Write-Host "  [x] $m" -ForegroundColor Red; exit 1 }
 
 # ---------------------------------------------------------------- Python bereitstellen --
-# Auf macOS/Linux ist Python immer da — unter Windows oft nicht. Ein Kunde soll EINEN
+# Auf macOS/Linux ist Python immer da - unter Windows oft nicht. Ein Kunde soll EINEN
 # Befehl eingeben und fertig sein (EINFACHHEIT.md). Deshalb installiert der Installer
 # Python bei Bedarf selbst: eine Ja/Nein-Frage, danach kein Handgriff mehr.
 function Test-Python($pfad) {
     # Windows legt unter WindowsApps eine ATTRAPPE namens python.exe ab, die nur den
-    # Microsoft Store oeffnet. Sie meldet keine Version — deshalb jeden Kandidaten
+    # Microsoft Store oeffnet. Sie meldet keine Version - deshalb jeden Kandidaten
     # wirklich AUSFUEHREN statt nur seine Existenz zu pruefen.
     if (-not $pfad) { return $null }
     $ver = ""
@@ -47,7 +47,7 @@ function Find-Python {
         $p = Get-Command $c -ErrorAction SilentlyContinue
         if ($p -and (Test-Python $p.Source)) { return $p.Source }
     }
-    # Frisch installiertes Python ist im PATH dieser Sitzung noch nicht sichtbar —
+    # Frisch installiertes Python ist im PATH dieser Sitzung noch nicht sichtbar -
     # deshalb zusaetzlich an den ueblichen Orten nachsehen.
     $orte = @()
     foreach ($basis in @("$env:LOCALAPPDATA\Programs\Python", "$env:ProgramFiles\Python",
@@ -64,7 +64,7 @@ function Find-Python {
 
 function Update-PathFromRegistry {
     # Nach der Installation kennt die LAUFENDE Sitzung den neuen PATH noch nicht.
-    # Ohne diese Auffrischung muesste der Nutzer PowerShell neu oeffnen — genau der
+    # Ohne diese Auffrischung muesste der Nutzer PowerShell neu oeffnen - genau der
     # Handgriff, den wir ihm ersparen wollen.
     try {
         $m = [Environment]::GetEnvironmentVariable("Path", "Machine")
@@ -94,7 +94,7 @@ function Install-Python {
     try {
         Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
         # PrependPath=1 setzt den Suchpfad; InstallLauncherAllUsers=0 vermeidet die
-        # Administrator-Abfrage — der Nutzer soll nichts bestaetigen muessen.
+        # Administrator-Abfrage - der Nutzer soll nichts bestaetigen muessen.
         Start-Process -FilePath $exe -Wait -ArgumentList @(
             "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_launcher=1",
             "Include_test=0", "SimpleInstall=1")
@@ -110,7 +110,7 @@ function Install-Python {
 function Ensure-Python {
     $p = Find-Python
     if ($p) { return $p }
-    Warn "Auf diesem Rechner ist noch kein Python installiert — das braucht dein Operator."
+    Warn "Auf diesem Rechner ist noch kein Python installiert - das braucht dein Operator."
     Write-Host "  (Falls Windows dir gerade den Store angeboten hat: Das ist nur ein"
     Write-Host "   Platzhalter, kein echtes Python.)"
     $ja = Ask-YesNo "Soll ich Python jetzt fuer dich installieren?" "ja"
@@ -135,7 +135,7 @@ So geht es von Hand:
     return $p
 }
 
-# Secret-Store über secretstore.py (DPAPI). Modul muss in $BotDir liegen.
+# Secret-Store ueber secretstore.py (DPAPI). Modul muss in $BotDir liegen.
 function Secret-Set($account, $value) {
     $env:OP_SS_VAL = $value
     & $Py -c "import sys,os;sys.path.insert(0,r'$BotDir');import secretstore;secretstore.set(sys.argv[1],os.environ['OP_SS_VAL'])" $account 2>$null
@@ -152,7 +152,7 @@ function Rand-Hex { & $Py -c "import secrets;print(secrets.token_hex(32))" }
 
 # Datei holen: lokal aus dem Skriptordner, sonst vom Repo
 function Fetch-File($rel, $dest) {
-    # Der Ein-Zeiler »irm ... | iex« fuehrt das Skript aus dem Speicher aus — dabei ist
+    # Der Ein-Zeiler "irm ... | iex" fuehrt das Skript aus dem Speicher aus - dabei ist
     # $PSScriptRoot LEER, und Join-Path wirft dann einen Fehler. Genau daran ist die
     # Installation am 29.07. in Phase 5 abgebrochen. Lokale Kopie nur pruefen, wenn es
     # ueberhaupt einen Skriptordner gibt.
@@ -163,7 +163,7 @@ function Fetch-File($rel, $dest) {
     Invoke-WebRequest -Uri "$RepoRaw/$($rel -replace '\\','/')" -OutFile $dest -UseBasicParsing
 }
 
-# Dienst als Task-Scheduler-Aufgabe (onlogon, Neustart bei Fehler ≈ KeepAlive)
+# Dienst als Task-Scheduler-Aufgabe (onlogon, Neustart bei Fehler ~ KeepAlive)
 function Install-Service($name, $exe, $scriptPath) {
     $task = $Tasks[$name]
     $action  = New-ScheduledTaskAction -Execute $exe -Argument "`"$scriptPath`""
@@ -179,7 +179,7 @@ function Matrix($method, $url, $body, $token) {
     if ($token) { $headers["Authorization"] = "Bearer $token" }
     try { return Invoke-RestMethod -Method $method -Uri $url -Headers $headers -Body $body }
     catch {
-        # Fehler NICHT verschlucken: errcode/error aus der Matrix-Antwort für Diagnose merken
+        # Fehler NICHT verschlucken: errcode/error aus der Matrix-Antwort fuer Diagnose merken
         $script:MatrixErr = $null
         try {
             $raw = $_.ErrorDetails.Message
@@ -190,7 +190,7 @@ function Matrix($method, $url, $body, $token) {
     }
 }
 
-# Frage in Schleife stellen, bis der Validator (ScriptBlock: param($v) → normalisierter Wert oder $null) zufrieden ist
+# Frage in Schleife stellen, bis der Validator (ScriptBlock: param($v) -> normalisierter Wert oder $null) zufrieden ist
 function Ask-Loop($prompt, $default, $validator) {
     while ($true) {
         $suffix = if ($default) { " [$default]" } else { "" }
@@ -226,16 +226,16 @@ if ($Uninstall) {
         if ($tok -eq "keychain") { $tok = & $Py -c "import sys;sys.path.insert(0,r'$BotDir');import secretstore;print(secretstore.get('matrix-owner') or '')" 2>$null }
         if ($tok) { Matrix POST "$($c.homeserver)/_matrix/client/v3/logout" "{}" $tok | Out-Null; Ok "Matrix-Token invalidiert" }
     }
-    Secret-Del "token-key"; Ok "Secret-Store-Schlüssel gelöscht"
-    $ans = Read-Host "Verzeichnis $BotDir komplett löschen (inkl. Gedächtnis + Tokens)? (ja/nein)"
-    if ($ans -eq "ja") { Remove-Item -Recurse -Force $BotDir; Ok "Dateien gelöscht" } else { Warn "Dateien behalten" }
+    Secret-Del "token-key"; Ok "Secret-Store-Schluessel geloescht"
+    $ans = Read-Host "Verzeichnis $BotDir komplett loeschen (inkl. Gedaechtnis + Tokens)? (ja/nein)"
+    if ($ans -eq "ja") { Remove-Item -Recurse -Force $BotDir; Ok "Dateien geloescht" } else { Warn "Dateien behalten" }
     Bold "Fertig."; exit 0
 }
 
-# ------------------------------------------------------------ Phase 1: PRÜFEN
-Bold "Operator-Installation (Windows) — your operator inside the Matrix"
+# ------------------------------------------------------------ Phase 1: PRUeFEN
+Bold "Operator-Installation (Windows) - your operator inside the Matrix"
 Bold "Phase 1/7 - Voraussetzungen"
-# Python bei Bedarf selbst installieren — der Kunde soll nur EINEN Befehl eingeben.
+# Python bei Bedarf selbst installieren - der Kunde soll nur EINEN Befehl eingeben.
 # (Steht hier und nicht oben, weil Ask-YesNo erst weiter oben im Skript definiert wird.)
 $Py = Ensure-Python
 Ok "Python: $Py ($((& $Py --version 2>&1 | Out-String).Trim()))"
@@ -245,17 +245,17 @@ Bold "Phase 2/7 - Claude CLI"
 if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
     Warn "Claude CLI nicht gefunden - installiere..."
     if (Get-Command npm -ErrorAction SilentlyContinue) { npm install -g @anthropic-ai/claude-code }
-    else { try { irm https://claude.ai/install.ps1 | iex } catch { Die "Claude-CLI-Installation fehlgeschlagen - npm oder Installer nötig" } }
+    else { try { irm https://claude.ai/install.ps1 | iex } catch { Die "Claude-CLI-Installation fehlgeschlagen - npm oder Installer noetig" } }
 }
 $ClaudeBin = (Get-Command claude -ErrorAction SilentlyContinue).Source
-if (-not $ClaudeBin) { Die "claude nicht im PATH - PowerShell neu öffnen und erneut ausführen" }
+if (-not $ClaudeBin) { Die "claude nicht im PATH - PowerShell neu oeffnen und erneut ausfuehren" }
 Ok "Claude CLI: $ClaudeBin"
-# Anmeldung wirklich PRÜFEN (wie install.sh) — sonst „gelingt" die Installation und der Bot schweigt
+# Anmeldung wirklich PRUeFEN (wie install.sh) - sonst "gelingt" die Installation und der Bot schweigt
 $ClaudeReady = $true
 $probe = & claude -p "Antworte nur mit: OK" 2>$null
 if ($probe -notmatch "OK") {
     Bold "  Anmeldung bei Claude"
-    Write-Host "  Gleich öffnet sich dein Browser. Danach im Claude-Fenster /exit eingeben."
+    Write-Host "  Gleich oeffnet sich dein Browser. Danach im Claude-Fenster /exit eingeben."
     $attempt = 0
     while ($true) {
         $probe = & claude -p "Antworte nur mit: OK" 2>$null
@@ -263,7 +263,7 @@ if ($probe -notmatch "OK") {
         $attempt++
         if ($attempt -gt 3) {
             $ClaudeReady = $false
-            Warn "Claude-Anmeldung noch nicht bestätigt - Installation läuft trotzdem weiter."
+            Warn "Claude-Anmeldung noch nicht bestaetigt - Installation laeuft trotzdem weiter."
             Warn "Nachholen: 'claude /login' im Terminal, dann antwortet dein Operator."
             break
         }
@@ -294,21 +294,21 @@ $BotUser = Ask-Loop "Bot-Benutzername (nur der Name, ohne @ und Server)" "" {
     if ($v -notmatch '^[a-z0-9._=/-]+$') { Warn "Erlaubt sind nur Kleinbuchstaben, Zahlen und . _ = - /"; return $null }
     return $v
 }
-$BotPwSec = Read-Host "Passwort für @${BotUser}:${ServerName}" -AsSecureString
+$BotPwSec = Read-Host "Passwort fuer @${BotUser}:${ServerName}" -AsSecureString
 $BotPw = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($BotPwSec))
 $Human = Ask-Loop "Deine eigene Matrix-ID (nur diese wird beantwortet)" "" {
     param($v)
     if ($v -notmatch '^@.+:.+') { Warn "Eine Matrix-ID sieht so aus: @ich:matrix.org (du hast '$v' getippt)"; return $null }
     $srv = $v -replace '^@[^:]+:',''
     if ($srv -eq $ServerName) {
-        # Existenz live prüfen (fängt Tippfehler wie @vmichi ab)
+        # Existenz live pruefen (faengt Tippfehler wie @vmichi ab)
         $enc = [uri]::EscapeDataString($v)
         if (-not (Matrix GET "$HsUrl/_matrix/client/v3/profile/$enc" $null $null)) {
             if ($script:MatrixErr.errcode -eq "M_NOT_FOUND") { Warn "Die Matrix-ID $v gibt es auf diesem Server nicht - Tippfehler?"; return $null }
         }
         return $v
     }
-    # anderer Server: existiert er überhaupt? (fängt vmatrix.-Tippfehler ab)
+    # anderer Server: existiert er ueberhaupt? (faengt vmatrix.-Tippfehler ab)
     if (Matrix GET "https://$srv/_matrix/client/versions" $null $null) { return $v }
     Warn "Den Server '$srv' aus deiner Matrix-ID gibt es nicht oder er antwortet nicht - Tippfehler?"
     return $null
@@ -316,7 +316,7 @@ $Human = Ask-Loop "Deine eigene Matrix-ID (nur diese wird beantwortet)" "" {
 $BashOptin = Ask-YesNo "Shell-Zugriff erlauben?" "nein"
 if ($BashOptin -eq "ja") {
     $AllowedTools = '["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
-    $ToolsText = "Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Unumkehrbares nur nach Rückfrage."
+    $ToolsText = "Du darfst Shell-Kommandos ausfuehren (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Unumkehrbares nur nach Rueckfrage."
 } else {
     $AllowedTools = '["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
     $ToolsText = "Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben."
@@ -342,13 +342,13 @@ while ($true) {
             $pwTries++
             if ($pwTries -lt 3) {
                 Warn "Anmeldung fehlgeschlagen ($($script:MatrixErr.error)). Passwort in Ruhe neu eintippen."
-                $BotPwSec = Read-Host "Passwort für @${BotUser}:${ServerName} (erneut)" -AsSecureString
+                $BotPwSec = Read-Host "Passwort fuer @${BotUser}:${ServerName} (erneut)" -AsSecureString
                 $BotPw = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($BotPwSec))
             } else {
                 Warn "3x fehlgeschlagen. Entweder ist das Passwort falsch - oder den Account gibt es noch nicht."
                 Warn "Bot-Account anlegen: auf dem Homeserver registrieren (App/Admin), dann hier fortfahren."
                 $BotUser = Ask-Loop "Bot-Benutzername (nur der Name)" $BotUser { param($v) if ($v) { return $v.ToLower() } ; Warn "Bitte einen Namen eingeben"; return $null }
-                $BotPwSec = Read-Host "Passwort für @${BotUser}:${ServerName}" -AsSecureString
+                $BotPwSec = Read-Host "Passwort fuer @${BotUser}:${ServerName}" -AsSecureString
                 $BotPw = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($BotPwSec))
                 $pwTries = 0
             }
@@ -357,8 +357,8 @@ while ($true) {
 }
 # Token-Verifikation (whoami) - erst jetzt gilt die Anmeldung als bestanden
 $who = Matrix GET "$HsUrl/_matrix/client/v3/account/whoami" $null $Token
-if (-not $who.user_id) { Die "Anmeldung unerwartet ungültig (whoami leer) - bitte erneut ausführen." }
-Ok "Angemeldet als $($who.user_id) - Zugang geprüft"
+if (-not $who.user_id) { Die "Anmeldung unerwartet ungueltig (whoami leer) - bitte erneut ausfuehren." }
+Ok "Angemeldet als $($who.user_id) - Zugang geprueft"
 $Room = $null
 $joined = Matrix GET "$HsUrl/_matrix/client/v3/joined_rooms" $null $Token
 foreach ($r in $joined.joined_rooms) {
@@ -398,14 +398,14 @@ if (-not (Test-Path $verh)) {
 # Matrix-Token in DPAPI-Secret-Store
 $TokenRef = "keychain"
 Secret-Set "matrix-owner" $Token
-if (-not (Secret-Has "matrix-owner")) { Warn "Secret-Store nicht verfügbar - Token bleibt in der Datei"; $TokenRef = $Token }
+if (-not (Secret-Has "matrix-owner")) { Warn "Secret-Store nicht verfuegbar - Token bleibt in der Datei"; $TokenRef = $Token }
 $creds = @{ homeserver=$HsUrl; user_id="@${BotUser}:${ServerName}"; access_token=$TokenRef; room_id=$Room;
            owner_id=$Human; allowed_tools=($AllowedTools|ConvertFrom-Json); claude_bin=$ClaudeBin }
 $credPath = Join-Path $BotDir "credentials.json"
 $creds | ConvertTo-Json | Set-Content $credPath
-# Datei-Rechte härten: Vererbung aus, nur der aktuelle Nutzer hat Zugriff
+# Datei-Rechte haerten: Vererbung aus, nur der aktuelle Nutzer hat Zugriff
 try { icacls $credPath /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null } catch {}
-Ok "credentials.json geschrieben (Zugriff nur für dich)"
+Ok "credentials.json geschrieben (Zugriff nur fuer dich)"
 
 # ------------------------------------------------------------- Phase 6: START
 Bold "Phase 6/7 - Listener-Dienst"
@@ -462,11 +462,11 @@ if ($dashOptin -eq "ja") {
     }
     Install-Service "dashboard" $VenvPy (Join-Path $DashDir "server.py"); Ok "Dashboard-Aufgabe registriert"
     Install-Service "pseudonym" $VenvPy (Join-Path $BotDir "pseudonym_daemon.py"); Ok "Pseudonym-Daemon-Aufgabe registriert"
-    Ok "Dashboard öffnen mit:  $VenvPy $DashDir\open.py"
+    Ok "Dashboard oeffnen mit:  $VenvPy $DashDir\open.py"
 }
 
 # -------------------------------------------------------------- Phase 7: TEST
 Bold "Phase 7 - Funktionstest"
-try { & $Py (Join-Path $BotDir "send.py") "Operator einsatzbereit auf Windows! Schreib mir einfach."; Ok "Testnachricht im Raum - auf dem Handy prüfen!" }
-catch { Warn "Testnachricht fehlgeschlagen - Log prüfen: $BotDir\listener.log" }
+try { & $Py (Join-Path $BotDir "send.py") "Operator einsatzbereit auf Windows! Schreib mir einfach."; Ok "Testnachricht im Raum - auf dem Handy pruefen!" }
+catch { Warn "Testnachricht fehlgeschlagen - Log pruefen: $BotDir\listener.log" }
 Bold "Fertig!  Deinstallation:  .\install.ps1 -Uninstall"

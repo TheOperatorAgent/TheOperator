@@ -1,8 +1,7 @@
 {
-  "version": "1.14.0",
+  "version": "1.14.1",
   "date": "2026-07-29",
   "highlights": [
-    "📎 Schick deinem Operator Bilder und Dateien! Fotos, PDFs, Tabellen — er speichert sie in deinem Arbeitsordner unter »eingang/«, sieht sie sich an und geht in seiner Antwort darauf ein. Vorher hat er nur den Dateinamen gesehen und an der Sache vorbeigeredet.",
-    "🔒 Dabei gilt: Dateien landen ausschließlich in deinem Arbeitsordner (nichts wird ausgeführt), zu große werden freundlich abgelehnt statt den Rechner vollzuschreiben, und sie werden nach derselben Frist gelöscht wie dein Gesprächsverlauf. Ehrlich dazu: Der Inhalt einer Datei wird nicht pseudonymisiert — ein Foto geht so zum Modell, wie es ist. Das steht auch im Datenschutz-Tab."
+    "🪟 Windows: Deutsche Umlaute erscheinen jetzt richtig statt als »fÃ¼r«. Ursache war nicht die Anzeige, sondern die Art, wie PowerShell das Skript beim Ein-Zeiler einliest — das Installationsskript kommt deshalb ab sofort ohne Sonderzeichen aus."
   ]
 }
