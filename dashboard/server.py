@@ -427,6 +427,53 @@ async def api_dock_senden(request: Request):
     return {"ok": True, "event_id": event_id}
 
 
+@app.get("/dock")
+def dock_seite():
+    """Satellit-Fenster: nur der Chat, füllt das Fenster (dock.html).
+    Die Seite selbst ist ohne Token nutzlos — jede /api/dock/*-Anfrage prüft ihn."""
+    return FileResponse(os.path.join(STATIC, "dock.html"), headers=_NOCACHE)
+
+
+@app.post("/api/dock/fenster")
+def api_dock_fenster(request: Request):
+    """Satellit auf OS-Ebene starten (dock_fenster.py, App-Modus des Browsers)."""
+    if not _dock_origin_ok(request):
+        return err("dock", "Anfrage kam nicht aus dem Dashboard", 403)
+    import subprocess
+    try:
+        subprocess.Popen([sys.executable, os.path.join(BOT_DIR, "dock_fenster.py")],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+    except Exception:
+        audit("dashboard", "dock.fenster", ok=False)
+        return err("dock", "Fenster-Start fehlgeschlagen", 500)
+    audit("dashboard", "dock.fenster")
+    return {"ok": True}
+
+
+@app.get("/api/dock/autostart")
+def api_dock_autostart_get():
+    sys.path.insert(0, BOT_DIR)
+    import dock_fenster
+    return {"an": dock_fenster.autostart_status()}
+
+
+@app.post("/api/dock/autostart")
+async def api_dock_autostart_set(request: Request):
+    if not _dock_origin_ok(request):
+        return err("dock", "Anfrage kam nicht aus dem Dashboard", 403)
+    an = bool((await request.json()).get("an"))
+    sys.path.insert(0, BOT_DIR)
+    import dock_fenster
+    try:
+        dock_fenster.autostart_an() if an else dock_fenster.autostart_aus()
+    except Exception:
+        audit("dashboard", "dock.autostart", ok=False)
+        return err("dock", "Autostart konnte nicht geändert werden", 500)
+    audit("dashboard", "dock.autostart", "an" if an else "aus")
+    return {"ok": True, "an": an}
+
+
 @app.get("/api/audit")
 def api_audit(limit: int = 200):
     if not os.path.exists(AUDIT):

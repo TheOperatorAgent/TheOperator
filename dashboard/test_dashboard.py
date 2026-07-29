@@ -2446,9 +2446,8 @@ def test_listener_dashboard_marker_owner_gebunden():
 def test_dock_frontend_rendert_nur_text():
     """#93: Nachrichten sind Fremddaten. Der Dock-Teil von app.js darf sie nie als
     HTML einsetzen — nur textContent/createTextNode."""
-    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "static", "app.js")).read()
-    dock = src.split("Operator-Dock (#90)")[-1]
+    dock = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "static", "dock.js")).read()
     assert "innerHTML" not in dock, "innerHTML im Dock — XSS-Tor"
     assert "insertAdjacentHTML" not in dock
     assert "createTextNode" in dock or "textContent" in dock
@@ -2456,12 +2455,11 @@ def test_dock_frontend_rendert_nur_text():
 
 def test_dock_stream_token_nie_in_url():
     """#94.4: Der Dashboard-Token darf nie als Query-Parameter laufen (Server-Logs)."""
-    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "static", "app.js")).read()
-    dock = src.split("Operator-Dock (#90)")[-1]
+    dock = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "static", "dock.js")).read()
     assert "token=" not in dock.lower().replace("localstorage", ""), \
         "Token in einer URL im Dock-Code"
-    assert '"Authorization": "Bearer " + TOKEN' in dock
+    assert '"Authorization": "Bearer " + DTOKEN' in dock
 
 
 def test_dock_origin_wache():
@@ -2475,3 +2473,57 @@ def test_dock_origin_wache():
     assert sv._dock_origin_ok(R(f"http://127.0.0.1:{port}")) is True
     assert sv._dock_origin_ok(R("")) is True                 # curl u. Ä. — Token schützt
     assert sv._dock_origin_ok(R("https://boese-seite.example")) is False
+
+
+# ------------------------------------------------ Satellit-Fenster (#90, 1.9.1) --
+def test_dock_fenster_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/dock_fenster.py")).read()
+    imports = set()
+    for n in ast.walk(ast.parse(src)):
+        if isinstance(n, ast.Import):
+            imports.update(a.name.split(".")[0] for a in n.names)
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            imports.add(n.module.split(".")[0])
+    assert imports <= {"json", "os", "shutil", "subprocess", "sys",
+                       "platform_compat", "secretstore"}, imports
+
+
+def test_dock_fenster_autostart_roundtrip(tmp_path, monkeypatch):
+    """Autostart an → Datei existiert mit Startbefehl; aus → weg. Einmal-öffnen
+    beim Anmelden, bewusst KEIN Dauerdienst (kein KeepAlive/Restart)."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import dock_fenster as df
+    ziel = str(tmp_path / "autostart-test")
+    monkeypatch.setattr(df, "_autostart_pfad", lambda: ziel)
+    assert df.autostart_status() is False
+    df.autostart_an()
+    inhalt = open(ziel).read()
+    assert "dock_fenster.py" in inhalt
+    assert "KeepAlive" not in inhalt and "Restart" not in inhalt
+    assert df.autostart_status() is True
+    df.autostart_aus()
+    assert df.autostart_status() is False
+    df.autostart_aus()   # doppelt löschen darf nicht knallen
+
+
+def test_dock_standalone_seite_vorhanden():
+    """dock.html (Satellit) nutzt dieselbe dock.js wie das Dashboard — ein Code,
+    zwei Welten. Beide Seiten binden dock.js ein."""
+    basis = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+    dock_html = open(os.path.join(basis, "dock.html")).read()
+    index_html = open(os.path.join(basis, "index.html")).read()
+    assert "dock.js" in dock_html and "dock.js" in index_html
+    assert 'class="dock-standalone"' in dock_html
+    # app.js enthält den Dock-Code nicht mehr doppelt
+    assert "Operator-Dock (#90)" not in open(os.path.join(basis, "app.js")).read()
+
+
+def test_manifest_liefert_satellit_dateien():
+    """Updater liefert nur Manifest-Dateien aus — dock.html/dock.js/dock_fenster.py
+    müssen drinstehen, sonst bekommt kein Nutzer den Satelliten per Update."""
+    import json as _j
+    d = _j.load(open(os.path.expanduser("~/.claude/matrix-bot/manifest.json")))
+    srcs = [f["src"] for f in d["files"]]
+    for muss in ("dock_fenster.py", "dashboard/static/dock.html", "dashboard/static/dock.js"):
+        assert muss in srcs, f"{muss} fehlt im Manifest"

@@ -1,5 +1,5 @@
 {
- "version": "1.9.0",
+ "version": "1.9.1",
  "files": [
   {
    "src": "listener.py",
@@ -8,6 +8,10 @@
   {
    "src": "matrix_room.py",
    "dst": "matrix_room.py"
+  },
+  {
+   "src": "dock_fenster.py",
+   "dst": "dock_fenster.py"
   },
   {
    "src": "send.py",
@@ -188,6 +192,14 @@
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js"
+  },
+  {
+   "src": "dashboard/static/dock.js",
+   "dst": "dashboard/static/dock.js"
+  },
+  {
+   "src": "dashboard/static/dock.html",
+   "dst": "dashboard/static/dock.html"
   },
   {
    "src": "dashboard/static/style.css",

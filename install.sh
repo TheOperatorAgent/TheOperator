@@ -562,7 +562,7 @@ phase5_files() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
   local F A DEST
   for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
-           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py matrix_room.py claude_health.py throttle.py retention.py permission_broker.py claude_tool_hook.py net_guard.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
+           migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py matrix_room.py dock_fenster.py claude_health.py throttle.py retention.py permission_broker.py claude_tool_hook.py net_guard.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
     if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
     else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
     ok "$F installiert"
@@ -788,6 +788,7 @@ BOT_DIR="\$HOME/.claude/matrix-bot"
 VENV="\$BOT_DIR/dashboard/venv/bin/python3"; [ -x "\$VENV" ] || VENV=python3
 case "\${1:-dashboard}" in
   dashboard|"") exec "\$VENV" "\$BOT_DIR/dashboard/open.py";;
+  chat)         exec "\$VENV" "\$BOT_DIR/dock_fenster.py" "\${2:-}";;
   log)          exec tail -f "\$BOT_DIR/listener.log";;
   status)
     if [ "\$(uname)" = Darwin ]; then
@@ -796,7 +797,7 @@ case "\${1:-dashboard}" in
       for s in listener dashboard pseudonym; do systemctl --user is-active --quiet "operator-\$s" && echo "✓ \$s läuft" || echo "✗ \$s gestoppt"; done
     fi;;
   uninstall)    curl -fsSL "$REPO_RAW/install.sh" -o /tmp/operator-uninstall.sh && exec bash /tmp/operator-uninstall.sh --uninstall;;
-  *) echo "Nutzung: operator [dashboard|log|status|uninstall]";;
+  *) echo "Nutzung: operator [dashboard|chat|log|status|uninstall]";;
 esac
 LAUNCH
   chmod +x "$HOME/.local/bin/operator"

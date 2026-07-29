@@ -162,3 +162,11 @@ svg rect { fill: var(--accent); }
 .dock-eingabe { display: flex; gap: 8px; padding: 10px 14px 14px; border-top: 1px solid var(--border); }
 .dock-eingabe textarea { flex: 1; resize: none; margin: 0; max-height: 120px; }
 .dock-eingabe .primary { padding: 8px 16px; align-self: flex-end; }
+
+/* Satellit-Fenster: das Dock füllt das ganze Fenster (dock.html) */
+body.dock-standalone { overflow: hidden; }
+body.dock-standalone #dock { position: fixed; inset: 0; width: auto; height: auto;
+  border: none; box-shadow: none; }
+.dock-autostart { display: flex; gap: 8px; align-items: center; font-size: 12px;
+  color: var(--muted); padding: 8px 14px 0; cursor: pointer; }
+.dock-autostart input { accent-color: var(--accent); }

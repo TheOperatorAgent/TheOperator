@@ -1,8 +1,8 @@
 {
-  "version": "1.9.0",
+  "version": "1.9.1",
   "date": "2026-07-29",
   "highlights": [
-    "💬 Operator-Dock: Dein Chat mit dem Operator jetzt direkt im Dashboard — ein-/ausklappbar, andockbar rechts, links oder unten. Es ist derselbe Chat wie auf dem Handy; vom Dashboard Gesendetes erscheint dort mit 🖥️.",
-    "🔒 Dabei wie immer: keine zweite Datenkopie, Nachrichten werden nur als Text angezeigt, alles bleibt auf deinem Rechner (127.0.0.1)."
+    "🛰 Satellit: Der Operator-Chat jetzt auch als eigenes kleines Fenster auf deinem Schreibtisch — unabhängig vom Dashboard, mit eigenem Symbol. Öffnen über den 🛰-Knopf im Chat oder mit »operator chat«.",
+    "☑️ Auf Wunsch öffnet er sich automatisch beim Anmelden (Häkchen im Satellit-Fenster) — und lässt sich genauso einfach wieder abschalten."
   ]
 }

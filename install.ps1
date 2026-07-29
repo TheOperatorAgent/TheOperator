@@ -263,7 +263,7 @@ else {
 Bold "Phase 5/7 - Dateien einrichten"
 New-Item -ItemType Directory -Force -Path $BotDir, "$BotDir\workspace\.claude\agents", "$BotDir\workspace\.claude\skills", "$BotDir\connections", "$BotDir\secrets" | Out-Null
 $core = @("listener.py","send.py","memory.py","skills.py","sessions.py","cron_runner.py","redact.py","reid.py",
-          "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py","matrix_room.py", "claude_health.py", "throttle.py", "retention.py", "permission_broker.py", "claude_tool_hook.py", "net_guard.py","persona.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py","updater.py","audit_log.py")
+          "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py","matrix_room.py","dock_fenster.py", "claude_health.py", "throttle.py", "retention.py", "permission_broker.py", "claude_tool_hook.py", "net_guard.py","persona.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py","updater.py","audit_log.py")
 foreach ($f in $core) { Fetch-File $f (Join-Path $BotDir $f); Ok "$f" }
 try { Fetch-File "VERSION" (Join-Path $BotDir "VERSION") } catch {}   # Self-Update #64
 # Update-Quelle hinterlegen: Updater zieht aus derselben Quelle wie die Installation

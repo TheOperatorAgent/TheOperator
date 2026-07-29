@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>💬 Operator</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<!-- Satellit-Fenster (#90): nur der Chat, füllt das ganze Fenster.
+     Gleiche Sicherheitsregeln wie im Dashboard — Nachrichten nur als Text. -->
+<body class="dock-standalone">
+<aside id="dock" aria-label="Chat mit deinem Operator">
+  <div class="dock-kopf">
+    <span class="dock-titel">💬 Operator</span>
+    <span id="dock-status" class="dock-status">verbinde …</span>
+    <span class="dock-knoepfe">
+      <button id="dock-seite" class="dock-btn hidden" title="Andocken">⇄</button>
+      <button id="dock-zu" class="dock-btn" title="Fenster schließen">✕</button>
+    </span>
+  </div>
+  <label id="dock-autostart" class="dock-autostart">
+    <input type="checkbox" id="dock-autostart-an"> beim Anmelden automatisch öffnen
+  </label>
+  <div id="dock-verlauf" aria-live="polite"></div>
+  <div class="dock-eingabe">
+    <textarea id="dock-text" rows="1" placeholder="Nachricht an deinen Operator … (Enter sendet)"></textarea>
+    <button id="dock-senden" class="primary">➤</button>
+  </div>
+</aside>
+<script src="/dock.js"></script>
+</body>
+</html>
