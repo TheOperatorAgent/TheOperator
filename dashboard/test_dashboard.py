@@ -2329,3 +2329,41 @@ def test_llm_runner_nutzt_system_chromium_als_rueckfall():
     assert "executable_path=" in src
     # Die Fehlermeldung darf den Nutzer nicht glauben lassen, sein Dashboard sei kaputt.
     assert "Dashboard" in src.split("Executable doesn't exist")[1][:400]
+
+
+def test_oeffentlicher_installer_zeigt_nie_ins_private_netz():
+    """Wächter gegen einen realen Fehler (29.07.): Die install.sh im öffentlichen GitHub-
+    Spiegel war veraltet und lud aus einer privaten Netzwerkadresse nach — bei Fremden
+    schlägt das fehl, und der Updater kam nie wieder auf einen aktuellen Stand.
+    Alles, was Fremde herunterladen, muss auf eine öffentliche Quelle zeigen."""
+    import re
+    privat = re.compile(r"(?:^|[/@])(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)")
+    geprueft = 0
+    for pfad in ("/tmp/_rel10gh/install.sh", "/tmp/_rel10gh/install.ps1",
+                 "/tmp/operator-site/public/install.sh",
+                 "/tmp/operator-site/public/install.ps1"):
+        if not os.path.exists(pfad):
+            continue
+        geprueft += 1
+        for zeile in open(pfad):
+            if "REPO_RAW" in zeile.upper() and privat.search(zeile):
+                raise AssertionError(f"{pfad}: öffentlicher Installer zeigt ins private Netz: "
+                                     f"{zeile.strip()[:120]}")
+    if not geprueft:
+        import pytest
+        pytest.skip("Öffentliche Installer-Kopien nicht ausgecheckt")
+
+
+def test_oeffentlicher_installer_ist_die_ausgelieferte_fassung():
+    """Zweiter Teil derselben Panne: Der GitHub-Spiegel hinkte inhaltlich hinterher und
+    ließ Sicherheitsmodule aus. Alles, was der Auslieferungs-Installer nachlädt, muss
+    auch im öffentlichen stehen — nur die Bezugsquelle darf sich unterscheiden."""
+    quelle, oeffentlich = "/tmp/_diff_op/install.sh", "/tmp/_rel10gh/install.sh"
+    if not (os.path.exists(quelle) and os.path.exists(oeffentlich)):
+        import pytest
+        pytest.skip("Repos nicht ausgecheckt")
+    a, b = open(quelle).read(), open(oeffentlich).read()
+    for modul in ("net_guard.py", "retention.py", "permission_broker.py",
+                  "claude_health.py", "throttle.py", "repo_raw.txt"):
+        assert modul in a, f"{modul} fehlt im Auslieferungs-Installer"
+        assert modul in b, f"{modul} fehlt im öffentlichen Installer"
