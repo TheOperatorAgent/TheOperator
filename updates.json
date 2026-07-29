@@ -1,8 +1,7 @@
 {
-  "version": "1.10.0",
+  "version": "1.10.1",
   "date": "2026-07-29",
   "highlights": [
-    "🔏 Updates sind jetzt signiert: Jedes Update trägt eine digitale Unterschrift und jede Datei eine Prüfsumme. Stimmt etwas nicht — manipulierte Quelle, ausgetauschte Datei, untergeschobene Alt-Version — wird das Update komplett abgelehnt, bevor irgendetwas geschrieben wird.",
-    "🛡️ Befehls-Freigaben sind strenger geworden: Der Operator führt nur noch Befehle ohne Rückfrage aus, die er als harmlos kennt. Bei einem unbekannten fragt er dich — antworte »immer«, dann merkt er ihn sich dauerhaft. Gefährliche Muster bleiben immer gesperrt."
+    "🔒 Der Operator schützt jetzt auch sich selbst: Jeder Versuch, in seinen eigenen Programmordner zu schreiben, braucht deine Zustimmung — egal auf welchem Weg. Dort liegen seine Sicherheitseinstellungen; wer sie ändern könnte, könnte alle anderen Schutzmaßnahmen aushebeln. Lesen bleibt frei, und diese eine Rückfrage lässt sich bewusst nicht dauerhaft abschalten."
   ]
 }

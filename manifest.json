@@ -1,5 +1,5 @@
 {
- "version": "1.10.0",
+ "version": "1.10.1",
  "files": [
   {
    "src": "listener.py",
@@ -109,7 +109,7 @@
   {
    "src": "permission_broker.py",
    "dst": "permission_broker.py",
-   "sha256": "e051369cef3b8cd904dd84990df53945b3e853f49251d3a070e596e4229c1645"
+   "sha256": "9cecde9da88a3b7e20a8ce0169a9bec28279e39ec84a020c29da7457b6053949"
   },
   {
    "src": "persona.py",
@@ -269,7 +269,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "e91dee3b412922e56d788d757cd30eaaae92b0846323abdb99eeb58b9cfe30c1"
+   "sha256": "6b56de731bba7d2a340b35e1f8639e880663c2192541e4ab81895bf0e1f11798"
   }
  ]
 }

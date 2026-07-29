@@ -166,6 +166,46 @@ def unbekannte_befehle(cmd):
     return fremd
 
 
+_SCHREIB_CMD = {"tee", "cp", "mv", "ln", "dd", "install", "rsync", "truncate",
+                "shred", "chmod", "chown", "cat", "sed", "tar", "unzip", "touch",
+                "mkdir", "python", "python3", "perl", "ruby", "awk"}
+
+
+def _schreibt_in_botdir(cmd):
+    """#104-B / Security-Review Teil 2: Erkennt Shell-Schreibzugriffe in den
+    Operator-Ordner selbst — egal über welchen Umweg. Das ist die Kern-Lücke:
+    Das Write/Edit-Werkzeug prüft den Zielpfad (fragt bei Zugriff hierher), die
+    Bash-Musterliste kannte aber nur /etc//System//Library/. Ein »echo x > repo_raw.txt«
+    ging durch — und wer hier schreibt, kann Update-Quelle, Signatur-Schlüssel,
+    den Prüfer und den Broker selbst austauschen, also die GESAMTE Absicherung
+    aushebeln, ohne dass je gefragt wird.
+    Konservativ: bei jedem Verdacht True (→ Rückfrage). Reines Lesen bleibt frei."""
+    try:
+        bd = os.path.realpath(BOT_DIR)
+    except OSError:
+        return True
+    # Alle Formen, in denen der Bot-Ordner adressiert sein kann.
+    marker = [bd, "~/.claude/matrix-bot", "$HOME/.claude/matrix-bot",
+              "${HOME}/.claude/matrix-bot", ".claude/matrix-bot"]
+    if not any(m in cmd for m in marker):
+        return False
+    # Redirect irgendwohin in den Bot-Ordner? (> … , >> …)
+    for ziel in re.findall(r">>?\s*([^\s;|&>]+)", cmd):
+        z = os.path.realpath(os.path.expanduser(os.path.expandvars(ziel)))
+        if z == bd or z.startswith(bd + os.sep):
+            return True
+    # Schreibendes Kommando mit Bot-Ordner als Argument?
+    for seg in _segmente(cmd):
+        wort = _befehlswort(seg)
+        if wort in _SCHREIB_CMD and any(m in seg for m in marker):
+            # cat/sed/python nur, wenn sie wirklich schreiben (Redirect, -i, >file)
+            if wort in ("cat", "python", "python3", "perl", "ruby", "awk") \
+                    and ">" not in seg and "-i" not in seg:
+                continue
+            return True
+    return False
+
+
 def merkbar(tool, tool_input):
     """Das Wort, das eine »immer«-Antwort dauerhaft erlauben würde (None = nicht lernbar).
     Nur für unbekannte Bash-Befehle — Sperrlisten-Treffer sind NIE lernbar."""
@@ -175,6 +215,8 @@ def merkbar(tool, tool_input):
     for muster, _ in DESTRUCTIVE_CMD:
         if re.search(muster, cmd, re.IGNORECASE):
             return None
+    if _schreibt_in_botdir(cmd):          # Selbstschutz ist nie per »immer« abwählbar
+        return None
     fremd = unbekannte_befehle(cmd)
     return fremd[0] if len(fremd) == 1 else None
 # WebFetch ist NICHT pauschal harmlos: Der Operator läuft in deinem Netz und könnte darüber
@@ -212,6 +254,11 @@ def classify(tool, tool_input):
         for muster, was in DESTRUCTIVE_CMD:
             if re.search(muster, cmd, re.IGNORECASE):
                 return True, f"{was} — Befehl: {_shorten(cmd, 90)}"
+        # Gate-Konsistenz mit Write/Edit: Schreibzugriff in den Operator-Ordner selbst
+        # ist immer eine Rückfrage (schützt Update-Quelle, Signatur-Schlüssel, Broker).
+        if _schreibt_in_botdir(cmd):
+            return True, ("in meinen eigenen Programmordner schreiben — das betrifft meine "
+                          f"Sicherheitseinstellungen. Befehl: {_shorten(cmd, 80)}")
         # #104-B: fail-closed — was nicht als harmlos bekannt ist, fragt nach.
         # Vorher galt »im Zweifel nicht fragen«; eine Sperrliste gegen einen
         # generativen Prozess ist aber strukturell zu schwach (Security-Review 29.07.).

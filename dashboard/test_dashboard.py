@@ -2893,3 +2893,32 @@ def test_updater_altbestand_pinnt_beim_ersten_update(tmp_path, monkeypatch):
     up = _updater_auf(monkeypatch, repo, bot)     # KEIN pubkey im Bot-Ordner
     ok, msg = up.apply(restart=False, log=lambda *_: None)
     assert ok, msg
+
+
+def test_broker_schuetzt_eigenen_ordner_ueber_bash(tmp_path, monkeypatch):
+    """Security-Review Teil 2 (der lasttragende Fund): Ein Shell-Write in den Bot-Ordner
+    kann Update-Quelle, Signatur-Schlüssel, Prüfer und Broker austauschen und damit die
+    GESAMTE Absicherung aushebeln — ohne dass je gefragt wird. Das Write/Edit-Gate fing
+    das über realpath, die Bash-Musterliste NICHT (kannte nur /etc//System//Library/).
+    Jetzt: jeder Schreibweg in den Ordner fragt nach, Lesen bleibt frei, nicht lernbar."""
+    pb = _broker()
+    angriffe = [
+        "echo boese > ~/.claude/matrix-bot/repo_raw.txt",
+        "echo k > $HOME/.claude/matrix-bot/update_pubkey.txt",
+        "cp /tmp/evil.py ~/.claude/matrix-bot/permission_broker.py",
+        "tee ~/.claude/matrix-bot/updater.py < /tmp/x",
+        "printf x >> ~/.claude/matrix-bot/broker_allow.txt",
+        "sed -i 's/a/b/' ~/.claude/matrix-bot/net_guard.py",
+        "cat /tmp/evil > ~/.claude/matrix-bot/update_verify.py",
+    ]
+    for cmd in angriffe:
+        riskant, besch = pb.classify("Bash", {"command": cmd})
+        assert riskant, f"Angriff ging durch: {cmd}"
+        assert pb.merkbar("Bash", {"command": cmd}) is None, f"per immer abwählbar: {cmd}"
+    # Lesen im eigenen Ordner darf NICHT nerven (Petra)
+    for cmd in ["cat ~/.claude/matrix-bot/listener.log",
+                "grep -r TODO ~/.claude/matrix-bot/",
+                "ls -la ~/.claude/matrix-bot/",
+                "tail -20 ~/.claude/matrix-bot/listener.log"]:
+        riskant, _ = pb.classify("Bash", {"command": cmd})
+        assert not riskant, f"Lesen wurde fälschlich gegated: {cmd}"
