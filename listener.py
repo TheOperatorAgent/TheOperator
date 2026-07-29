@@ -752,6 +752,10 @@ class BotSession(threading.Thread):
         if req_d.get("tools") or req_d.get("browser"):
             req_d["timeout"] = 120       # pro Modell-Aufruf innerhalb der Schleife
             run_timeout = 600            # gesamte Werkzeugschleife
+            # #83: Surrogat-Map mitgeben — der Runner bereinigt Tool-Ergebnisse (Secrets raus,
+            # bekannte PII → dieselben Surrogate wie im Prompt), bevor das Fremd-Modell sie sieht.
+            if isinstance(mapping, dict) and mapping.get("s2r"):
+                req_d["pii_map"] = {"s2r": mapping["s2r"]}
         req = json.dumps(req_d)
         start = time.time()
         try:

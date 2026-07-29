@@ -48,6 +48,30 @@ TOOLS_SPEC = [
 ]
 
 
+def _sanitize_result(text: str, pii_map: dict) -> str:
+    """#83 Egress-Schutz: Tool-Ergebnisse (Shell/Dateien/Browser) kommen aus der ECHTEN
+    Welt und würden sonst roh ans Fremd-Modell gehen — am pseudonymisierten Prompt vorbei.
+    1. Secrets maskieren (redact: bekannte Werte + Muster) — NIE Klartext-Secrets ans Modell.
+    2. Bekannte PII durch DIESELBEN Surrogate ersetzen wie im Prompt (konsistent, s2r-Map
+       invertiert, längster Realwert zuerst). Grenze (dokumentiert): NEUE, der Map unbekannte
+       PII aus Tool-Ausgaben wird hier nicht erkannt — das bleibt Teil von #83 (Presidio-Pass)."""
+    if not text:
+        return text
+    try:
+        import redact
+        text = redact.redact(text)
+    except Exception:
+        pass
+    try:
+        s2r = (pii_map or {}).get("s2r", {})
+        for surrogat, real in sorted(s2r.items(), key=lambda kv: len(kv[1] or ""), reverse=True):
+            if real and len(real) >= 3 and real in text:
+                text = text.replace(real, surrogat)
+    except Exception:
+        pass
+    return text
+
+
 def _jail(workdir: str, path: str) -> str:
     """Pfad-Käfig: Datei-Zugriffe außerhalb des Arbeitsordners sind technisch unmöglich."""
     p = os.path.realpath(os.path.join(workdir, path or "."))
@@ -201,6 +225,7 @@ def main() -> int:
     use_tools = bool(req.get("tools"))
     use_browser = bool(req.get("browser"))
     workdir = req.get("workdir") or ""
+    pii_map = req.get("pii_map") or {}     # #83: Surrogat-Map für Tool-Ergebnis-Bereinigung
 
     # Ollama spricht OpenAI-kompatibel unter /v1; Dummy-Key, da das SDK einen verlangt.
     if provider == "ollama":
@@ -251,6 +276,8 @@ def main() -> int:
                                 res = _browse_tool(tc.function.name, targs, bstate, actions)
                             else:
                                 res = _exec_tool(tc.function.name, targs, workdir, actions)
+                            # #83: Tool-Ergebnis bereinigen, BEVOR es das Fremd-Modell sieht
+                            res = _sanitize_result(res, pii_map)
                             messages.append({"role": "tool", "tool_call_id": tc.id, "content": res})
                         continue
                     text = (msg.content or "").strip()

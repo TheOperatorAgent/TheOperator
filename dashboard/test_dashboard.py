@@ -1878,3 +1878,22 @@ def test_updater_repo_raw_resolution(monkeypatch, tmp_path):
     assert updater._load_repo_raw().startswith("http://192.168.178.53")
     monkeypatch.setenv("OPERATOR_REPO_RAW", "https://example.org/repo/")
     assert updater._load_repo_raw() == "https://example.org/repo"          # Env gewinnt
+
+
+def test_tool_result_egress_sanitized():
+    """#83: Tool-Ergebnisse werden bereinigt, bevor das Fremd-Modell sie sieht —
+    Secrets maskiert, bekannte PII durch die Prompt-Surrogate ersetzt."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "llm_runner_t83", os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"))
+    lr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lr)
+    mapping = {"s2r": {"Ingeburg Krause": "Petra Muster", "Ingeburg": "Petra"}}
+    roh = ("grep-Ausgabe: Petra Muster <petra@firma.de>\n"
+           "api_key = sk-ant-abcdefabcdefabcdefabcdefabcdef12")
+    sauber = lr._sanitize_result(roh, mapping)
+    assert "Petra Muster" not in sauber          # echte PII raus …
+    assert "Ingeburg Krause" in sauber           # … konsistentes Surrogat drin
+    assert "sk-ant-" not in sauber               # Secret maskiert
+    # fail-open: ohne Map bleibt der Text (nur Secret-Maskierung)
+    assert "REDACTED" in lr._sanitize_result("key = sk-ant-abcdefabcdefabcdefabcdefabcdef12", {})
