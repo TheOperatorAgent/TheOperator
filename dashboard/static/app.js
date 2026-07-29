@@ -78,6 +78,18 @@ document.querySelectorAll("nav button").forEach((b) =>
 
 /* ---------- Übersicht ---------- */
 let STATUS = null;
+
+// #59: Kachel für den Claude-Zugang — sagt in einfacher Sprache, was zu tun ist.
+function claudeLoginTile() {
+  const s = (STATUS && STATUS.claude_login && STATUS.claude_login.state) || "unknown";
+  if (s === "ok") return { cls: "ok", icon: "✓", hint: " · alles gut" };
+  if (s === "expired") return { cls: "err", icon: "🔑",
+    hint: " · abgelaufen — bitte am Rechner <code>claude /login</code> eingeben" };
+  if (s === "limit") return { cls: "warn", icon: "⏳",
+    hint: " · Abo am Limit — API-Key als Reserve hilft" };
+  return { cls: "", icon: "—", hint: " · noch nicht geprüft" };
+}
+
 async function loadStatus() {
   STATUS = await api("GET", "/api/status");
   const ver = $("#app-version");
@@ -93,6 +105,7 @@ async function loadStatus() {
     <div class="tile ${STATUS.vault.exists ? (STATUS.vault.locked ? "warn" : "ok") : ""}"><div class="k">${STATUS.vault.exists ? (STATUS.vault.locked ? "🔒" : "🔓") : "—"}</div><div class="l">Tresor${STATUS.vault.exists && !STATUS.vault.locked ? ` · ${STATUS.vault.entries} Einträge` : STATUS.vault.exists ? " · gesperrt" : ""}${STATUS.vault.fido_keys ? ` · 🔑${STATUS.vault.fido_keys}` : ""}</div></div>
     <div class="tile ${STATUS.m365.connected ? "ok" : ""}"><div class="k">${STATUS.m365.connected ? "✓" : "—"}</div><div class="l">Microsoft 365</div></div>
     <div class="tile ${STATUS.google.connected ? "ok" : ""}"><div class="k">${STATUS.google.connected ? "✓" : "—"}</div><div class="l">Google Drive</div></div>
+    <div class="tile ${claudeLoginTile().cls}"><div class="k">${claudeLoginTile().icon}</div><div class="l">Claude-Zugang${claudeLoginTile().hint}</div></div>
     <div class="tile ${STATUS.health.synapse_ok ? "ok" : "err"}"><div class="k">${STATUS.health.synapse_ok ? "ok" : "down"}</div><div class="l">Matrix-Server</div></div>
     <div class="tile ${STATUS.health.disk_free_gb < 10 ? "warn" : ""}"><div class="k">${STATUS.health.disk_free_gb} GB</div><div class="l">Disk frei</div></div>
     <div class="tile"><div class="k">${STATUS.health.usage_5h.runs}</div><div class="l">Claude-Läufe (5 h) · ${STATUS.health.cron_jobs} Automationen</div></div>`;

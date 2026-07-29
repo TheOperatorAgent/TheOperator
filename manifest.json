@@ -58,6 +58,10 @@
    "dst": "providers.py"
   },
   {
+   "src": "claude_health.py",
+   "dst": "claude_health.py"
+  },
+  {
    "src": "persona.py",
    "dst": "persona.py"
   },

@@ -1897,3 +1897,49 @@ def test_tool_result_egress_sanitized():
     assert "sk-ant-" not in sauber               # Secret maskiert
     # fail-open: ohne Map bleibt der Text (nur Secret-Maskierung)
     assert "REDACTED" in lr._sanitize_result("key = sk-ant-abcdefabcdefabcdefabcdefabcdef12", {})
+
+
+# ---------------------------------------------------------------- #59 Claude-Login --
+def test_claude_health_classify_and_warn_once(tmp_path, monkeypatch):
+    """#59: Zustände korrekt erkannt; Vorwarnung genau EINMAL je Ausfall,
+    nach Erholung wieder erlaubt."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import claude_health as ch
+    monkeypatch.setattr(ch, "STATE_FILE", str(tmp_path / "h.json"))
+    assert ch.classify(0, "") == "ok"
+    assert ch.classify(1, "Error 401: please run /login") == "expired"
+    assert ch.classify(1, "429 rate limit") == "limit"
+    assert ch.classify(1, "irgendwas anderes") == "unknown"
+    # Auth schlägt Limit (Reihenfolge zählt)
+    assert ch.classify(1, "401 unauthorized, rate limit info") == "expired"
+
+    assert ch.record(1, "oauth expired") == ("expired", True)
+    assert ch.should_warn() is True
+    ch.mark_warned()
+    assert ch.should_warn() is False           # kein Spam
+    ch.record(0, "")                            # Login repariert
+    assert ch.should_warn() is False
+    ch.record(1, "401 unauthorized")            # neuer Ausfall
+    assert ch.should_warn() is True             # darf wieder warnen
+
+
+def test_claude_health_probe_only_when_stale(tmp_path, monkeypatch):
+    """Sparsamkeit: Wer chattet, löst keinen Probe-Call aus."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import claude_health as ch
+    import time as _t
+    monkeypatch.setattr(ch, "STATE_FILE", str(tmp_path / "h2.json"))
+    ch.record(0, "")
+    assert ch.needs_probe() is False
+    assert ch.needs_probe(_t.time() + (ch.PROBE_AFTER_H + 1) * 3600) is True
+
+
+def test_claude_health_is_stdlib_only():
+    """claude_health wird vom stdlib-Listener importiert — kein venv-Paket erlaubt."""
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/claude_health.py")).read()
+    imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
+               if isinstance(n, ast.Import) for a in n.names}
+    imports |= {n.module.split(".")[0] for n in ast.walk(ast.parse(src))
+                if isinstance(n, ast.ImportFrom) and n.module}
+    assert imports <= {"json", "os", "subprocess", "time", "sys"}

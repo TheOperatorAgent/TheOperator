@@ -74,6 +74,10 @@ try:
     import redact as redact_mod
 except Exception:
     redact_mod = None
+try:
+    import claude_health               # noqa: E402  (#59 Login-Vorwarnung)
+except Exception:
+    claude_health = None
 VENV_PY = _plat.venv_python(BOT_DIR)
 
 
@@ -672,15 +676,28 @@ class BotSession(threading.Thread):
 
             r, result, tok_in, tok_out, dur = _claude_run(run_env)
             used_fallback = False
-            # M4 — Auto-Fallback: Abo am Limit + hinterlegter API-Key → genau EIN Retry mit Key
+            # M4 — Auto-Fallback mit hinterlegtem API-Key: bei Abo-Limit UND (#59) bei
+            # abgelaufenem Login. Genau EIN Retry; der Nutzer wird nicht blockiert.
             if r.returncode != 0 and providers:
-                low = (r.stdout + r.stderr).lower()
+                out_low = r.stdout + r.stderr
+                reason = claude_health.classify(r.returncode, out_low) if claude_health else (
+                    "limit" if any(k in out_low.lower() for k in
+                                   ("limit", "429", "rate", "overloaded", "quota")) else "unknown")
                 fk = providers.fallback_key()
-                if fk and any(k in low for k in ("limit", "429", "rate", "overloaded", "quota")):
-                    log(f"[{self.bot_name}] Abo-Limit erkannt → Wiederholung mit Anthropic-API-Key")
+                if fk and reason in ("limit", "expired"):
+                    log(f"[{self.bot_name}] {'Login abgelaufen' if reason == 'expired' else 'Abo-Limit'}"
+                        f" erkannt → Wiederholung mit Anthropic-API-Key")
                     run_env["ANTHROPIC_API_KEY"] = fk
                     r, result, tok_in, tok_out, dur = _claude_run(run_env)
                     used_fallback = (r.returncode == 0)
+                    if used_fallback:
+                        self._fallback_reason = reason
+            # #59: Zustand des Claude-Logins aus dem echten Lauf verbuchen (kein Probe nötig)
+            if claude_health and self.kind == "owner":
+                try:
+                    claude_health.record(r.returncode, r.stdout + r.stderr)
+                except Exception:
+                    pass
 
             result = redact_text(result)
             messages_label = redact_text(messages_label)
@@ -712,7 +729,12 @@ class BotSession(threading.Thread):
                 # A1 (#46): der Worker hat NICHT selbst gesendet — Antwort prüfen und ausliefern.
                 self._verify_and_send(verify, messages_label, result, mapping, used_fallback)
             elif used_fallback:
-                self.send_message("ℹ️ (Lief über deinen Claude-API-Key, weil das Abo gerade am Limit war.)")
+                grund = ("dein Claude-Login abgelaufen ist — bitte bei Gelegenheit am Rechner "
+                         "`claude /login` ausführen"
+                         if getattr(self, "_fallback_reason", "") == "expired"
+                         else "das Abo gerade am Limit war")
+                self.send_message(f"ℹ️ (Lief über deinen Claude-API-Key, weil {grund}.)")
+                self._fallback_reason = ""
         except subprocess.TimeoutExpired:
             log(f"[{self.bot_name}] Claude-Lauf abgebrochen (Timeout 600s)")
             if sessions_db:
@@ -912,6 +934,31 @@ def load_bot_sessions():
     return sessions
 
 
+_health_state = {"last": 0.0}
+
+
+def _claude_health_tick(owner, interval=900):
+    """#59: Läuft der Claude-Zugang noch? Nachgesehen wird nur, wenn längere Zeit kein
+    echter Lauf Beweis geliefert hat (spart Aufrufe). Bei abgelaufenem Login geht EINE
+    freundliche Vorwarnung an den Owner — kein Spam, erst nach Erholung wieder."""
+    if not claude_health:
+        return
+    now = time.time()
+    if now - _health_state["last"] < interval:
+        return
+    _health_state["last"] = now
+    try:
+        if claude_health.needs_probe(now):
+            zustand, _ = claude_health.probe()
+            log(f"Claude-Login geprüft: {zustand}")
+        if claude_health.should_warn():
+            owner.send_message(claude_health.WARN_TEXT)
+            claude_health.mark_warned()
+            log("Claude-Login abgelaufen — Vorwarnung an den Owner geschickt")
+    except Exception as e:
+        log(f"Claude-Login-Prüfung fehlgeschlagen: {e}")
+
+
 # ---------- #81: Owner-DM-Räume automatisch finden & Einladungen annehmen ----------
 # Hintergrund: Der Anzeigename des Operator-Kontos ist „Operator" → in Element heißt JEDER
 # Direktchat mit ihm „Operator". Legt Element (bekannter Client-Bug) einen ZWEITEN „Operator"-
@@ -1076,6 +1123,7 @@ def main():
             except Exception as e:
                 log(f"Ereignis-Prüfung fehlgeschlagen: {e}")
         _mail_watch_tick(log)
+        _claude_health_tick(owner)
         if audit_log:                    # #49: Audit-Log periodisch versiegeln (single writer)
             try:
                 now_s = time.time()

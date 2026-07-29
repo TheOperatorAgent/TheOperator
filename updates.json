@@ -1,8 +1,9 @@
 {
-  "version": "1.7.5",
+  "version": "1.7.6",
   "date": "2026-07-29",
   "highlights": [
-    "🛡️ Privacy-Shield jetzt auch für Werkzeug-Ergebnisse: Was Agenten aus Dateien, Shell oder Browser lesen, wird bereinigt, BEVOR ein Fremd-Modell (Ollama/OpenAI/Azure) es sieht — Passwörter/Tokens werden maskiert, bekannte Namen durch dieselben Pseudonyme ersetzt wie im Gespräch.",
-    "Gilt automatisch für alle Werkzeug-Agenten (coder, websurfer & Co.) — nichts einzustellen."
+    "🔑 Kein böses Erwachen mehr: Läuft dein Claude-Zugang ab, sagt der Operator dir das EINMAL freundlich im Chat — mit dem genauen nächsten Schritt, statt dich mitten in einer Frage auflaufen zu lassen.",
+    "🔁 Hast du einen Claude-API-Key als Reserve hinterlegt, arbeitet er bei abgelaufenem Login einfach automatisch weiter (bisher nur bei Abo-Limit).",
+    "📊 Neue Dashboard-Kachel »Claude-Zugang« zeigt auf einen Blick: alles gut / abgelaufen / am Limit."
   ]
 }

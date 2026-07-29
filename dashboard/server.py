@@ -296,8 +296,15 @@ def api_status():
         p = os.path.join(BOT_DIR, fn)
         return round(os.path.getsize(p) / 1e6, 2) if os.path.exists(p) else 0
 
+    try:                                  # #59: Zustand des Claude-Logins (fail-open)
+        import claude_health
+        claude_login = claude_health.state()
+    except Exception:
+        claude_login = {"state": "unknown", "checked_at": 0}
+
     return {
         "listener_running": listener,
+        "claude_login": claude_login,
         "version": _app_version(),
         "author": PRODUCT_AUTHOR,
         "owner": c.get("owner_id"),
