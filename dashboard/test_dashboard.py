@@ -2204,3 +2204,77 @@ def test_browser_route_guard_wired():
     assert 'ctx.route("**/*"' in src, "Route-Wache fehlt — Weiterleitungen ungeprüft"
     assert "net_guard.check_url(request.url)" in src
     assert "net_guard.check_url(url)" in src, "Vorab-Prüfung in open_page fehlt"
+
+
+# ---------------------------------------------------------------- #18 Datenhygiene --
+def test_no_message_content_in_log():
+    """#18: Das Betriebsprotokoll ist zum Fehlersuchen da — nicht zum Mitlesen.
+    Antworttexte dürfen nicht mehr geloggt werden."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    assert "{result[-200:]}" not in src, "Antworttext landet noch im Log"
+    assert "{text[:120]}" not in src, "Fremd-Modell-Antwort landet noch im Log"
+    assert "Zeichen Antwort)" in src, "Ersatz (nur Länge) fehlt"
+
+
+def test_retention_deletes_only_old_data(tmp_path, monkeypatch):
+    """Alte Daten weg, frische unangetastet — inkl. mehrzeiliger Tracebacks."""
+    import sqlite3, time as _t, json as _j
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import retention as ret
+    bot = str(tmp_path)
+    os.makedirs(os.path.join(bot, "run"), exist_ok=True)
+    monkeypatch.setattr(ret, "BOT_DIR", bot)
+    monkeypatch.setattr(ret, "CONFIG_FILE", os.path.join(bot, "dashboard.json"))
+    monkeypatch.setattr(ret, "STATE_FILE", os.path.join(bot, "run", "retention.json"))
+    _j.dump({"retention": {"enabled": True, "sessions_days": 30,
+                           "logs_days": 14, "audit_days": 90}},
+            open(os.path.join(bot, "dashboard.json"), "w"))
+    jetzt = _t.time()
+    db = sqlite3.connect(os.path.join(bot, "sessions.db"))
+    db.execute("CREATE TABLE sessions (id INTEGER PRIMARY KEY, epoch REAL, "
+               "messages TEXT, result TEXT)")
+    for tage, txt in ((60, "uralt"), (45, "alt"), (10, "frisch"), (1, "neu")):
+        db.execute("INSERT INTO sessions (epoch, messages, result) VALUES (?,?,?)",
+                   (jetzt - tage * 86400, txt, txt))
+    db.commit(); db.close()
+
+    def stamp(t): return _t.strftime("%Y-%m-%d %H:%M:%S", _t.localtime(jetzt - t * 86400))
+    open(os.path.join(bot, "listener.log"), "w").write(
+        f"[{stamp(30)}] alt\n[{stamp(20)}] Fehler: Traceback\n  Zeile 2\n  Zeile 3\n"
+        f"[{stamp(2)}] frisch\n")
+    open(os.path.join(bot, "audit.log"), "w").write(f"[{stamp(120)}] alt\n[{stamp(30)}] neu\n")
+
+    erg = ret.aufraeumen(log=lambda *_: None)
+    assert erg["sessions"] == 2 and erg["log_zeilen"] == 4 and erg["audit_zeilen"] == 1
+    db = sqlite3.connect(os.path.join(bot, "sessions.db"))
+    uebrig = [r[0] for r in db.execute("SELECT messages FROM sessions ORDER BY epoch")]
+    db.close()
+    assert uebrig == ["frisch", "neu"], f"falsch gekürzt: {uebrig}"
+    assert open(os.path.join(bot, "listener.log")).read().strip().endswith("frisch")
+    # gekürzte Dateien behalten strenge Rechte
+    assert oct(os.stat(os.path.join(bot, "listener.log")).st_mode & 0o777) == "0o600"
+
+
+def test_retention_respects_off_switch_and_schedule(tmp_path, monkeypatch):
+    """Abschaltbar; und läuft höchstens einmal täglich."""
+    import json as _j, time as _t
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import retention as ret
+    bot = str(tmp_path)
+    os.makedirs(os.path.join(bot, "run"), exist_ok=True)
+    monkeypatch.setattr(ret, "BOT_DIR", bot)
+    monkeypatch.setattr(ret, "CONFIG_FILE", os.path.join(bot, "dashboard.json"))
+    monkeypatch.setattr(ret, "STATE_FILE", os.path.join(bot, "run", "retention.json"))
+    _j.dump({"retention": {"enabled": False}}, open(os.path.join(bot, "dashboard.json"), "w"))
+    assert "uebersprungen" in ret.aufraeumen(log=lambda *_: None)
+    assert ret.faellig() is True                       # noch nie gelaufen
+    _j.dump({"last": _t.time()}, open(ret.STATE_FILE, "w"))
+    assert ret.faellig() is False                      # gerade erst gelaufen
+
+
+def test_retention_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/retention.py")).read()
+    imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
+               if isinstance(n, ast.Import) for a in n.names}
+    assert imports <= {"json", "os", "time", "sqlite3", "sys"}

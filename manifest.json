@@ -1,5 +1,5 @@
 {
- "version": "1.8.3",
+ "version": "1.8.4",
  "files": [
   {
    "src": "listener.py",
@@ -64,6 +64,10 @@
   {
    "src": "throttle.py",
    "dst": "throttle.py"
+  },
+  {
+   "src": "retention.py",
+   "dst": "retention.py"
   },
   {
    "src": "claude_tool_hook.py",

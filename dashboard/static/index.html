@@ -290,6 +290,18 @@
   <section id="tab-privacy" class="tab">
     <h2>Datenschutz — was liegt wo?</h2>
     <div id="pii-box"></div>
+    <div class="card" id="retention-card">
+      <h2>Wie lange bleiben deine Daten?</h2>
+      <p class="small">Alles bleibt auf deinem Rechner — und wird automatisch gelöscht, sobald
+        es nicht mehr gebraucht wird. Du musst dich um nichts kümmern.</p>
+      <div id="retention-list"></div>
+      <div class="row" style="margin-top:12px;gap:10px">
+        <button class="ghost" onclick="retentionNow()">Jetzt aufräumen</button>
+        <button class="ghost" onclick="retentionExport()">Meine Daten exportieren</button>
+        <button class="danger" onclick="retentionWipe()">Verlauf komplett löschen</button>
+      </div>
+      <p class="small muted" id="retention-last"></p>
+    </div>
     <div id="privacy-tables"></div>
   </section>
 </main>

@@ -86,6 +86,10 @@ try:
     import permission_broker           # noqa: E402  (#65 Rückfrage-Antworten kennen)
 except Exception:
     permission_broker = None
+try:
+    import retention                   # noqa: E402  (#18 Aufbewahrung/Aufräumen)
+except Exception:
+    retention = None
 VENV_PY = _plat.venv_python(BOT_DIR)
 
 
@@ -724,8 +728,11 @@ class BotSession(threading.Thread):
 
             result = redact_text(result)
             messages_label = redact_text(messages_label)
+            # #18: KEIN Antworttext ins Log — das Log ist zum Fehlersuchen da, nicht zum
+            # Mitlesen von Gesprächen. Der Verlauf steht (pseudonymisiert) in sessions.db.
             log(f"[{self.bot_name}] Claude fertig (rc={r.returncode}, {dur}ms, "
-                f"{tok_out} out-tok{', Fallback-Key' if used_fallback else ''}): {result[-200:]}")
+                f"{tok_out} out-tok{', Fallback-Key' if used_fallback else ''}, "
+                f"{len(result)} Zeichen Antwort)")
             if sessions_db:
                 try:
                     sessions_db.record(self.bot_name, messages_label, result, r.returncode,
@@ -825,7 +832,7 @@ class BotSession(threading.Thread):
             self.send_message(text)
             for a in out.get("actions", [])[:30]:                 # Audit: jede Werkzeug-Aktion
                 log(f"[{self.bot_name}] 🔧 {a}")
-            log(f"[{self.bot_name}] {label} fertig ({dur}ms): {text[:120]}")
+            log(f"[{self.bot_name}] {label} fertig ({dur}ms, {len(text)} Zeichen)")   # #18: kein Inhalt
             rc, rec = 0, text[:4000]
         else:
             self.send_message("⚠️ " + str(out.get("error", "Das Modell konnte gerade nicht antworten."))
@@ -1185,6 +1192,12 @@ def main():
                 log(f"Ereignis-Prüfung fehlgeschlagen: {e}")
         _mail_watch_tick(log)
         _claude_health_tick(owner)
+        if retention:                  # #18: einmal täglich alte Daten aufräumen
+            try:
+                if retention.faellig():
+                    retention.aufraeumen(log)
+            except Exception as e:
+                log(f"Aufräumen fehlgeschlagen: {e}")
         if audit_log:                    # #49: Audit-Log periodisch versiegeln (single writer)
             try:
                 now_s = time.time()

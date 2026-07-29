@@ -1,8 +1,9 @@
 {
-  "version": "1.8.3",
+  "version": "1.8.4",
   "date": "2026-07-29",
   "highlights": [
-    "🛡️ Dein Heimnetz ist jetzt tabu: Der Operator kann keine Adressen in deinem eigenen Netz mehr aufrufen — nicht dein Dashboard, nicht deinen Router, nicht deine Server. Auch nicht über Umleitungen von einer präparierten Webseite.",
-    "🌐 Gilt für den Browser-Agenten UND für Claudes eigenen Webseiten-Abruf. Ins öffentliche Internet darf er weiterhin ganz normal."
+    "🧹 Deine Daten räumen sich selbst auf: Gesprächsverlauf bleibt 30 Tage, Protokolle 14, Sicherheits-Audit 90 — danach wird automatisch gelöscht. Fristen im Dashboard änderbar.",
+    "🔒 Keine Gesprächsinhalte mehr im Protokoll: Im listener.log stand bisher der Anfang jeder Antwort. Jetzt steht dort nur noch, WIE LANG sie war.",
+    "📤 Neu unter »Datenschutz«: sehen was gespeichert ist, alles als Datei exportieren, oder den Verlauf komplett löschen."
   ]
 }

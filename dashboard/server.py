@@ -306,11 +306,17 @@ def api_status():
         fair_use = throttle.stats()
     except Exception:
         fair_use = {}
+    try:                                  # #18: Aufbewahrung lokaler Daten (fail-open)
+        import retention
+        aufbewahrung = retention.status()
+    except Exception:
+        aufbewahrung = {}
 
     return {
         "listener_running": listener,
         "claude_login": claude_login,
         "fair_use": fair_use,
+        "aufbewahrung": aufbewahrung,
         "version": _app_version(),
         "author": PRODUCT_AUTHOR,
         "owner": c.get("owner_id"),
@@ -1614,6 +1620,54 @@ def api_mcp_delete(name: str):
 
 # ---------------------------------------------------------------- Backup (B2) --
 BACKUP_DIR = os.path.expanduser("~/OperatorBackups")
+
+
+@app.post("/api/aufbewahrung/{aktion}")
+def api_aufbewahrung(aktion: str):
+    """#18: Aufräumen anstoßen, Daten exportieren oder Verlauf komplett löschen."""
+    import retention
+    if aktion == "aufraeumen":
+        erg = retention.aufraeumen(force=True)
+        audit("dashboard", "aufbewahrung.aufraeumen", str(erg))
+        return {"ok": True, "ergebnis": erg}
+    if aktion == "export":
+        # Nur eigene Daten, keine Geheimnisse: Verlauf + Gedächtnis + Profil/Persona.
+        import sqlite3
+        daten = {"exportiert_am": time.strftime("%Y-%m-%dT%H:%M:%S"), "verlauf": []}
+        try:
+            db = sqlite3.connect(os.path.join(BOT_DIR, "sessions.db"))
+            db.row_factory = sqlite3.Row
+            daten["verlauf"] = [dict(r) for r in db.execute(
+                "SELECT epoch, bot, kind, model, messages, result FROM sessions "
+                "ORDER BY epoch DESC LIMIT 5000")]
+            db.close()
+        except Exception as e:
+            daten["verlauf_fehler"] = str(e)
+        for name, datei in (("persona", "persona.json"), ("profil", "profile.json")):
+            try:
+                daten[name] = json.load(open(os.path.join(BOT_DIR, datei)))
+            except Exception:
+                pass
+        audit("dashboard", "aufbewahrung.export", f"{len(daten['verlauf'])} Runden")
+        return daten
+    if aktion == "loeschen":
+        import sqlite3
+        n = 0
+        try:
+            db = sqlite3.connect(os.path.join(BOT_DIR, "sessions.db"))
+            n = db.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+            db.execute("DELETE FROM sessions")
+            db.commit()
+            try:
+                db.execute("VACUUM")
+            except sqlite3.Error:
+                pass
+            db.close()
+        except Exception as e:
+            raise HTTPException(500, str(e))
+        audit("dashboard", "aufbewahrung.loeschen", f"{n} Runden geloescht")
+        return {"ok": True, "geloescht": n}
+    raise HTTPException(400, "unbekannte Aktion")
 
 
 @app.post("/api/backup")

@@ -1532,7 +1532,60 @@ async function savePii(withLists) {
   catch (e) { toast(friendlyError(e), 1); }
 }
 
+// #18: Aufbewahrung — was liegt hier, wie lange noch, und wie werde ich es los?
+function renderRetention() {
+  const a = (STATUS && STATUS.aufbewahrung) || {};
+  const box = $("#retention-list");
+  if (!box) return;
+  if (!a.daten) { box.innerHTML = "<p class='small'>Noch keine Angaben.</p>"; return; }
+  box.innerHTML = `<table class="kv">${a.daten.map(d => `<tr>
+      <td>${d.name}<div class="small muted">${d.datei}</div></td>
+      <td>${d.kb} KB${d.eintraege !== undefined ? ` · ${d.eintraege} Einträge` : ""}</td>
+      <td class="small">wird nach ${d.frist_tage} Tagen gelöscht${
+        d.aeltester_tage !== null && d.aeltester_tage !== undefined
+          ? ` · ältester Eintrag: ${d.aeltester_tage} Tage` : ""}</td>
+    </tr>`).join("")}</table>`;
+  const l = $("#retention-last");
+  if (l) l.textContent = a.letzter_lauf
+    ? "Zuletzt aufgeräumt: " + new Date(a.letzter_lauf * 1000).toLocaleString("de-DE")
+    : "Noch nie aufgeräumt — läuft automatisch einmal täglich.";
+}
+
+async function retentionNow() {
+  try {
+    const r = await api("POST", "/api/aufbewahrung/aufraeumen");
+    const e = r.ergebnis || {};
+    toast(`Aufgeräumt: ${e.sessions || 0} Gesprächsrunden, ${
+      (e.log_zeilen || 0) + (e.audit_zeilen || 0)} Protokollzeilen entfernt.`);
+    await loadStatus(); renderRetention();
+  } catch (e) { toast(friendlyError(e)); }
+}
+
+async function retentionExport() {
+  try {
+    const d = await api("POST", "/api/aufbewahrung/export");
+    const blob = new Blob([JSON.stringify(d, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "operator-meine-daten.json";
+    a.click(); URL.revokeObjectURL(a.href);
+    toast("Deine Daten wurden als Datei heruntergeladen.");
+  } catch (e) { toast(friendlyError(e)); }
+}
+
+async function retentionWipe() {
+  if (!confirm("Wirklich den kompletten Gesprächsverlauf löschen?\n\n" +
+               "Der Operator vergisst damit alle bisherigen Unterhaltungen. " +
+               "Das lässt sich nicht rückgängig machen.")) return;
+  try {
+    const r = await api("POST", "/api/aufbewahrung/loeschen");
+    toast(`${r.geloescht} Gesprächsrunden gelöscht.`);
+    await loadStatus(); renderRetention();
+  } catch (e) { toast(friendlyError(e)); }
+}
+
 async function loadPrivacy() {
+  renderRetention();
   const s = STATUS || await api("GET", "/api/status");
   await loadPseudonymize();
   $("#privacy-tables").innerHTML = `<div class="card"><table class="kv">
