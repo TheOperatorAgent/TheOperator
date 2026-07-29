@@ -25,6 +25,9 @@ EXTRA_STRICT = {"DATE_TIME"}
 # Presidio-Score-Untergrenze: darunter ignorieren (Telefon 0.4 wollen wir noch,
 # aber Rauschen < 0.35 raus). fail-safe: im Zweifel eher ersetzen.
 MIN_SCORE = 0.35
+# #102: Orte/Firmen brauchen mehr Sicherheit als strukturierte Muster (IBAN, Mail) —
+# NER rät bei unbekannten Großwörtern nach »im/in« sonst zu oft daneben.
+MIN_SCORE_NAMED = 0.55
 
 # Häufige deutsche Wörter, die NER (spaCy de) gern fälschlich als PERSON labelt —
 # v. a. großgeschriebene Imperative/Funktionswörter am Satzanfang. Over-Detection hier
@@ -163,7 +166,23 @@ def pseudonymize(text: str, mapping: dict, mode: str = "standard",
     analyzer = _get_analyzer()
     results = analyzer.analyze(text=text, language="de")
     spans = [r for r in _resolve_overlaps(results)
-             if r.entity_type in active and r.score >= MIN_SCORE]
+             if r.entity_type in active
+             and r.score >= (MIN_SCORE_NAMED if r.entity_type in ("LOCATION", "ORGANIZATION")
+                             else MIN_SCORE)]
+    # #102: Orte/Firmen nur ersetzen, wenn das Sprachmodell die Wörter überhaupt kennt.
+    # NER hielt das Tippfehler-Wort »Satelitenmodus« für einen Ort und machte
+    # »Dinkelsbühl« daraus — der Chat wurde wirr. Echte Orte (München, Dinkelsbühl)
+    # haben Wortvektoren in de_core_news_lg; erfundene/vertippte Wörter nicht.
+    # Fail-safe: schlägt die Prüfung selbst fehl, wird weiter ersetzt (Datenschutz gewinnt).
+    try:
+        _doc = analyzer.nlp_engine.nlp["de"](text)
+        def _bekannt(sp):
+            toks = [t for t in _doc if t.idx < sp.end and t.idx + len(t.text) > sp.start]
+            return (not toks) or any(t.has_vector for t in toks)
+        spans = [sp for sp in spans
+                 if sp.entity_type not in ("LOCATION", "ORGANIZATION") or _bekannt(sp)]
+    except Exception:
+        pass
     # POS-Check: Verben/Hilfsverben nie als PERSON (zusätzlich zur Stopwort-Liste)
     try:
         doc = analyzer.nlp_engine.nlp["de"](text)

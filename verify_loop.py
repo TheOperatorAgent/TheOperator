@@ -22,6 +22,9 @@ Worker erneut mit Werkzeugen laufen zu lassen. Das ist robust und genügt dem Ke
 _TRUE = {"true", "ja", "yes", "1", "on", "an"}
 # Marker, mit dem der Verifier eine fehlerfreie Antwort durchwinkt.
 _OK_MARKER = "VERIFIZIERT"
+# Marker, hinter dem AUSSCHLIESSLICH der finale, sendbare Text steht (#99):
+# Prüfer-Ausgaben ohne Marker werden verworfen — nie wieder Prüfer-Prosa im Chat.
+_FIX_MARKER = "KORREKTUR:"
 
 
 def verify_config(meta):
@@ -44,8 +47,10 @@ def verify_config(meta):
     return (v in _TRUE), None
 
 
-def verifier_prompts(question, answer):
-    """Baut (system, user) für den Verifier-Lauf. Sprache: Deutsch, knapp, parsebar."""
+def verifier_prompts(question, answer, verlauf=""):
+    """Baut (system, user) für den Verifier-Lauf. Sprache: Deutsch, knapp, parsebar.
+    verlauf (#101): die letzten Gesprächsrunden — ohne sie beurteilte der Prüfer
+    Smalltalk-Wechsel ohne Kontext und »korrigierte« völlig richtige Antworten."""
     system = (
         "Du bist ein kritischer, sorgfältiger Prüfer. Du bekommst eine FRAGE und eine "
         "ANTWORT eines anderen Assistenten. Prüfe die ANTWORT auf sachliche Fehler, "
@@ -60,13 +65,16 @@ def verifier_prompts(question, answer):
         "beanstanden, nicht kommentieren.\n"
         "- Korrigiere nur innere Widersprüche und klare Fehler im allgemeinen "
         "Weltwissen. Im Zweifel gilt die Antwort.\n\n"
-        "Wenn die Antwort danach korrekt und ausreichend ist, antworte mit GENAU einem "
-        f"Wort: {_OK_MARKER}\n"
-        "Andernfalls antworte mit einer VERBESSERTEN, vollständigen Fassung der Antwort, "
-        "die unverändert an den Nutzer gesendet werden kann — ohne Vorrede, ohne "
-        "Meta-Kommentar, ohne die Wörter 'FRAGE'/'ANTWORT', nur der finale Text."
+        "DEIN AUSGABEFORMAT (hart, es gibt nur diese zwei Möglichkeiten):\n"
+        f"- Antwort korrekt und ausreichend → GENAU ein Wort: {_OK_MARKER}\n"
+        f"- Sonst → die Zeile beginnt mit {_FIX_MARKER} direkt gefolgt vom vollständigen, "
+        "verbesserten Text, der unverändert an den Nutzer gesendet werden kann. "
+        "KEINE Vorrede, KEIN Meta-Kommentar, KEINE Analyse, nicht die Wörter "
+        "'FRAGE'/'ANTWORT' — alles nach dem Marker geht 1:1 in den Chat.\n"
+        "Ausgaben ohne einen der beiden Marker werden verworfen und das Original gesendet."
     )
-    user = f"FRAGE:\n{question}\n\nANTWORT:\n{answer}"
+    kontext = f"GESPRÄCH BISHER (nur zur Einordnung):\n{verlauf.strip()}\n\n" if verlauf else ""
+    user = f"{kontext}FRAGE:\n{question}\n\nANTWORT:\n{answer}"
     return system, user
 
 
@@ -77,7 +85,10 @@ def interpret(verifier_output, original_answer):
     - Leere/None-Ausgabe (Verifier ausgefallen): Original durchlassen, revised=False
       (fail-open: die Prüfung darf die Antwort nie verschlucken).
     - Beginnt die Ausgabe mit dem OK-Marker: Original ist gut → (original, False).
-    - Sonst: die Ausgabe IST die verbesserte Antwort → (ausgabe, True).
+    - KORREKTUR-Marker: NUR der Text dahinter ist die verbesserte Antwort.
+    - Alles andere (#99): verwerfen und Original senden. Vorher landete hier die
+      komplette Prüfer-Prosa (»Die Antwort enthält einen klaren sachlichen Fehler …
+      Verbesserte Fassung: …«) wortwörtlich im Chat des Nutzers.
     """
     if not verifier_output or not verifier_output.strip():
         return original_answer, False
@@ -86,7 +97,21 @@ def interpret(verifier_output, original_answer):
     head = text.lstrip("*_# ").rstrip("*_.! ").upper()
     if head == _OK_MARKER or head.startswith(_OK_MARKER):
         return original_answer, False
-    return text, True
+    idx = text.upper().find(_FIX_MARKER)
+    if idx >= 0:
+        fix = text[idx + len(_FIX_MARKER):].strip().strip("*_").strip()
+        return (fix, True) if fix else (original_answer, False)
+    return original_answer, False
+
+
+def trivial(question, answer):
+    """#100: Kurze Smalltalk-Wechsel gar nicht erst prüfen — ein »hä?« braucht keinen
+    zweiten Modell-Lauf. Konservativ: sobald Zahlen, Links oder Länge im Spiel sind,
+    wird geprüft."""
+    q, a = (question or "").strip(), (answer or "").strip()
+    return (len(q) <= 40 and len(a) <= 160
+            and not any(ch.isdigit() for ch in a)
+            and "http" not in a.lower())
 
 
 # Dezente Prüfzeichen statt sperriger Fußzeile — der Nutzer soll die Antwort lesen,

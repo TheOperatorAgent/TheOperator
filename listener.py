@@ -434,10 +434,26 @@ class BotSession(threading.Thread):
 
     def send_message(self, text):
         try:
-            self.api(f"/_matrix/client/v3/rooms/{self.room_enc}/send/m.room.message/{time.time_ns()}",
-                     method="PUT", body={"msgtype": "m.text", "body": text}, timeout=15)
+            r = self.api(f"/_matrix/client/v3/rooms/{self.room_enc}/send/m.room.message/{time.time_ns()}",
+                         method="PUT", body={"msgtype": "m.text", "body": text}, timeout=15)
+            return r.get("event_id", "")
         except Exception as e:
             log(f"[{self.bot_name}] Senden fehlgeschlagen: {e}")
+            return ""
+
+    def edit_message(self, event_id, text):
+        """#100: Nachricht nachträglich ersetzen (m.replace) — für »erst senden, dann
+        veredeln«: die Antwort steht sofort im Chat, das Prüf-Ergebnis aktualisiert sie."""
+        if not event_id:
+            return self.send_message(text)
+        try:
+            self.api(f"/_matrix/client/v3/rooms/{self.room_enc}/send/m.room.message/{time.time_ns()}",
+                     method="PUT", timeout=15,
+                     body={"msgtype": "m.text", "body": "* " + text,
+                           "m.new_content": {"msgtype": "m.text", "body": text},
+                           "m.relates_to": {"rel_type": "m.replace", "event_id": event_id}})
+        except Exception as e:
+            log(f"[{self.bot_name}] Bearbeiten fehlgeschlagen: {e}")
 
     def set_typing(self, on):
         try:
@@ -839,7 +855,9 @@ class BotSession(threading.Thread):
             raw, foot = out["text"], ""     # raw bleibt vorerst im Surrogat-Raum
             if verify and verify_loop:       # A1 (#46): zweites Modell prüft, bevor gesendet wird
                 v_model = verify[1]
-                raw, revised = self._verify_text(v_model, redact_text(messages_label), redact_text(raw))
+                # #101: Verlauf mitgeben — im Surrogat-Raum, wie Frage und Antwort hier auch.
+                raw, revised = self._verify_text(v_model, redact_text(messages_label),
+                                                 redact_text(raw), self.history_block())
                 foot = verify_loop.footer(v_model, revised)
             text = redact_text(reidentify(raw, mapping)) + foot   # Surrogate→echt, dann Secrets maskieren
             self.send_message(text)
@@ -886,10 +904,10 @@ class BotSession(threading.Thread):
             log(f"[{self.bot_name}] Verifier-Aufruf fehlgeschlagen (fail-open): {e}")
             return None
 
-    def _verify_text(self, v_model, question, answer):
-        """Prüferlauf im Surrogat-Raum. Rückgabe: (final_text, revised: bool)."""
+    def _verify_text(self, v_model, question, answer, verlauf=""):
+        """Prüferlauf. Rückgabe: (final_text, revised: bool)."""
         v_plan = providers.resolve(v_model) if (providers and v_model) else {"kind": "claude", "model": None}
-        system, user = verify_loop.verifier_prompts(question, answer)
+        system, user = verify_loop.verifier_prompts(question, answer, verlauf)
         vout = self._call_model_text(v_plan, system, user)
         final, revised = verify_loop.interpret(vout, answer)
         log(f"[{self.bot_name}] verifiziert von {v_model or 'claude'} "
@@ -906,11 +924,21 @@ class BotSession(threading.Thread):
         v_model = verify[1]
         q_real = redact_text(reidentify(question, mapping))
         a_real = redact_text(reidentify(answer, mapping))
-        final, revised = self._verify_text(v_model, q_real, a_real)
-        text = redact_text(reidentify(final, mapping)) + verify_loop.footer(v_model, revised)
-        if used_fallback:
-            text += "\n(lief über deinen Claude-API-Key)"
-        self.send_message(text)
+        anhang = "\n(lief über deinen Claude-API-Key)" if used_fallback else ""
+        # #100: Smalltalk (»hä?«, »danke«) braucht keinen zweiten Modell-Lauf.
+        if verify_loop.trivial(q_real, a_real):
+            self.send_message(a_real + anhang)
+            return
+        # #100: Erst senden (Antwort steht nach dem Worker-Lauf sofort im Chat), dann
+        # prüfen — das Ergebnis aktualisiert die Nachricht per Bearbeitung (✓/✎).
+        eid = self.send_message(a_real + anhang)
+        # #101: Der Prüfer bekommt den Gesprächsverlauf — ohne ihn beurteilte er
+        # Smalltalk ohne Kontext und »korrigierte« völlig richtige Antworten.
+        verlauf = redact_text(reidentify(self.history_block(), mapping))
+        final, revised = self._verify_text(v_model, q_real, a_real, verlauf)
+        text = (redact_text(reidentify(final, mapping)) if revised else a_real) \
+            + verify_loop.footer(v_model, revised) + anhang
+        self.edit_message(eid, text)
 
     # ---------- Loop ----------
     def run(self):

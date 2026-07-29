@@ -62,6 +62,12 @@ def _eintrag(ev, owner, bot):
     if ev.get("type") != "m.room.message":
         return None
     inhalt = ev.get("content") or {}
+    # #100: Bearbeitungen (m.replace) — der neue Text ersetzt die alte Nachricht,
+    # statt als eigene aufzutauchen (✓/✎ aus »erst senden, dann veredeln«).
+    rel = inhalt.get("m.relates_to") or {}
+    ersetzt = rel.get("event_id", "") if rel.get("rel_type") == "m.replace" else ""
+    if ersetzt and isinstance(inhalt.get("m.new_content"), dict):
+        inhalt = {**inhalt, "body": (inhalt["m.new_content"] or {}).get("body")}
     text = inhalt.get("body")
     if not isinstance(text, str) or not text:
         return None
@@ -69,17 +75,17 @@ def _eintrag(ev, owner, bot):
     if marker.get("text"):
         # Dashboard-Spiegelung: Rohtext aus dem Marker, Anzeige-Prefix weglassen.
         return {"wer": "du", "quelle": "dashboard", "text": str(marker["text"])[:65536],
-                "ts": ev.get("origin_server_ts", 0), "event_id": ev.get("event_id", "")}
+                "ts": ev.get("origin_server_ts", 0), "event_id": ev.get("event_id", ""), "ersetzt": ersetzt}
     sender = ev.get("sender", "")
     if sender == owner:
         return {"wer": "du", "quelle": "handy", "text": text[:65536],
-                "ts": ev.get("origin_server_ts", 0), "event_id": ev.get("event_id", "")}
+                "ts": ev.get("origin_server_ts", 0), "event_id": ev.get("event_id", ""), "ersetzt": ersetzt}
     if sender == bot:
         return {"wer": "operator", "quelle": "operator", "text": text[:65536],
-                "ts": ev.get("origin_server_ts", 0), "event_id": ev.get("event_id", "")}
+                "ts": ev.get("origin_server_ts", 0), "event_id": ev.get("event_id", ""), "ersetzt": ersetzt}
     # Dritte dürfte es nicht geben (Raum-Wächter #98) — ehrlich kennzeichnen statt verstecken.
     return {"wer": "fremd", "quelle": sender, "text": text[:65536],
-            "ts": ev.get("origin_server_ts", 0), "event_id": ev.get("event_id", "")}
+            "ts": ev.get("origin_server_ts", 0), "event_id": ev.get("event_id", ""), "ersetzt": ersetzt}
 
 
 def verlauf(limit=50):

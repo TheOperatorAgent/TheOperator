@@ -53,11 +53,24 @@
   }
 
   function zeige(e) {
+    // #100: Bearbeitung (✓/✎ aus »erst senden, dann veredeln«) — vorhandene
+    // Nachricht im Platz aktualisieren statt eine neue anzuhängen.
+    if (e.ersetzt) {
+      const alt = verlauf.querySelector('[data-eid="' + CSS.escape(e.ersetzt) + '"]');
+      if (alt) {
+        const meta = alt.querySelector(".dock-meta");
+        alt.textContent = "";
+        if (meta) alt.appendChild(meta);
+        alt.appendChild(document.createTextNode(e.text || ""));
+        return;
+      }
+    }
     if (e.event_id) {
       if (gesehen.has(e.event_id)) return;
       gesehen.add(e.event_id);
     }
     const div = document.createElement("div");
+    if (e.event_id) div.dataset.eid = e.event_id;
     div.className = "dock-msg " + (e.wer === "du" ? "du" : e.wer === "operator" ? "operator" : "fremd");
     const meta = document.createElement("span");
     meta.className = "dock-meta";

@@ -1,8 +1,9 @@
 {
-  "version": "1.9.1",
+  "version": "1.9.2",
   "date": "2026-07-29",
   "highlights": [
-    "🛰 Satellit: Der Operator-Chat jetzt auch als eigenes kleines Fenster auf deinem Schreibtisch — unabhängig vom Dashboard, mit eigenem Symbol. Öffnen über den 🛰-Knopf im Chat oder mit »operator chat«.",
-    "☑️ Auf Wunsch öffnet er sich automatisch beim Anmelden (Häkchen im Satellit-Fenster) — und lässt sich genauso einfach wieder abschalten."
+    "⚡ Antworten kommen jetzt sofort: Die Antwort steht direkt im Chat, der Qualitäts-Prüfer läuft danach und reicht sein ✓ (oder eine Korrektur ✎) per Bearbeitung nach — statt dich 30 Sekunden warten zu lassen.",
+    "🧐 Der Prüfer kennt jetzt den Gesprächsverlauf und kann seine Anmerkungen nicht mehr versehentlich in den Chat schreiben.",
+    "🎭 Die Pseudonymisierung ersetzt vertippte oder erfundene Wörter nicht mehr fälschlich durch Städtenamen — echte Orte und Firmen bleiben natürlich geschützt."
   ]
 }

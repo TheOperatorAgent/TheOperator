@@ -1076,9 +1076,10 @@ def test_verify_interpret_ok_marker_passes_original():
 def test_verify_interpret_correction_replaces():
     vl = _vl()
     orig = "Die Hauptstadt von Australien ist Sydney."
-    corrected = "Die Hauptstadt von Australien ist Canberra."
-    final, revised = vl.interpret(corrected, orig)
-    assert final == corrected and revised is True
+    final, revised = vl.interpret("KORREKTUR: Die Hauptstadt von Australien ist Canberra.", orig)
+    assert final == "Die Hauptstadt von Australien ist Canberra." and revised is True
+    # OHNE Marker (#99): fail-open — freier Text könnte Prüfer-Prosa sein
+    assert vl.interpret("Die Hauptstadt ist Canberra.", orig) == (orig, False)
 
 
 def test_verify_interpret_fail_open_on_empty():
@@ -1119,14 +1120,19 @@ def test_verify_and_send_integration_ok(monkeypatch):
     import listener
     s = listener.BotSession.__new__(listener.BotSession)
     s.bot_name = "test"
-    sent = []
-    s.send_message = lambda t: sent.append(t)
+    sent, edits = [], []
+    s.send_message = lambda t: (sent.append(t), "$e1")[1]
+    s.edit_message = lambda eid, t: edits.append((eid, t))
+    s.history_block = lambda: ""
     s._call_model_text = lambda plan, system, user: "VERIFIZIERT"   # Prüfer: alles gut
     mapping = {"s2r": {"Ingeburg": "Michi"}}                        # Surrogat→echt
-    s._verify_and_send((True, "opus"), "Wer bin ich?", "Du bist Ingeburg.", mapping, False)
-    assert len(sent) == 1
-    assert "Du bist Michi." in sent[0]           # PII zurückübersetzt
-    assert sent[0].rstrip().endswith("✓")        # Prüfzeichen, nicht überarbeitet
+    # bewusst NICHT trivial (Zahl in der Antwort) — sonst greift der #100-Skip
+    s._verify_and_send((True, "opus"), "Wer bin ich und wie alt?",
+                       "Du bist Ingeburg, 42 Jahre.", mapping, False)
+    assert len(sent) == 1 and "Du bist Michi, 42 Jahre." in sent[0]   # sofort raus, rück-übersetzt
+    assert "✓" not in sent[0]                     # Prüfzeichen erst NACH der Prüfung
+    assert len(edits) == 1 and edits[0][0] == "$e1"
+    assert edits[0][1].rstrip().endswith("✓")     # per Bearbeitung nachgereicht
 
 
 def test_verify_and_send_integration_revise(monkeypatch):
@@ -1135,13 +1141,16 @@ def test_verify_and_send_integration_revise(monkeypatch):
     import listener
     s = listener.BotSession.__new__(listener.BotSession)
     s.bot_name = "test"
-    sent = []
-    s.send_message = lambda t: sent.append(t)
-    s._call_model_text = lambda plan, system, user: "Die Hauptstadt ist Canberra."
-    s._verify_and_send((True, "sonnet"), "Hauptstadt Australiens?",
-                       "Die Hauptstadt ist Sydney.", {}, False)
-    assert "Canberra" in sent[0] and "Sydney" not in sent[0]
-    assert sent[0].rstrip().endswith("✎")        # Überarbeitungs-Zeichen
+    sent, edits = [], []
+    s.send_message = lambda t: (sent.append(t), "$e1")[1]
+    s.edit_message = lambda eid, t: edits.append((eid, t))
+    s.history_block = lambda: ""
+    s._call_model_text = lambda plan, system, user: "KORREKTUR: Die Hauptstadt ist Canberra."
+    s._verify_and_send((True, "sonnet"), "Wie heißt die Hauptstadt Australiens genau?",
+                       "Die Hauptstadt ist Sydney (seit 1901).", {}, False)
+    assert "Sydney" in sent[0]                    # Original ging sofort raus
+    assert "Canberra" in edits[0][1] and "Sydney" not in edits[0][1]
+    assert edits[0][1].rstrip().endswith("✎")     # Überarbeitung per Bearbeitung
 
 
 def test_verify_and_send_fail_open(monkeypatch):
@@ -1549,8 +1558,10 @@ def test_verify_and_send_reidentifies_before_verifier():
     s = object.__new__(listener.BotSession)
     s.bot_name = "owner"
     sent, seen = [], {}
-    s.send_message = lambda t: sent.append(t)
-    def fake_verify(v_model, q, a):
+    s.send_message = lambda t: (sent.append(t), "$e1")[1]
+    s.edit_message = lambda eid, t: sent.append(t)
+    s.history_block = lambda: ""
+    def fake_verify(v_model, q, a, verlauf=""):
         seen["q"], seen["a"] = q, a
         return a, False
     s._verify_text = fake_verify
@@ -2527,3 +2538,104 @@ def test_manifest_liefert_satellit_dateien():
     srcs = [f["src"] for f in d["files"]]
     for muss in ("dock_fenster.py", "dashboard/static/dock.html", "dashboard/static/dock.js"):
         assert muss in srcs, f"{muss} fehlt im Manifest"
+
+
+# ------------------------------------------------ Verify-Fixes (#99–#102) --
+def test_verify_interpret_leckt_keine_pruefer_prosa():
+    """#99 — stellt den echten Vorfall vom 29.07. nach: Der Prüfer lieferte Kritik-Prosa
+    statt Marker-Format; vorher landete sie WORTWÖRTLICH im Chat des Nutzers."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import verify_loop as vl
+    original = "Na dann, willkommen in der mittelalterlichen Altstadt!"
+    leck = ("Die Antwort enthält einen klaren sachlichen Fehler: Der Verweis auf eine "
+            "»mittelalterliche Altstadt« ist eine Halluzination.\n\nVerbesserte Fassung:\n"
+            "---\n\nVerstanden, du nutzt mich im Satelitenmodus.")
+    final, revised = vl.interpret(leck, original)
+    assert final == original and revised is False, "Prüfer-Prosa darf NIE in den Chat"
+
+
+def test_verify_interpret_korrektur_und_ok():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import verify_loop as vl
+    assert vl.interpret("VERIFIZIERT", "orig") == ("orig", False)
+    assert vl.interpret("**verifiziert.**", "orig") == ("orig", False)
+    final, revised = vl.interpret("KORREKTUR: Der richtige Text.", "orig")
+    assert (final, revised) == ("Der richtige Text.", True)
+    # Marker ohne Inhalt → fail-open
+    assert vl.interpret("KORREKTUR:", "orig") == ("orig", False)
+    assert vl.interpret("", "orig") == ("orig", False)
+    assert vl.interpret(None, "orig") == ("orig", False)
+
+
+def test_verify_trivial_smalltalk_wird_nicht_geprueft():
+    """#100: »hä?«/»danke« braucht keinen zweiten Modell-Lauf — aber sobald Zahlen,
+    Links oder Länge im Spiel sind, wird geprüft."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import verify_loop as vl
+    assert vl.trivial("hä?", "Na, das war ein kleiner Scherz.") is True
+    assert vl.trivial("danke", "Gern!") is True
+    assert vl.trivial("hä?", "Der Server läuft auf Port 8738.") is False       # Zahl
+    assert vl.trivial("kurz", "Siehe https://example.com dazu.") is False      # Link
+    assert vl.trivial("Fasse den Bericht zusammen und nenne die Kernpunkte",
+                      "x" * 200) is False                                      # Länge
+
+
+def test_verify_prompts_enthalten_verlauf_und_vertrag():
+    """#99/#101: Der Prüfer bekommt den Gesprächsverlauf und das harte Ausgabeformat."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import verify_loop as vl
+    system, user = vl.verifier_prompts("Frage?", "Antwort.", verlauf="Michi: hi\nDu: hallo")
+    assert "KORREKTUR:" in system and "VERIFIZIERT" in system
+    assert "GESPRÄCH BISHER" in user and "Michi: hi" in user
+    _, user2 = vl.verifier_prompts("F", "A")
+    assert "GESPRÄCH BISHER" not in user2
+
+
+def test_matrix_room_versteht_bearbeitungen():
+    """#100: m.replace-Ereignisse liefern den NEUEN Text plus die event_id der
+    ersetzten Nachricht — das Dock aktualisiert im Platz statt anzuhängen."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import matrix_room as mr
+    owner, bot = "@michi:hs", "@claude:hs"
+    e = mr._eintrag({"type": "m.room.message", "sender": bot,
+                     "content": {"body": "* Korrigierter Text  ✎",
+                                 "m.new_content": {"msgtype": "m.text",
+                                                   "body": "Korrigierter Text  ✎"},
+                                 "m.relates_to": {"rel_type": "m.replace",
+                                                  "event_id": "$orig"}},
+                     "origin_server_ts": 9, "event_id": "$edit"}, owner, bot)
+    assert e["ersetzt"] == "$orig" and e["text"] == "Korrigierter Text  ✎"
+    normal = mr._eintrag({"type": "m.room.message", "sender": bot,
+                          "content": {"body": "hi"}, "origin_server_ts": 1,
+                          "event_id": "$a"}, owner, bot)
+    assert normal["ersetzt"] == ""
+
+
+def test_dock_js_aktualisiert_bearbeitungen_im_platz():
+    dock = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "static", "dock.js")).read()
+    assert "e.ersetzt" in dock and "data-eid" in dock
+    assert "createTextNode" in dock            # auch der Edit-Pfad rendert nur Text
+
+
+def test_listener_sendet_erst_und_veredelt_dann():
+    """#100 (Quelle-Ebene): Owner-Verify-Pfad sendet VOR dem Prüferlauf und
+    aktualisiert per edit_message; Triviales überspringt die Prüfung."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    teil = src.split("def _verify_and_send")[1].split("def ")[0]
+    assert "trivial" in teil
+    assert teil.index("self.send_message(a_real") < teil.index("_verify_text"), \
+        "Antwort muss VOR dem Prüferlauf gesendet werden"
+    assert "edit_message" in teil
+    assert "m.replace" in src
+
+
+def test_pseudonym_ersetzt_keine_unbekannten_woerter_als_ort():
+    """#102 — der Satelitenmodus-Fall: vertippte/erfundene Wörter nicht als Ort ersetzen,
+    echte Orte und Firmen weiterhin schon. (Lädt spaCy — bewusst der teuerste Test.)"""
+    import pytest
+    pseudonym = pytest.importorskip("pseudonym")
+    out, _, _ = pseudonym.pseudonymize("Ich verwende dich gerade im Satelitenmodus.", {}, "standard")
+    assert "Satelitenmodus" in out, f"fälschlich ersetzt: {out}"
+    out2, _, _ = pseudonym.pseudonymize("Ich wohne in Dinkelsbühl.", {}, "standard")
+    assert "Dinkelsbühl" not in out2, "echter Ort muss weiter geschützt werden"
