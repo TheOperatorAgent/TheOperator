@@ -60,7 +60,12 @@ RISKY_TOOLS = {
     "mcp__n8n__workflow_activate": "einen Automations-Workflow scharf schalten",
     "mcp__n8n__webhook_trigger": "einen Webhook auslösen",
 }
-SAFE_TOOLS = {"Read", "Glob", "Grep", "WebSearch", "WebFetch", "Skill", "Agent", "TodoWrite"}
+SAFE_TOOLS = {"Read", "Glob", "Grep", "WebSearch", "Skill", "Agent", "TodoWrite"}
+# WebFetch ist NICHT pauschal harmlos: Der Operator läuft in deinem Netz und könnte darüber
+# interne Adressen abrufen (Dashboard, Router, Gitea). #82 prüft die Adresse — interne Ziele
+# werden gar nicht erst zur Rückfrage, sondern direkt abgelehnt.
+WEB_TOOLS = {"WebFetch"}
+BLOCK = "__blockieren__"      # Sonderfall: nicht fragen, sondern direkt ablehnen
 
 
 def _shorten(s, n=110):
@@ -74,6 +79,16 @@ def classify(tool, tool_input):
     tool_input = tool_input or {}
     if tool in RISKY_TOOLS:
         return True, RISKY_TOOLS[tool]
+    if tool in WEB_TOOLS:
+        # #82: Adressen ins eigene Netz gar nicht erst anbieten — direkt ablehnen.
+        try:
+            import net_guard
+            ok, grund = net_guard.check_url(str(tool_input.get("url", "")))
+            if not ok:
+                return BLOCK, f"Adresse gesperrt: {grund}"
+        except Exception:
+            pass
+        return False, ""
     if tool in SAFE_TOOLS:
         return False, ""
     if tool == "Bash":

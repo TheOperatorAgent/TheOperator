@@ -1,7 +1,8 @@
 {
-  "version": "1.8.2",
+  "version": "1.8.3",
   "date": "2026-07-29",
   "highlights": [
-    "🔇 Kein Nachplappern mehr: Wenn du auf eine Sicherheits-Rückfrage mit »ja« antwortest, wird diese Antwort nur noch für die Freigabe verwendet — der Operator antwortet nicht mehr zusätzlich darauf."
+    "🛡️ Dein Heimnetz ist jetzt tabu: Der Operator kann keine Adressen in deinem eigenen Netz mehr aufrufen — nicht dein Dashboard, nicht deinen Router, nicht deine Server. Auch nicht über Umleitungen von einer präparierten Webseite.",
+    "🌐 Gilt für den Browser-Agenten UND für Claudes eigenen Webseiten-Abruf. Ins öffentliche Internet darf er weiterhin ganz normal."
   ]
 }

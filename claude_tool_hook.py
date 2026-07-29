@@ -66,6 +66,14 @@ def main():
         print(json.dumps(_antwort(False, "Sicherheitsprüfung fehlgeschlagen.")))
         return 0
 
+    if riskant == pb.BLOCK:
+        # #82: Zugriff ins eigene Netz — nicht verhandelbar, also gar nicht erst fragen.
+        log(f"Netz-Wächter: {beschreibung}")
+        print(json.dumps(_antwort(False, f"{beschreibung}. Der Operator darf nur ins "
+                                         "öffentliche Internet, nicht ins Heimnetz. Sag dem "
+                                         "Nutzer freundlich Bescheid.")))
+        return 0
+
     if not riskant:
         # Der Normalfall: nichts sagen, nichts bremsen.
         print(json.dumps(_antwort(True, "unkritisch")))

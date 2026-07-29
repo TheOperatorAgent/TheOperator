@@ -1,5 +1,5 @@
 {
- "version": "1.8.2",
+ "version": "1.8.3",
  "files": [
   {
    "src": "listener.py",
@@ -68,6 +68,10 @@
   {
    "src": "claude_tool_hook.py",
    "dst": "claude_tool_hook.py"
+  },
+  {
+   "src": "net_guard.py",
+   "dst": "net_guard.py"
   },
   {
    "src": "permission_broker.py",

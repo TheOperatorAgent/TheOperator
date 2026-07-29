@@ -2091,7 +2091,8 @@ def test_broker_geaenderte_argumente_neue_freigabe(tmp_path, monkeypatch):
 def test_broker_ist_stdlib_only():
     """Der Hook läuft ohne venv — Broker muss stdlib-only bleiben."""
     import ast
-    erlaubt = {"hashlib", "json", "os", "re", "time", "urllib", "sys", "secretstore"}
+    erlaubt = {"hashlib", "json", "os", "re", "time", "urllib", "sys",
+               "secretstore", "net_guard"}
     for datei in ("permission_broker.py", "claude_tool_hook.py"):
         src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
         imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
@@ -2147,3 +2148,59 @@ def test_broker_reply_not_answered_twice(tmp_path, monkeypatch):
     except SystemExit:
         pass
     assert calls == [], "Broker-Antwort wurde fälschlich nochmal beantwortet"
+
+
+# ---------------------------------------------------------------- #82 Netz-Isolation --
+def test_net_guard_blocks_internal_targets():
+    """#82: Kein Zugriff ins eigene Netz — egal auf welchem Weg."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import net_guard as ng
+    gesperrt = [
+        "http://127.0.0.1:8738/api/status",      # eigenes Dashboard
+        "http://localhost:8738",
+        "http://[::1]:8738",
+        "http://192.168.178.53:3000",            # Gitea im Heimnetz
+        "http://10.0.0.5/admin", "http://172.16.3.4",
+        "http://169.254.169.254/latest/meta-data/",   # Cloud-Metadaten
+        "http://2130706433",                     # 127.0.0.1 als Dezimalzahl
+        "file:///etc/passwd", "gopher://x", "data:text/html,<h1>x",
+        "http://fritz.box", "http://pi.hole",    # typische Geräte-Namen
+        "http://nas.local", "http://x.internal",
+        "http://",                               # ohne Host
+    ]
+    for u in gesperrt:
+        ok, grund = ng.check_url(u)
+        assert not ok, f"{u} hätte gesperrt sein müssen"
+        assert grund, f"{u}: Grund fehlt"
+    for u in ("https://example.com", "https://operator.bayern"):
+        ok, _ = ng.check_url(u)
+        assert ok, f"{u} muss erlaubt bleiben"
+
+
+def test_net_guard_is_stdlib_and_fail_closed():
+    """stdlib-only (Hook + Runner nutzen es) und im Zweifel gesperrt."""
+    import ast
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import net_guard as ng
+    src = open(os.path.expanduser("~/.claude/matrix-bot/net_guard.py")).read()
+    imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
+               if isinstance(n, ast.Import) for a in n.names}
+    assert imports <= {"ipaddress", "socket", "urllib", "sys"}
+    ok, _ = ng.check_url("https://kein-solcher-host-existiert-xyz123.invalid")
+    assert not ok, "nicht auflösbar ⇒ gesperrt (fail-closed)"
+
+
+def test_webfetch_to_internal_is_denied_not_asked(tmp_path, monkeypatch):
+    """Interne Adressen führen NICHT zur Rückfrage, sondern werden direkt abgelehnt."""
+    pb = _pb(tmp_path, monkeypatch)
+    art, grund = pb.classify("WebFetch", {"url": "http://127.0.0.1:8738/api/status"})
+    assert art == pb.BLOCK and "gesperrt" in grund
+    assert pb.classify("WebFetch", {"url": "https://example.com"})[0] is False
+
+
+def test_browser_route_guard_wired():
+    """Der Browser prüft JEDE Anfrage (Weiterleitungen!), nicht nur die erste."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py")).read()
+    assert 'ctx.route("**/*"' in src, "Route-Wache fehlt — Weiterleitungen ungeprüft"
+    assert "net_guard.check_url(request.url)" in src
+    assert "net_guard.check_url(url)" in src, "Vorab-Prüfung in open_page fehlt"

@@ -18,6 +18,9 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import net_guard                     # noqa: E402  (#82 Schutz vor Zugriffen ins eigene Netz)
+
 # ---------------------------------------------------------------- Werkzeuge (optional) --
 # Kimi & Co. können nativ Werkzeuge aufrufen (OpenAI-Tool-Calling). Security by Design:
 # Datei-Werkzeuge nur im Arbeitsordner (Pfad-Käfig), Befehle mit Timeout + Ausgabe-Kappung
@@ -146,6 +149,26 @@ def _browser_page(state):
     pw = sync_playwright().start()
     br = pw.chromium.launch(headless=True)
     ctx = br.new_context(accept_downloads=False)
+
+    # #82: JEDE Anfrage prüfen — nicht nur die erste. Eine harmlose Seite kann per
+    # Weiterleitung oder eingebetteter Ressource ins eigene Netz zeigen; auch ein
+    # DNS-Wechsel zwischen Prüfung und Verbindung wird so beim nächsten Sprung erwischt.
+    def _wache(route, request):
+        try:
+            ok, grund = net_guard.check_url(request.url)
+        except Exception:
+            ok, grund = False, "Prüfung fehlgeschlagen"
+        if ok:
+            route.continue_()
+        else:
+            state.setdefault("blocked", []).append(f"{request.url[:100]} ({grund})")
+            route.abort()
+
+    try:
+        ctx.route("**/*", _wache)
+    except Exception:
+        pass                       # ohne Route-Hook bleibt die Vorab-Prüfung in _browse_tool
+
     page = ctx.new_page()
     page.set_default_timeout(30000)
     state.update(pw=pw, browser=br, page=page)
@@ -188,6 +211,10 @@ def _browse_tool(name, args, state, actions):
             url = str(args.get("url", "")).strip()
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
+            ok, grund = net_guard.check_url(url)          # #82: vor dem Verbinden prüfen
+            if not ok:
+                actions.append(f"🚫 blockiert {url[:90]} ({grund})")
+                return net_guard.hinweis(url, grund)
             actions.append("🌐 open " + url[:120])
             page.goto(url, wait_until="domcontentloaded")
             return _page_summary(page)
