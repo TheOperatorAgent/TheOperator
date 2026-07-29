@@ -1,10 +1,10 @@
 {
- "version": "1.12.1",
+ "version": "1.13.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "9d0ad7effb23647a04c4fcd6986a7aba228f13dad0006d620d6a26f7bd4adba3"
+   "sha256": "19194c271370d8b2211ea87e3dd83dd9697596f832039c4638746ee865b4d2ab"
   },
   {
    "src": "matrix_room.py",
@@ -24,7 +24,12 @@
   {
    "src": "memory.py",
    "dst": "memory.py",
-   "sha256": "a22be0c47a6a80efd6508f693584ff6521f5509561c4696e8ba48077dc8aec5b"
+   "sha256": "97fc955c9c72f76624b0d765caf544202b633b4c052b7a3089998fdf70105286"
+  },
+  {
+   "src": "merker.py",
+   "dst": "merker.py",
+   "sha256": "00e8291b79c11588778a8fb78c546f439258ed46cc7f0ab962fe92a8ec332d3a"
   },
   {
    "src": "skills.py",
@@ -89,7 +94,7 @@
   {
    "src": "throttle.py",
    "dst": "throttle.py",
-   "sha256": "7ba102ab419521cbe62df713aa460fb16be5f7a307ebc1f1c103a54f64e5548e"
+   "sha256": "c653e6fcc038381842272ee3f9d400d7b7785e672fd309b43615de6bc3b87594"
   },
   {
    "src": "retention.py",
@@ -134,7 +139,7 @@
   {
    "src": "embeddings.py",
    "dst": "embeddings.py",
-   "sha256": "322be68a228dae3f7915491caf9e0470a3292ee3afb26839a5ae5f8f7f5ebabe"
+   "sha256": "765291bf7f21aca0ec416422b467536c545aaa9711a86992073469225e67cf9f"
   },
   {
    "src": "skillguard.py",
@@ -214,7 +219,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "c751afcb7e587f9d6509a109c3398f695cb7af78fe83ea3a2168b7d95a4bdc74"
+   "sha256": "bfe5a69e5a142bab891ececba5c9bb805114ee397153bdde01a5d82f05a46040"
   },
   {
    "src": "dashboard/tokens.py",
@@ -249,12 +254,12 @@
   {
    "src": "dashboard/static/index.html",
    "dst": "dashboard/static/index.html",
-   "sha256": "2826a5ebd600e2e426fdcb596064cbc9d0dd1dfb171958d5c2bf07a42d616edc"
+   "sha256": "38c7a97a8fd5996f3bf3ccfcb22269a5b66276474696301c2968919394ed12d4"
   },
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "989dccd8b8d647f90818197be9af9d0bf60da5ddc554c74d70df2c8398896dff"
+   "sha256": "b535495b34fc1ec6510108396d2dd86cd1e78313831ba8f3b5a556d2bc302ea2"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -274,7 +279,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "fd9f682c3ff4e08433748117d1c8440b6273694c97ed71475945109029ce263c"
+   "sha256": "748cf981ce4f8f03addffe29827f802b5af2cc027dc51957f971c1b23b8b4cbf"
   }
  ]
 }

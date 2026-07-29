@@ -3113,3 +3113,112 @@ def test_pseudonym_verfaelscht_keine_alltagswoerter():
     for satz in ersetzt:
         out, _, _ = pseudonym.pseudonymize(satz, {}, "standard")
         assert out != satz, f"Schutz verloren: {satz}"
+
+
+# ------------------------------------------------ Gedächtnis #109/#110/#111 --
+def test_embeddings_status_ist_ehrlich():
+    """#109: Der Rückfall auf reine Wortsuche ist fail-open — deshalb blieb monatelang
+    unbemerkt, dass gar keine Vektoren erzeugt wurden (Modell nie heruntergeladen).
+    status() muss den Zustand benennen, nicht verschweigen."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import embeddings
+    aktiv, grund = embeddings.status()
+    assert isinstance(aktiv, bool)
+    assert len(grund) > 15, "leere/unehrliche Begründung"
+    if not aktiv:
+        assert "👉" in grund or "nur nach Wörtern" in grund, "sagt nicht, was zu tun ist"
+    ohne, gesamt = embeddings.rueckstand()
+    assert ohne >= 0 and gesamt >= 0
+
+
+def _merker():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import merker
+    return merker
+
+
+def test_merken_erkennt_fakten_und_verwirft_smalltalk():
+    """#110: Ein falsch gemerkter Fakt begleitet den Nutzer wochenlang — die Kosten
+    sind asymmetrisch. Deshalb im Zweifel nichts merken."""
+    m = _merker()
+    assert m.auswerten("NICHTS") is None
+    assert m.auswerten("") is None
+    assert m.auswerten(None) is None
+    for smalltalk in ["ja", "Danke, gern!", "kurz",
+                      "Ich habe die Datei gerade angelegt.",
+                      "Der Bericht wurde soeben erstellt.",
+                      "Zeile eins\nZeile zwei"]:
+        assert m.auswerten(smalltalk) is None, f"fälschlich gemerkt: {smalltalk}"
+    for fakt in ["Michi arbeitet hauptberuflich als Berater und baut Operator abends.",
+                 "- Der Drucker im Büro heißt HP-Nord und steht im zweiten Stock.",
+                 "Michi bevorzugt Antworten auf Deutsch."]:
+        assert m.auswerten(fakt), f"fälschlich verworfen: {fakt}"
+    assert m.auswerten("x" * 400) is None                 # kein Aufsatz
+    # Aus dem ersten E2E-Lauf: der Extraktor plapperte die Antwort nach und hängte
+    # »— ich merke mir das für später« an. Im Langzeitgedächtnis stört das bei jedem
+    # späteren Treffer, deshalb wird es abgeschnitten statt den Fakt zu verwerfen.
+    assert m.auswerten("Der Drucker heißt HP-Nord und steht im zweiten Stock "
+                       "— ich merke mir das für später.") == \
+        "Der Drucker heißt HP-Nord und steht im zweiten Stock"
+    assert m.auswerten("Michi arbeitet als Berater. Notiert.") == "Michi arbeitet als Berater."
+
+
+def test_merken_erkennt_dubletten():
+    """Ohne Dublettenprüfung stünde derselbe Fakt nach zehn Gesprächen zehnmal drin."""
+    m = _merker()
+    best = ["Der Raspberry Pi heißt mindelpi und hat die IP 192.168.178.53"]
+    assert m.ist_dublette("Der Raspberry Pi heisst mindelpi und hat die IP 192.168.178.53", best)
+    assert not m.ist_dublette("Michi trinkt morgens Kaffee ohne Zucker", best)
+
+
+def test_merken_prompt_ist_streng_und_parsebar():
+    m = _merker()
+    system, user = m.extraktor_prompts("Frage?", "Antwort.")
+    assert m.NICHTS in system and "GENAU EIN" in system
+    assert "Im Zweifel" in system
+    assert "Frage?" in user and "Antwort." in user
+
+
+def test_merken_wird_gedrosselt_chat_niemals():
+    """#110 läuft nach JEDER Chat-Runde — es muss unter dieselbe Fair-Use-Grenze wie
+    Zeitpläne. Der Chat selbst bleibt ungedrosselt (Petra-Zusage)."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import throttle
+    assert "merken" in throttle.AUTOMATED
+    assert "chat" not in throttle.AUTOMATED
+
+
+def test_merken_ist_im_listener_nach_dem_senden():
+    """Merken darf die Antwort nie verzögern — der Aufruf steht NACH der Auslieferung."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    assert "self._merken(" in src
+    assert src.index("_verify_and_send(verify") < src.index("self._merken("), \
+        "Merken läuft vor dem Senden — das bremst die Antwort"
+    teil = src.split("def _merken")[1].split("def _verify_text")[0]
+    assert "reidentify" in teil, "gespeichert werden müssen echte Namen, keine Surrogate"
+    assert "ist_dublette" in teil
+    assert "merker.MARK" in teil, "der Nutzer muss sehen, was gemerkt wurde"
+
+
+def test_merken_ist_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/merker.py")).read()
+    imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
+               if isinstance(n, ast.Import) for a in n.names}
+    assert imports <= {"re"}, imports
+
+
+def test_gedaechtnis_bewertung_hybrid_nicht_schlechter():
+    """#111: Aus Behauptung wird Messung. Entscheidend ist Top 5 — der Listener legt
+    die fünf besten Fakten in den Prompt, das Modell sieht sie alle."""
+    import subprocess as _sp
+    r = _sp.run([sys.executable, os.path.expanduser("~/.claude/matrix-bot/memory.py"),
+                 "bewerten"], capture_output=True, text=True, timeout=600)
+    assert r.returncode == 0, r.stderr[:300]
+    aus = r.stdout
+    assert "nur Wortsuche" in aus and "Vektorsuche" in aus
+    import re as _re
+    zahlen = _re.findall(r"Top 5 (\d+)/(\d+)", aus)
+    if len(zahlen) == 2:                      # nur wenn ein Anbieter verfügbar ist
+        ohne, mit = int(zahlen[0][0]), int(zahlen[1][0])
+        assert mit >= ohne, f"Hybrid schlechter als reine Wortsuche ({mit} < {ohne})"

@@ -187,6 +187,98 @@ def cmd_forget(mid):
     print("vergessen" if con.total_changes else "id nicht gefunden")
 
 
+# ---------------------------------------------------------------- Qualitätsmessung (#111) --
+# Wir behaupten »besseres Gedächtnis als die Konkurrenz«. Ohne Messung ist das eine
+# Meinung — und genau vor dieser Sorte Behauptung hat uns die Security-Review gewarnt.
+# Der Prüf-Satz fragt bewusst mit ANDEREN Wörtern als im Fakt: Genau da entscheidet
+# sich, ob der Vektor-Layer etwas bringt oder ob reine Wortsuche reicht.
+PRUEFSATZ = [
+    ("Der Raspberry Pi heißt mindelpi und hat die IP 192.168.178.53",
+     "Wie heißt der kleine Rechner?"),
+    ("Das tägliche Backup läuft um 04:00 Uhr zum Unraid",
+     "Wann wird gesichert?"),
+    ("Michi bevorzugt Antworten auf Deutsch",
+     "In welcher Sprache soll ich schreiben?"),
+    ("Der Drucker im Büro heißt HP-Nord und steht im zweiten Stock",
+     "Wo finde ich das Ausgabegerät für Papier?"),
+    ("Michi arbeitet hauptberuflich als Berater",
+     "Was macht er beruflich?"),
+    ("Die Firmengründung von ai.quantex ist für Oktober geplant",
+     "Wann startet das Unternehmen?"),
+    ("Der Lizenzserver läuft auf einem Hostinger-VPS",
+     "Wo ist die Lizenzverwaltung untergebracht?"),
+    ("Michi trinkt morgens Kaffee ohne Zucker",
+     "Wie mag er sein Heißgetränk?"),
+    ("Das Auto der Familie ist ein VW Golf",
+     "Welchen Wagen fährt er?"),
+    ("Die Website operator.bayern liegt bei Strato",
+     "Wer hostet die Internetseite?"),
+]
+
+
+def cmd_bewerten():
+    """Trefferquote messen — je einmal MIT und OHNE Vektor-Layer, auf einer
+    Wegwerf-Datenbank (das echte Gedächtnis wird nicht angefasst).
+
+    **Welche Zahl zählt: Top 5.** Der Listener legt die fünf besten Fakten in den
+    Prompt — das Modell sieht sie alle. Ob der richtige auf Platz 1 oder Platz 4
+    steht, ist für die Antwortqualität fast egal. Messung vom 29.07.:
+        nur Wortsuche   Top 5 2/10
+        nur Vektoren    Top 5 5/10
+        beides (Hybrid) Top 5 6/10   ← ausgeliefert
+    Auf Rang 1 ist reine Vektorsuche minimal besser (4 statt 3) — die Verschmelzung
+    kostet dort etwas, bringt aber in der Abdeckung mehr. Für unseren Einsatz ist
+    das der richtige Tausch."""
+    import tempfile
+    global DB
+    echt = DB
+    tmp = tempfile.mkdtemp()
+    DB = os.path.join(tmp, "pruef.db")
+    try:
+        con = db()
+        ids = []
+        for fakt, _ in PRUEFSATZ:
+            cur = con.execute("INSERT INTO memories(text) VALUES (?)", (fakt,))
+            con.execute("INSERT INTO memories_fts(rowid, text) VALUES (?, ?)",
+                        (cur.lastrowid, fakt))
+            ids.append(cur.lastrowid)
+        con.commit()
+        ergebnis = {}
+        for modus in ("ohne", "mit"):
+            if modus == "mit":
+                if not emb:
+                    ergebnis["mit"] = None
+                    continue
+                try:
+                    cmd_reindex()
+                except Exception:
+                    ergebnis["mit"] = None
+                    continue
+            r1 = top5 = 0
+            for (fakt, frage), mid in zip(PRUEFSATZ, ids):
+                treffer = hybrid_ids(db(), frage, 5) if modus == "mit" else _fts_ids(db(), frage, 5)
+                if treffer and treffer[0] == mid:
+                    r1 += 1
+                if mid in treffer:
+                    top5 += 1
+            ergebnis[modus] = (r1, top5, len(PRUEFSATZ))
+        return ergebnis
+    finally:
+        DB = echt
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+def _fts_ids(con, text, k=5):
+    """Nur Volltextsuche — die Vergleichsgröße (und das, was Hermes laut Recherche tut)."""
+    fq = fts_query(text)
+    if not fq:
+        return []
+    return [r[0] for r in con.execute(
+        "SELECT rowid FROM memories_fts WHERE memories_fts MATCH ? "
+        "ORDER BY bm25(memories_fts) LIMIT ?", (fq, k))]
+
+
 def main():
     args = sys.argv[1:]
     if not args:
@@ -208,6 +300,15 @@ def main():
         print(db().execute("SELECT COUNT(*) FROM memories").fetchone()[0])
     elif cmd == "reindex":
         cmd_reindex()
+    elif cmd == "bewerten":                             # #111: Qualität messen
+        e = cmd_bewerten()
+        for modus, label in (("ohne", "nur Wortsuche  "), ("mit", "mit Vektorsuche")):
+            w = e.get(modus)
+            if not w:
+                print(f"{label}: nicht verfügbar (kein Embedding-Anbieter)")
+                continue
+            r1, t5, n = w
+            print(f"{label}: Rang 1 {r1}/{n} ({100*r1//n} %) · Top 5 {t5}/{n} ({100*t5//n} %)")
     elif cmd == "flagged":                              # #49: Quarantäne anzeigen
         for mid, text, created in db().execute(
                 "SELECT id, text, created FROM memories WHERE flagged = 1 ORDER BY id DESC"):

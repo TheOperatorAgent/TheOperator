@@ -1,7 +1,8 @@
 {
-  "version": "1.12.1",
+  "version": "1.13.0",
   "date": "2026-07-29",
   "highlights": [
-    "✍️ Der Datenschutz-Filter hält sich jetzt an wörtliche Inhalte: Großgeschriebene Alltagswörter wie FERTIG, OK oder ERLEDIGT wurden bisher für Firmennamen gehalten und ersetzt — aus »Schreib FERTIG in die Datei« wurde ein erfundener Firmenname. Echte Firmen und Orte werden selbstverständlich weiterhin geschützt."
+    "🧠 Dein Operator merkt sich jetzt von selbst, was wichtig ist. Nach einem Gespräch prüft er kurz, ob etwas dauerhaft Nützliches gefallen ist — und sagt dir mit einem 🧠 genau, was er sich gemerkt hat. Im Tab »Gedächtnis« kannst du es jederzeit ändern oder wieder vergessen lassen. Nichts passiert heimlich.",
+    "🔎 Das Gedächtnis findet Gemerktes jetzt auch bei ganz anderer Formulierung — »Wie heißt der kleine Rechner?« findet den Eintrag über den Raspberry Pi. Das Dashboard zeigt ehrlich an, ob diese Suche auf deinem Rechner aktiv ist."
   ]
 }

@@ -1194,6 +1194,36 @@ async function loadMemory() {
       <div>${esc(m.text)}<div class="small">#${m.id} · ${esc(m.created)} · ${m.uses}× abgerufen</div></div>
       <button class="danger" onclick="forgetMemory(${m.id})">Vergessen</button>
     </div>`).join("") || "<p class='hint'>Leeres Gedächtnis.</p>";
+  renderSemantik(d.semantik);
+}
+
+/* #109: Zustand der semantischen Suche ehrlich zeigen — ein stiller Rückfall auf
+   reine Wortsuche bleibt sonst unbemerkt (»es funktioniert ja, nur schlechter«). */
+function renderSemantik(s) {
+  const el = document.getElementById("mem-semantik");
+  if (!el) return;
+  el.textContent = "";
+  if (!s) return;
+  const p = document.createElement("p");
+  p.className = "small";
+  p.textContent = (s.aktiv ? "🔎 " : "⚠️ ") + s.grund;
+  el.appendChild(p);
+  el.style.borderLeft = "3px solid var(--" + (s.aktiv ? "green" : "amber") + ")";
+  if (s.aktiv && s.ohne_vektor > 0) {
+    const w = document.createElement("p");
+    w.className = "small";
+    w.textContent = `${s.ohne_vektor} von ${s.fakten} Fakten sind noch nicht für die `
+      + "semantische Suche vorbereitet.";
+    const b = document.createElement("button");
+    b.className = "ghost";
+    b.textContent = "Jetzt nachtragen";
+    b.onclick = async () => {
+      b.disabled = true; b.textContent = "läuft …";
+      try { await api("POST", "/api/memory/reindex"); toast("Nachgetragen"); loadMemory(); }
+      catch (e) { toast(friendlyError(e), 1); b.disabled = false; b.textContent = "Jetzt nachtragen"; }
+    };
+    el.appendChild(w); el.appendChild(b);
+  }
 }
 async function addMemory() {
   const text = $("#mem-new").value.trim();

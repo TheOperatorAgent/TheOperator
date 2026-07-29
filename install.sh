@@ -765,6 +765,22 @@ PY
       || warn "Pseudonym-Daemon-Start fehlgeschlagen — Listener nutzt den Fallback"
     # FIDO-Sicherheitsschlüssel (Linux): EINE Frage statt Copy-Paste — wir richten die
     # udev-Regel selbst ein (sudo fragt einmal nach dem Nutzer-Passwort)
+    # #109: Semantisches Gedächtnis. Ohne Embedding-Modell findet der Operator Fakten
+    # nur über exakte Wörter — das faellt niemandem auf, weil es fail-open weiterlaeuft.
+    # Darum EINE Frage, wenn Ollama ohnehin da ist.
+    if command -v ollama >/dev/null && ! ollama list 2>/dev/null | grep -q nomic-embed-text; then
+      local EMB_SETUP
+      ask_yesno EMB_SETUP "Gedaechtnis verbessern? (dein Assistent findet Gemerktes dann auch bei anderer Formulierung, ~270 MB, laeuft lokal)" "ja"
+      if [ "$EMB_SETUP" = "ja" ]; then
+        if ollama pull nomic-embed-text >/dev/null 2>&1; then
+          ok "Semantisches Gedaechtnis eingerichtet"
+          "$VENV_PY" "$BOT_DIR/memory.py" reindex >/dev/null 2>&1 || true
+        else
+          warn "Modell konnte nicht geladen werden — das Gedaechtnis sucht weiter nach Woertern."
+        fi
+      fi
+    fi
+
     # #104-A: Schutzraum unter jedem Agenten-Lauf. macOS bringt ihn mit; unter Linux
     # braucht es bubblewrap. EINE Frage statt Copy-Paste (EINFACHHEIT.md).
     if [ "$OS" = Linux ] && ! command -v bwrap >/dev/null && command -v sudo >/dev/null; then

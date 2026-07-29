@@ -863,6 +863,32 @@ def api_usage():
 
 
 # ---------------------------------------------------------------- Gedächtnis (A2) --
+def _semantik_status():
+    """#109: Zustand der semantischen Suche ehrlich melden — inklusive Rückstand an
+    Fakten ohne Vektor. Ein stiller Rückfall auf reine Wortsuche darf nicht
+    unbemerkt bleiben (das war am 29.07. monatelang der Fall)."""
+    try:
+        sys.path.insert(0, BOT_DIR)
+        import embeddings
+        aktiv, grund = embeddings.status()
+        ohne, gesamt = embeddings.rueckstand()
+        return {"aktiv": aktiv, "grund": grund, "ohne_vektor": ohne, "fakten": gesamt}
+    except Exception as e:
+        return {"aktiv": False, "grund": f"Prüfung nicht möglich ({e})",
+                "ohne_vektor": 0, "fakten": 0}
+
+
+@app.post("/api/memory/reindex")
+def api_memory_reindex():
+    """Fehlende Vektoren nachziehen (nach dem Einschalten der semantischen Suche)."""
+    r = subprocess.run([sys.executable, os.path.join(BOT_DIR, "memory.py"), "reindex"],
+                       capture_output=True, text=True, timeout=600)
+    audit("dashboard", "memory.reindex", ok=r.returncode == 0)
+    if r.returncode != 0:
+        return err("memory", "Nachtragen fehlgeschlagen — läuft dein Embedding-Anbieter?", 500)
+    return {"ok": True, "meldung": (r.stdout or "").strip()[:200]}
+
+
 @app.get("/api/memory")
 def api_memory(q: str = "", limit: int = 50):
     con = memory_db.db()
@@ -877,7 +903,8 @@ def api_memory(q: str = "", limit: int = 50):
             "SELECT id, text, created, uses FROM memories ORDER BY id DESC LIMIT ?",
             (limit,)).fetchall()
     return {"memories": [{"id": r[0], "text": r[1], "created": r[2], "uses": r[3]}
-                         for r in rows]}
+                         for r in rows],
+            "semantik": _semantik_status()}
 
 
 @app.post("/api/memory")

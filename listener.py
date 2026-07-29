@@ -34,6 +34,10 @@ try:
 except Exception:
     sandbox = None
 try:
+    import merker                 # noqa: E402  (#110 automatisches Merken)
+except Exception:
+    merker = None
+try:
     import verify_loop            # noqa: E402  (stdlib; A1 Verifikations-Schleife #46)
 except Exception:
     verify_loop = None
@@ -272,6 +276,19 @@ DASHBOARD_MARKER = "bayern.vonaschenbrenner.operator.dashboard"
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
 # Owner-Verify (#46): opt-in, live umschaltbar über dashboard.json (owner_verify_cfg() liest frisch).
 CLAUDE_SLOTS = threading.Semaphore(2)
+# #110: Merken laeuft mit einem guenstigen Modell — es ist eine Kleinstaufgabe,
+# und es soll das Kontingent des eigentlichen Gespraechs nicht schmaelern.
+MERK_MODELL = "haiku"
+
+
+def memory_enabled():
+    """Automatisches Merken abschaltbar (dashboard.json: {"merken": {"enabled": false}}).
+    Standard: an — ein Gedaechtnis, das niemand fuellt, ist wertlos."""
+    try:
+        c = json.load(open(f"{BOT_DIR}/dashboard.json")).get("merken", {})
+        return c.get("enabled", True) is not False
+    except Exception:
+        return True
 
 # #106: Der Arbeitsordner wird dem Modell EXPLIZIT genannt. Sonst rät es den Pfad
 # aus dem Gesprächsverlauf — nach dem Umzug aus ~/.claude war das der alte, was den
@@ -790,6 +807,11 @@ class BotSession(threading.Thread):
                                        dur, tok_in, tok_out, kind, plan.get("model") or "inherit")
                 except Exception as e:
                     log(f"Session-Recording fehlgeschlagen: {e}")
+            if r.returncode == 0 and kind == "chat":
+                # #110: NACH dem Senden — merken darf die Antwort nie bremsen.
+                # (Steht bewusst außerhalb der if/elif-Kette darunter: es gilt für
+                # jeden erfolgreichen Sende-Weg, geprüft oder ungeprüft.)
+                self._merk_nachlauf = (messages_label, result, mapping)
             if r.returncode != 0:
                 out = (r.stdout + r.stderr).lower()
                 if "401" in out or "authenticate" in out or "oauth" in out:
@@ -835,6 +857,11 @@ class BotSession(threading.Thread):
                     os.remove(map_path)   # flüchtige PII-Map nach dem Lauf löschen
                 except OSError:
                     pass
+            # #110: ganz zum Schluss — die Antwort ist längst raus, das Tippen beendet.
+            nach = getattr(self, "_merk_nachlauf", None)
+            if nach:
+                self._merk_nachlauf = None
+                self._merken(*nach)
 
     def _run_foreign(self, plan, prompt, system, messages_label, kind, mapping, verify=None,
                      tools=None):
@@ -925,6 +952,75 @@ class BotSession(threading.Thread):
         except Exception as e:
             log(f"[{self.bot_name}] Verifier-Aufruf fehlgeschlagen (fail-open): {e}")
             return None
+
+    def _merken(self, frage, antwort, mapping):
+        """#110: Nach dem Senden prüfen, ob etwas dauerhaft Merkenswertes gefallen ist.
+
+        Leitplanken:
+        - läuft NACH der Antwort → verzögert nichts
+        - Fair-Use: zählt als automatischer Lauf, damit es kein Kontingent frisst
+        - der Extraktor arbeitet im Surrogat-Raum (er sieht dieselben Pseudonyme wie
+          der Hauptlauf); GESPEICHERT wird re-identifiziert — das Gedächtnis ist lokal
+          und soll echte Namen enthalten, sonst ist es beim nächsten Mal wertlos
+        - Dublettenprüfung gegen den Bestand, sonst steht derselbe Fakt zehnmal drin
+        - sichtbar: der Fakt wird mit 🧠 im Chat gemeldet und ist im Dashboard löschbar
+        """
+        if not merker or not memory_enabled():
+            return
+        if throttle:
+            try:
+                if not throttle.allow("merken"):
+                    return
+            except Exception:
+                pass
+        try:
+            system, user = merker.extraktor_prompts(frage, antwort)
+            plan = {"kind": "claude", "model": MERK_MODELL}
+            fakt = merker.auswerten(self._call_model_text(plan, system, user))
+            if not fakt:
+                return
+            fakt = redact_text(reidentify(fakt, mapping))       # echte Namen, keine Secrets
+            bestehende = self._bekannte_fakten()
+            vf = None
+            try:
+                import embeddings
+                if embeddings.status()[0]:
+                    vf = embeddings.embed
+            except Exception:
+                pass
+            if merker.ist_dublette(fakt, bestehende, vektor_fn=vf):
+                log(f"[{self.bot_name}] Merken: schon bekannt, nichts gespeichert")
+                return
+            r = subprocess.run([sys.executable, f"{BOT_DIR}/memory.py", "add", fakt],
+                               capture_output=True, text=True, timeout=60)
+            if r.returncode != 0:
+                log(f"[{self.bot_name}] Merken fehlgeschlagen: {r.stderr[:120]}")
+                return
+            if throttle:
+                try:
+                    throttle.record("merken")
+                except Exception:
+                    pass
+            log(f"[{self.bot_name}] Gemerkt ({len(fakt)} Zeichen)")   # #18: kein Inhalt ins Log
+            self.send_message(f"{merker.MARK} Gemerkt: {fakt}")
+        except Exception as e:
+            log(f"[{self.bot_name}] Merken übersprungen: {e}")
+
+    def _bekannte_fakten(self, n=200):
+        """Bestehende Fakten als Textliste — Grundlage der Dublettenprüfung."""
+        try:
+            r = subprocess.run([sys.executable, f"{BOT_DIR}/memory.py", "list", "-n", str(n)],
+                               capture_output=True, text=True, timeout=30)
+            aus = []
+            for z in (r.stdout or "").splitlines():
+                t = z.strip()
+                if t.startswith("["):
+                    teil = t.split(")", 1)
+                    if len(teil) == 2:
+                        aus.append(teil[1].strip())
+            return aus
+        except Exception:
+            return []
 
     def _verify_text(self, v_model, question, answer, verlauf=""):
         """Prüferlauf. Rückgabe: (final_text, revised: bool)."""

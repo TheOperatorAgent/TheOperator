@@ -55,6 +55,10 @@
         <div><span class="mark">🔐</span><div><strong>Rückfrage</strong>
           <span class="small">Der Operator möchte etwas Riskantes tun und braucht dein Okay.
           Antworte einfach <em>ja</em> oder <em>nein</em>. Ohne dein Ja passiert nichts.</span></div></div>
+        <div><span class="mark">🧠</span><div><strong>Gemerkt</strong>
+          <span class="small">Der Operator hat sich aus dem Gespräch etwas dauerhaft
+          gemerkt und zeigt dir genau, was. Im Tab »Gedächtnis« kannst du es ansehen,
+          ändern oder mit einem Klick wieder vergessen lassen.</span></div></div>
         <div><span class="mark">⚡</span><div><strong>Von selbst gemeldet</strong>
           <span class="small">Der Operator meldet sich ungefragt, weil etwas passiert ist —
           zum Beispiel eine neue E-Mail.</span></div></div>
@@ -194,6 +198,7 @@
       <button class="primary" onclick="addMemory()">Speichern</button>
     </div>
     <input type="text" id="mem-q" placeholder="Gedächtnis durchsuchen…" oninput="loadMemory()">
+    <div class="card" id="mem-semantik"></div>
     <div id="mem-list"></div>
   </section>
 

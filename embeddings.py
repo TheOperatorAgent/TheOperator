@@ -115,3 +115,43 @@ def rrf_merge(rankings, k=60, top=5):
         for pos, item in enumerate(ranking):
             scores[item] = scores.get(item, 0.0) + 1.0 / (k + pos + 1)
     return [i for i, _ in sorted(scores.items(), key=lambda kv: -kv[1])[:top]]
+
+
+def status():
+    """#109: Ehrlicher Zustand der semantischen Suche → (aktiv: bool, grund: str).
+
+    Warum das nötig ist: Der Rückfall auf reine Wortsuche ist absichtlich fail-open —
+    deshalb merkt niemand, wenn der Vektor-Layer stillschweigend nicht läuft. Genau
+    das war am 29.07. der Fall: Konfiguration korrekt, Ollama erreichbar, aber das
+    Embedding-Modell nie heruntergeladen → 0 Vektoren, ohne jede Meldung. Es
+    funktionierte alles, nur schlechter. Diese Funktion macht den Zustand sichtbar.
+    """
+    if _dash_cfg().get("enabled") is False:
+        return False, "Semantische Suche ist im Dashboard abgeschaltet."
+    plan = resolve()
+    if not plan:
+        return False, ("Kein Anbieter für semantische Suche eingerichtet — es wird nur "
+                       "nach Wörtern gesucht. 👉 Im Tab »Modelle & Provider« Ollama "
+                       "einrichten (lokal und kostenlos).")
+    if embed("Testsatz für die Selbstprüfung", plan) is None:
+        modell = plan.get("model", "?")
+        if plan.get("provider") == "ollama":
+            return False, (f"Das Modell »{modell}« fehlt oder Ollama antwortet nicht — "
+                           "es wird nur nach Wörtern gesucht. 👉 Einmalig im Terminal: "
+                           f"ollama pull {modell}")
+        return False, (f"Der Anbieter »{plan.get('provider')}« antwortet nicht — es wird "
+                       "nur nach Wörtern gesucht.")
+    return True, f"Semantische Suche aktiv ({plan['provider']}/{plan['model']})"
+
+
+def rueckstand():
+    """Wie viele Fakten haben noch keinen Vektor? → (ohne_vektor, gesamt)."""
+    import sqlite3
+    try:
+        con = sqlite3.connect(os.path.join(BOT_DIR, "memory.db"))
+        gesamt = con.execute("SELECT COUNT(*) FROM memories").fetchone()[0]
+        mit = con.execute("SELECT COUNT(*) FROM mem_vecs").fetchone()[0]
+        con.close()
+        return max(0, gesamt - mit), gesamt
+    except Exception:
+        return 0, 0

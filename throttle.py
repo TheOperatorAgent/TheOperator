@@ -19,7 +19,10 @@ import time
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 STATE_FILE = os.path.join(BOT_DIR, "run", "throttle.json")
 CONFIG_FILE = os.path.join(BOT_DIR, "dashboard.json")
-AUTOMATED = ("cron", "event")          # was gedrosselt wird — "chat" NIE
+AUTOMATED = ("cron", "event", "merken")   # was gedrosselt wird — "chat" NIE
+# "merken" (#110) laeuft nach jeder Chat-Runde automatisch mit. Es ist billig,
+# aber es ist ein Modell-Aufruf — also gehoert es unter dieselbe Obergrenze wie
+# Zeitplaene, damit ein viel genutzter Chat kein Kontingent verheizt.
 DEFAULTS = {"enabled": True, "max_per_hour": 6, "max_per_day": 40}
 
 
