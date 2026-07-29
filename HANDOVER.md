@@ -1,6 +1,6 @@
 # HANDOVER — The Operator · Projekt-Übergabe
 
-> **Stand: 2026-07-29 · Version 1.7.7 · verfasst für den nahtlosen Weiterbetrieb durch einen anderen Agenten.**
+> **Stand: 2026-07-29 · Version 1.8.0 · verfasst für den nahtlosen Weiterbetrieb durch einen anderen Agenten.**
 > Dieses Dokument ist die **Single Source of Truth** für den aktuellen Stand. Bei Widerspruch zwischen diesem Dokument und dem Code gilt der Code — dann dieses Dokument korrigieren.
 > Antwortsprache mit dem Nutzer (Michi Aschenbrenner): **immer Deutsch.**
 
@@ -77,10 +77,11 @@ Hinweis: Der Listener baut sich bei Änderung an `bots.json` selbst neu auf; fü
 | **1.7.5** | **#83 Egress-Schutz für Tool-Ergebnisse** — `llm_runner._sanitize_result()`: Secrets maskiert + bekannte PII → Prompt-Surrogate, BEVOR Fremd-Modelle Tool-Ausgaben sehen. Listener reicht die s2r-Map durch | ✅ live, 118 Tests |
 | **1.7.6** | **#59 Login-Vorwarnung** — `claude_health.py`: Zustand aus echten Läufen, Probe nur bei >6 h ohne Beweis, GENAU EINE Warnung je Ausfall; Login-Ablauf löst jetzt auch den API-Key-Fallback aus; Dashboard-Kachel »Claude-Zugang«. Ohne jeden Zugangsdaten-Zugriff | ✅ live, 121 Tests |
 | **1.7.7** | **#58 Fair-Use-Drossel** — `throttle.py`: max 6/h, 40/Tag für `cron`+`event`; **Chat wird NIE gedrosselt** (test-gesichert); Konfig in dashboard.json, Zahlen im Dashboard-Status | ✅ live, **125 Tests** |
+| **1.8.0** | **#65 Permission Broker** — `permission_broker.py` + `claude_tool_hook.py`: PreToolUse-Hook stuft jeden Werkzeug-Aufruf ein; riskante Aktionen (rm -rf, sudo, Systemdateien, Mail senden, curl\|bash) fragen im Matrix-Chat nach (ja/nein oder ✅/❌). **fail-closed**, Owner-gebunden, Replay-Schutz, Argument-Fingerprint. Umlauf läuft IM HOOK, weil der Listener während `claude -p` blockiert ist. Listener registriert den Hook selbst | ✅ live E2E bewiesen, **131 Tests** |
 
 **Multi-LLM-Detail:** siehe Memory [[multi_llm_feature]]. **Wichtig:** Kein lokales Ollama-Modell auf dem MacBook (stürzt ab) — Kimi läuft über **Ollama-Cloud** (`ollama/kimi-k2.7-code:cloud`).
 
-Tests: **125 pytest grün** (Stand 1.7.7; 111 vor 1.7.1) (persona, hints, browser-readonly, wants_dashboard u. a.). Listener bleibt **stdlib-only** — harte Regel, `llm_runner.py`/Dashboard dürfen venv nutzen, `listener.py`/`providers.py`/`persona.py` NICHT.
+Tests: **131 pytest grün** (Stand 1.8.0; 111 vor 1.7.1) (persona, hints, browser-readonly, wants_dashboard u. a.). Listener bleibt **stdlib-only** — harte Regel, `llm_runner.py`/Dashboard dürfen venv nutzen, `listener.py`/`providers.py`/`persona.py` NICHT.
 
 ---
 
@@ -110,7 +111,6 @@ Diagnose-Beleg (Matrix CS-API mit gültigem Owner-Token, `whoami` ok):
 | 13 | Release-Blocker: Frisch-System-Test + Setup-App | 🔴 **P1** | Braucht **saubere Maschine**. Blockiert echten Release. |
 | 12 | E2E-Verschlüsselung des Bot-Raums | 🟠 P2 | pantalaimon-Ansatz teils da (Task #43). |
 | 14 | M365-Zugriff auf gewählten Benutzer begrenzen (Least-Privilege) | 🟠 P2 | Security-Härtung. |
-| 65 | **Permission Broker**: Rückfrage vor heiklen Aktionen über Matrix | 🔴 P0 | Von Codex umbenannt; NICHT vom Assistenten abgedeckt |
 | 82/83/84 | Browser-Isolation · Tool-PII (Kern ✅ in 1.7.5) · Petra-Gate | 🔴 P0 | Von der Codex-Session angelegt |
 | 66 | Vollständige Werkzeuge in sicherer Agenten-Runtime | 🔴 P0 | Von Codex umgeschrieben |
 | 18 | Lokale Datenrechte, Aufbewahrung, strikter Modus | 🟠 P2 | Von Codex umgeschrieben |
