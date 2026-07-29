@@ -51,6 +51,21 @@ DESTRUCTIVE_CMD = [
     (r"\bcurl\b[^|]*\|\s*(bash|sh|zsh)", "Skript aus dem Netz ausführen"),
     (r"\bnpm\s+publish\b|\bpip\s+install\b.*--index-url", "Paket veröffentlichen/fremde Quelle"),
     (r">\s*/etc/|>\s*/System/|>\s*/Library/", "Systemdateien überschreiben"),
+    # Security-Review 29.07. — bekannte Umgehungen derselben Absichten:
+    (r"\bfind\b.*\s-delete\b", "Dateien löschen (find)"),
+    (r"\b(wget|fetch)\b[^|]*\|\s*(bash|sh|zsh)", "Skript aus dem Netz ausführen"),
+    (r"\bbase64\b[^|]*\|\s*(bash|sh|zsh)", "kodiertes Skript ausführen"),
+    (r"\b(sh|bash|zsh)\s+-c\b.*\b(rm|curl|wget)\b", "Befehl in Unter-Shell verstecken"),
+    (r"\bpython3?\s+-c\b.*\b(rmtree|unlink|remove|rmdir)\b", "Dateien löschen (Python)"),
+    (r"\bperl\s+-e\b.*\bunlink\b|\bruby\s+-e\b.*\b(delete|unlink)\b", "Dateien löschen (Skriptsprache)"),
+    (r"\bgit\s+clean\b.*-\w*[xfd]", "unversionierte Dateien löschen (git clean)"),
+    (r"\bgit\s+reset\s+--hard\b", "Arbeitsstand verwerfen (git reset --hard)"),
+    (r"\btruncate\b.*\s-s\s*0", "Dateiinhalt leeren (truncate)"),
+    (r"\bshred\b|\bsrm\b", "Dateien unwiederbringlich überschreiben"),
+    (r"\b(env|command|nohup|nice|time|xargs)\s+(sudo|doas)\b|\bdoas\b", "Administrator-Rechte (verpackt)"),
+    (r"\bosascript\b.*\b(delete|empty trash)\b", "Dateien löschen (AppleScript)"),
+    (r"\blaunchctl\s+(bootout|bootstrap)\b", "Dienste ändern"),
+    (r"\bcrontab\s+(-r|\S+\.txt)", "Zeitpläne ersetzen/löschen"),
 ]
 # Werkzeuge, die nach außen wirken → immer einzeln bestätigen
 RISKY_TOOLS = {

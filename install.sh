@@ -796,7 +796,7 @@ case "\${1:-dashboard}" in
     else
       for s in listener dashboard pseudonym; do systemctl --user is-active --quiet "operator-\$s" && echo "✓ \$s läuft" || echo "✗ \$s gestoppt"; done
     fi;;
-  uninstall)    curl -fsSL "$REPO_RAW/install.sh" -o /tmp/operator-uninstall.sh && exec bash /tmp/operator-uninstall.sh --uninstall;;
+  uninstall)    u=\$(mktemp) && curl -fsSL "$REPO_RAW/install.sh" -o "\$u" && exec bash "\$u" --uninstall;;
   *) echo "Nutzung: operator [dashboard|chat|log|status|uninstall]";;
 esac
 LAUNCH

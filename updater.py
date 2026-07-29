@@ -25,8 +25,13 @@ RAW_FILE = os.path.join(BOT_DIR, "repo_raw.txt")   # vom Installer geschrieben
 
 def _load_repo_raw():
     """Update-Quelle: 1. Env-Override, 2. vom Installer hinterlegte Quelle
-    (repo_raw.txt — so aktualisieren Website-/GitHub-Installationen aus GitHub),
-    3. Standard-Repo."""
+    (repo_raw.txt — so aktualisieren Website-/GitHub-Installationen aus GitHub).
+
+    BEWUSST KEIN eingebauter Notnagel mehr (Security-Review 29.07.): Vorher stand
+    hier eine private Heimnetz-Adresse (über unverschlüsseltes HTTP) — fehlte repo_raw.txt, hätte
+    sich der Updater Code von dem Gerät geholt, das im jeweiligen Heimnetz zufällig
+    auf dieser Adresse antwortet. Ohne bekannte Quelle gibt es KEIN Update; das
+    Dashboard erklärt stattdessen den Weg (Installer erneut ausführen)."""
     env = os.environ.get("OPERATOR_REPO_RAW")
     if env:
         return env.rstrip("/")
@@ -36,7 +41,7 @@ def _load_repo_raw():
             return saved.rstrip("/")
     except OSError:
         pass
-    return "http://192.168.178.53:3000/root/the-operator/raw/branch/main"
+    return ""
 
 
 REPO_RAW = _load_repo_raw()
@@ -61,6 +66,9 @@ def local_version():
 
 
 def _fetch(path, binary=False):
+    if not REPO_RAW:
+        raise RuntimeError("Update-Quelle unbekannt (repo_raw.txt fehlt) — "
+                           "bitte den Installer einmal erneut ausführen.")
     with urllib.request.urlopen(f"{REPO_RAW}/{path}", timeout=TIMEOUT) as r:
         data = r.read()
     return data if binary else data.decode("utf-8")
@@ -76,6 +84,10 @@ def remote_info():
 
 def check():
     cur = local_version()
+    if not REPO_RAW:
+        return {"current": cur, "latest": cur, "update_available": False, "highlights": [],
+                "error": "Update-Quelle unbekannt — 👉 Installer einmal erneut ausführen, "
+                         "dann weiß ich wieder, woher Updates kommen."}
     info = remote_info()
     if not info:
         return {"current": cur, "latest": cur, "update_available": False,

@@ -77,8 +77,14 @@ ein Zeitablauf, eine Störung oder ein fremder Account bedeuten immer *nicht aus
 Jede Freigabe gilt genau einmal und genau für diese eine Aktion.
 
 **Und im Alltag merkst du davon nichts.** Lesen, Suchen, Recherchieren, normale Befehle,
-Arbeiten im Arbeitsordner — alles läuft ohne eine einzige Rückfrage weiter. Gefragt wird nur
-bei echtem Risiko. Dass das so bleibt, sichern elf automatische Tests ab.
+Arbeiten im Arbeitsordner — alles läuft ohne eine einzige Rückfrage weiter.
+
+**Ehrliche Grenze:** Die Erkennung riskanter Befehle arbeitet mit einer Liste bekannter
+Muster (Löschen, Admin-Rechte, Code aus dem Netz ausführen u. a.), abgesichert durch
+automatische Tests. Eine Liste erkennt bekannte Muster — sie ist kein mathematischer
+Beweis, dass jede denkbare riskante Formulierung erfasst wird. Wer die härtere Garantie
+will, führt den Operator ohne Shell-Werkzeug aus (Werkzeuge sind je Agent abschaltbar);
+eine echte Sandbox als Standard steht auf der Roadmap.
 
 **🛡️ Dein Heimnetz ist tabu.** Der Operator darf ins öffentliche Internet — aber nicht auf
 dein Dashboard, deinen Router, deinen NAS oder deine internen Server. Auch nicht über eine
@@ -135,7 +141,7 @@ betroffen.
 - **Bedienbar ohne IT-Wissen:** verbindliches Leitbild [EINFACHHEIT.md](EINFACHHEIT.md)
   (»Petra-Test«) — jedes Feature muss auch eine Büromitarbeiterin ohne Hilfe schaffen.
 
-## Neu in v2.1 — Verlauf, Automationen, Nutzung & mehr
+## Verlauf, Automationen, Nutzung & mehr
 
 - **Verlauf:** Jede Assistenten-Antwort wird lokal aufgezeichnet (SQLite) und ist im
   Dashboard volltextdurchsuchbar — inkl. Dauer, Tokens und Fehlern.

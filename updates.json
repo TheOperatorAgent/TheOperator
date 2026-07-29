@@ -1,9 +1,8 @@
 {
-  "version": "1.9.2",
+  "version": "1.9.3",
   "date": "2026-07-29",
   "highlights": [
-    "⚡ Antworten kommen jetzt sofort: Die Antwort steht direkt im Chat, der Qualitäts-Prüfer läuft danach und reicht sein ✓ (oder eine Korrektur ✎) per Bearbeitung nach — statt dich 30 Sekunden warten zu lassen.",
-    "🧐 Der Prüfer kennt jetzt den Gesprächsverlauf und kann seine Anmerkungen nicht mehr versehentlich in den Chat schreiben.",
-    "🎭 Die Pseudonymisierung ersetzt vertippte oder erfundene Wörter nicht mehr fälschlich durch Städtenamen — echte Orte und Firmen bleiben natürlich geschützt."
+    "🔍 Eine externe Sicherheits-Review hat uns geprüft — danke dafür! Die Funde sind behoben: Der Updater kennt keine eingebaute Ersatz-Quelle mehr (ohne bekannte, beim Installieren hinterlegte Quelle gibt es bewusst kein Update), und die Erkennung riskanter Befehle fängt jetzt auch verpackte Varianten (find -delete, wget|sh, git clean, in Python versteckte Löschbefehle u. a.).",
+    "📖 Die Sicherheits-Beschreibung im Handbuch sagt jetzt ehrlicher, was die Muster-Erkennung leistet und was nicht — und was auf der Roadmap steht (signierte Updates, Sandbox)."
   ]
 }
