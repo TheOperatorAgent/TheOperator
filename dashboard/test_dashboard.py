@@ -1943,3 +1943,15 @@ def test_claude_health_is_stdlib_only():
     imports |= {n.module.split(".")[0] for n in ast.walk(ast.parse(src))
                 if isinstance(n, ast.ImportFrom) and n.module}
     assert imports <= {"json", "os", "subprocess", "time", "sys"}
+
+
+def test_version_fields_consistent():
+    """Wächter: VERSION, manifest.json und updates.json müssen dieselbe Version nennen.
+    Sonst meldet der Updater dem Nutzer eine falsche Version (»Aktualisiert auf 1.7.1«,
+    obwohl 1.7.6 installiert wurde) und das Update-Banner verwirrt."""
+    import json as _j
+    base = os.path.expanduser("~/.claude/matrix-bot")
+    ver = open(os.path.join(base, "VERSION")).read().strip()
+    man = _j.load(open(os.path.join(base, "manifest.json")))["version"]
+    upd = _j.load(open(os.path.join(base, "updates.json")))["version"]
+    assert ver == man == upd, f"Versionen driften: VERSION={ver} manifest={man} updates={upd}"
