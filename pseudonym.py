@@ -338,6 +338,10 @@ if __name__ == "__main__":
         print("REIDENT  :", reidentify(f"Ich habe {ans} kontaktiert.", m))
         assert "Thomas Müller" not in ps and "lisa.becker@firma.de" not in ps
         assert "Michael von Aschenbrenner" in ps  # Allowlist
+        # Maschinenlesbares Ergebnis — der Installer und der Assistent pruefen damit,
+        # ob der Filter auf DIESEM Rechner ueberhaupt laeuft (auf frischem Windows
+        # fehlen z. B. die Visual-C++-Bibliotheken fuer numpy/spacy).
+        print("SELFTEST OK")
         print("Roundtrip identisch:", back == src)
     else:
         sys.exit(__doc__)

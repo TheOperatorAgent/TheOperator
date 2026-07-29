@@ -419,6 +419,15 @@ if ($dashOptin -eq "ja") {
     New-Item -ItemType Directory -Force -Path "$DashDir\static" | Out-Null
     $VenvPy = Join-Path $DashDir "venv\Scripts\python.exe"
     if (-not (Test-Path $VenvPy)) { & $Py -m venv (Join-Path $DashDir "venv") }
+    # Die kompilierten Teile von numpy/spacy brauchen die Microsoft-Visual-C++-Laufzeit.
+    # Auf frischem Windows fehlt sie — dann scheitert der Datenschutz-Filter mit
+    # "DLL load failed while importing numpy_ops" (Michis Rechner, 29.07.).
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        try {
+            winget install --id Microsoft.VCRedist.2015+.x64 --source winget --silent `
+                --accept-package-agreements --accept-source-agreements 2>$null | Out-Null
+        } catch {}
+    }
     $pip = Join-Path $DashDir "venv\Scripts\pip.exe"
     & $pip install -q --upgrade pip
     & $pip install -q "fastapi==0.116.*" "uvicorn==0.35.*" "msal==1.33.*" "cryptography==45.*" `
@@ -461,7 +470,15 @@ if ($dashOptin -eq "ja") {
         Remove-Item Env:OP_DTOK -ErrorAction SilentlyContinue
     }
     Install-Service "dashboard" $VenvPy (Join-Path $DashDir "server.py"); Ok "Dashboard-Aufgabe registriert"
-    Install-Service "pseudonym" $VenvPy (Join-Path $BotDir "pseudonym_daemon.py"); Ok "Pseudonym-Daemon-Aufgabe registriert"
+    # Datenschutz-Filter (#116): startet AUS. Bewusst so - er braucht ein grosses
+    # Sprachmodell und System-Bibliotheken, die nicht auf jedem Rechner da sind
+    # (auf frischem Windows fehlt z. B. die Visual-C++-Laufzeit). Laeuft er nicht,
+    # blockiert er sonst JEDE Nachricht (fail-safe by design) - und der Kunde steht
+    # mit einem Operator da, der nichts tut. Stattdessen: erst laeuft alles, dann
+    # bietet der Operator selbst an, ihn einzuschalten, und hilft bei Problemen.
+    & $Py -c "import json;p=r'$BotDir\dashboard.json';d=json.load(open(p));d.setdefault('pseudonymize',{}).setdefault('enabled',False);json.dump(d,open(p,'w'),indent=1)"
+    Install-Service "pseudonym" $VenvPy (Join-Path $BotDir "pseudonym_daemon.py")
+    Ok "Datenschutz-Filter vorbereitet - dein Operator bietet dir gleich an, ihn einzuschalten"
     Ok "Dashboard oeffnen mit:  $VenvPy $DashDir\open.py"
 }
 

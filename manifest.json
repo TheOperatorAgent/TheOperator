@@ -1,10 +1,10 @@
 {
- "version": "1.14.1",
+ "version": "1.15.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "6b38e19cc1fbb6227aa9a8312d1449f1c75fe4bc47527c73e18ebc80d5cfce0a"
+   "sha256": "8b05762b17a428b0e0f939a7facf739978fab55aa27ed927af2d275325f79a30"
   },
   {
    "src": "matrix_room.py",
@@ -199,7 +199,7 @@
   {
    "src": "pseudonym.py",
    "dst": "pseudonym.py",
-   "sha256": "7750ef9f1b1a0606d54a1c392d024ec31611fb9b2f13af2e0a24ddb57cfb5d0d"
+   "sha256": "7cba7587dd73b7be791eab2feae7d8a95c882032dd863bbaa26b60018a5ea7fc"
   },
   {
    "src": "pseudonym_daemon.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "680fc277cb9b2ccc469b1d3a0dc91586f0ca74d9aba5d855f332cbdafed8d3d1"
+   "sha256": "f90d85f640e80639ced60d5d65c3706c8e29bbdf462c90ef74793198f754e095"
   }
  ]
 }

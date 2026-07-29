@@ -3372,3 +3372,46 @@ def test_windows_installer_ist_reines_ascii():
     s = _ps1()
     schlimm = sorted({c for c in s if ord(c) > 127})
     assert not schlimm, f"Nicht-ASCII im Windows-Installer: {schlimm[:10]}"
+
+
+# ------------------------------------------------ #116 Datenschutz-Filter opt-in --
+def test_datenschutz_kurzbefehl_greift_vor_dem_modell():
+    """Die Falle, die es zu vermeiden gilt: Der Filter blockiert jede Nachricht
+    (fail-safe by design) — dann kann der Nutzer weder schreiben noch ihn abschalten.
+    Deshalb müssen »Datenschutz an/aus« VOR dem Modell-Lauf abgefangen werden."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    teil = src.split("def answer(")[1].split("\n    def ")[0]
+    assert "wants_datenschutz_an" in teil
+    assert teil.index("wants_datenschutz_an") < teil.index("self.build(bodies)"), \
+        "Kurzbefehl läuft erst nach dem Modell — nützt bei blockiertem Filter nichts"
+
+
+def test_datenschutz_schalter():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import importlib, listener
+    for satz, an, aus in [("Datenschutz an", True, False), ("datenschutz  ein", True, False),
+                          ("Datenschutz aus", False, True), ("Pseudonymisierung an", True, False),
+                          ("erzähl mir was über datenschutz", False, False)]:
+        assert listener.wants_datenschutz_an([satz]) is an, satz
+        assert listener.wants_datenschutz_aus([satz]) is aus, satz
+
+
+def test_installer_aktiviert_datenschutz_nicht_von_selbst():
+    """#116: Der Filter startet AUS — sonst blockiert er auf Rechnern, wo er nicht
+    läuft, JEDE Nachricht, und der Kunde hat einen Operator, der nichts tut.
+    Der Operator bietet ihn danach selbst an (und kann dann auch helfen)."""
+    for pfad, muster in (("/tmp/_diff_op/install.sh", "setdefault('enabled', False)"),
+                         ("/tmp/_diff_op/install.ps1", "setdefault('enabled',False)")):
+        if not os.path.exists(pfad):
+            continue
+        s = open(pfad, encoding="utf-8", errors="replace").read()
+        assert muster in s, f"{pfad}: Filter wird nicht standardmäßig ausgeschaltet"
+
+
+def test_operator_bietet_datenschutz_an():
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    assert "def datenschutz_angebot" in src
+    assert "datenschutz_angebot(owner)" in src, "wird nie aufgerufen"
+    teil = src.split("def datenschutz_angebot")[1].split("\ndef ")[0]
+    assert "selftest" in teil, "verspricht etwas, ohne es geprüft zu haben"
+    assert "datenschutz-angebot.json" in teil, "würde bei jedem Tick nerven"

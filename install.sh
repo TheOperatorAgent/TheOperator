@@ -760,9 +760,23 @@ PY
     install_service dashboard "$VENV_PY" "$DASH_DIR/server.py" \
       && { DASH_RUNNING=1; ok "Dashboard läuft"; } \
       || warn "Dashboard-Start fehlgeschlagen — Bot läuft trotzdem (Log: $BOT_DIR/dashboard.log)"
-    install_service pseudonym "$VENV_PY" "$BOT_DIR/pseudonym_daemon.py" \
-      && ok "Pseudonymisierungs-Daemon läuft (schnelle PII-Ersetzung)" \
-      || warn "Pseudonym-Daemon-Start fehlgeschlagen — Listener nutzt den Fallback"
+    # Datenschutz-Filter (#116): startet AUS. Bewusst so — er braucht ein großes
+    # Sprachmodell und System-Bibliotheken, die nicht auf jedem Rechner da sind.
+    # Läuft er nicht, blockiert er sonst JEDE Nachricht (fail-safe by design), und
+    # der Kunde steht mit einem Operator da, der nichts tut. Stattdessen: erst
+    # läuft alles, dann bietet der Operator selbst an, ihn einzuschalten — und
+    # hilft bei Problemen, weil er dann schon antworten kann.
+    python3 -c "
+import json, os
+p = os.path.expanduser('~/.claude/matrix-bot/dashboard.json')
+try:
+    d = json.load(open(p))
+except Exception:
+    d = {}
+d.setdefault('pseudonymize', {}).setdefault('enabled', False)
+json.dump(d, open(p, 'w'), indent=1)" 2>/dev/null || true
+    install_service pseudonym "$VENV_PY" "$BOT_DIR/pseudonym_daemon.py" >/dev/null 2>&1 || true
+    ok "Datenschutz-Filter vorbereitet — dein Operator bietet dir gleich an, ihn einzuschalten"
     # FIDO-Sicherheitsschlüssel (Linux): EINE Frage statt Copy-Paste — wir richten die
     # udev-Regel selbst ein (sudo fragt einmal nach dem Nutzer-Passwort)
     # #109: Semantisches Gedächtnis. Ohne Embedding-Modell findet der Operator Fakten

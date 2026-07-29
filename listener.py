@@ -134,6 +134,69 @@ def _pii_cfg():
             "allow": c.get("allow", []), "deny": c.get("deny", [])}
 
 
+def datenschutz_angebot(session):
+    """#116: Der Datenschutz-Filter startet AUS (er braucht ein großes Sprachmodell
+    und System-Bibliotheken, die nicht überall da sind). Statt die Installation daran
+    scheitern zu lassen, bietet der Operator ihn EINMAL selbst an — dann läuft er
+    schon und kann bei Problemen helfen. Genau das war Michis Idee (29.07.).
+
+    Wird höchstens einmal pro Installation gesendet."""
+    marke = os.path.join(BOT_DIR, "run", "datenschutz-angebot.json")
+    try:
+        if os.path.exists(marke) or _pii_cfg()["enabled"]:
+            return
+        # Läuft der Filter auf diesem Rechner überhaupt? Erst prüfen, dann anbieten —
+        # nichts versprechen, was die Maschine nicht kann.
+        r = subprocess.run([VENV_PY, f"{BOT_DIR}/pseudonym.py", "selftest"],
+                           capture_output=True, text=True, timeout=180)
+        laeuft = "SELFTEST OK" in (r.stdout or "")
+        os.makedirs(os.path.dirname(marke), exist_ok=True)
+        with open(marke, "w") as f:
+            json.dump({"ts": int(time.time()), "laeuft": laeuft}, f)
+        if laeuft:
+            session.send_message(
+                "🎭 **Noch ein Angebot, dann lasse ich dich in Ruhe.**\n"
+                "Ich kann Namen, Telefonnummern und Kontodaten in deinen Nachrichten "
+                "durch Platzhalter ersetzen, bevor sie zum Sprachmodell gehen — du "
+                "merkst davon nichts, meine Antworten bleiben richtig.\n\n"
+                "Ich habe gerade geprüft: Auf diesem Rechner funktioniert das.\n"
+                "👉 Schreib **Datenschutz an**, wenn ich das machen soll.")
+        else:
+            session.send_message(
+                "ℹ️ **Kurz zur Einordnung:** Ich könnte Namen und Nummern durch "
+                "Platzhalter ersetzen, bevor sie zum Sprachmodell gehen. Auf diesem "
+                "Rechner fehlen dafür ein paar Systembibliotheken — deshalb ist die "
+                "Funktion aus, und alles andere läuft normal.\n"
+                "👉 Frag mich einfach »**wie aktiviere ich den Datenschutz**«, dann "
+                "gehe ich das mit dir durch.")
+    except Exception as e:
+        log(f"Datenschutz-Angebot übersprungen: {e}")
+
+
+def wants_datenschutz_an(bodies):
+    """Kurzbefehl »Datenschutz an« — ohne Modell-Lauf, damit es auch dann geht,
+    wenn der Filter gerade alles blockiert."""
+    t = " ".join(" ".join(bodies).lower().split())
+    return t in ("datenschutz an", "datenschutz ein", "datenschutz aktivieren",
+                 "pseudonymisierung an", "pseudonymisierung ein")
+
+
+def wants_datenschutz_aus(bodies):
+    t = " ".join(" ".join(bodies).lower().split())
+    return t in ("datenschutz aus", "datenschutz abschalten", "pseudonymisierung aus")
+
+
+def setze_datenschutz(an):
+    """Filter ein-/ausschalten (dashboard.json)."""
+    p = f"{BOT_DIR}/dashboard.json"
+    d = json.load(open(p))
+    d.setdefault("pseudonymize", {})["enabled"] = bool(an)
+    tmp = p + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=1)
+    os.replace(tmp, p)
+
+
 def owner_verify_cfg():
     """Owner-Verify (#46) aus dashboard.json — frisch pro Nachricht, damit der
     Dashboard-Umschalter sofort wirkt. Default AUS. Rückgabe: (enabled, model|None)."""
@@ -656,6 +719,33 @@ class BotSession(threading.Thread):
             # Verlauf OHNE den Einmal-Link (Token gehört nicht in die durchsuchbare DB)
             self.record_direct(bodies, "(Ich habe dem Nutzer einen Ein-Klick-Login-Link "
                                        "zum lokalen Operator-Dashboard in den Chat geschickt.)")
+            return
+        # #116: Datenschutz ein/aus als Kurzbefehl — bewusst VOR dem Modell-Lauf,
+        # damit es auch dann funktioniert, wenn der Filter gerade jede Nachricht
+        # blockiert. Sonst säße der Nutzer in der Falle: Er kann nichts schreiben,
+        # weil der Filter klemmt, und den Filter nicht abschalten, weil er nichts
+        # schreiben kann.
+        if self.kind == "owner" and (wants_datenschutz_an(bodies) or wants_datenschutz_aus(bodies)):
+            an = wants_datenschutz_an(bodies)
+            self.mark_read(last_event_id)
+            try:
+                setze_datenschutz(an)
+            except Exception as e:
+                self.send_message(f"⚠️ Umschalten hat nicht geklappt ({e}). "
+                                  "👉 Geht auch im Dashboard unter »Datenschutz«.")
+                return
+            if an:
+                self.send_message(
+                    "🎭 Datenschutz-Filter ist **an**. Ab jetzt ersetze ich Namen, "
+                    "Nummern und Kontodaten durch Platzhalter, bevor deine Nachricht "
+                    "zum Sprachmodell geht — meine Antworten bleiben trotzdem richtig.\n"
+                    "Falls etwas klemmt: »Datenschutz aus« schaltet ihn wieder ab.")
+            else:
+                self.send_message(
+                    "Datenschutz-Filter ist **aus**. Deine Nachrichten gehen jetzt "
+                    "unverändert zum Sprachmodell. Mit »Datenschutz an« schaltest du "
+                    "ihn wieder ein.")
+            self.record_direct(bodies, f"(Datenschutz-Filter wurde {'ein' if an else 'aus'}geschaltet.)")
             return
         prompt, tools, model, mapping, msg_rec, system, verify = self.build(bodies)
         self.mark_read(last_event_id)
@@ -1398,6 +1488,7 @@ def main():
                 log(f"Ereignis-Prüfung fehlgeschlagen: {e}")
         _mail_watch_tick(log)
         _claude_health_tick(owner)
+        datenschutz_angebot(owner)     # #116: einmalig anbieten, sobald alles läuft
         if retention:                  # #18: einmal täglich alte Daten aufräumen
             try:
                 if retention.faellig():
