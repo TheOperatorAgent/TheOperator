@@ -108,24 +108,36 @@ Diagnose-Beleg (Matrix CS-API mit gültigem Owner-Token, `whoami` ok):
 
 ---
 
-## 5. Offene Gitea-Issues (`root/matrix-claude-bot`) mit Priorität
+## 5. Offene Gitea-Issues (`root/matrix-claude-bot`) — Stand 29.07.2026
 
-| # | Titel | Prio | Notiz |
-|---|---|---|---|
-| 13 | Release-Blocker: Frisch-System-Test + Setup-App | 🔴 **P1** | Braucht **saubere Maschine**. Blockiert echten Release. |
-| 12 | E2E-Verschlüsselung des Bot-Raums | 🟠 P2 | pantalaimon-Ansatz teils da (Task #43). |
-| 14 | M365-Zugriff auf gewählten Benutzer begrenzen (Least-Privilege) | 🟠 P2 | Security-Härtung. |
-| 66 | Vollständige Werkzeuge in sicherer Agenten-Runtime | 🔴 P0 | Von Codex umgeschrieben |
-| 80 | Browser-Agent v2: Web-AKTIONEN (Formulare) mit Chat-Bestätigung | 🟡 P3 | Folge zu 1.7.0. |
-| 36 | Cross-Platform Windows+Linux (macOS bitidentisch) | 🟡 P3 | Installer existiert; echte Fremd-OS-Tests offen. |
-| 45 | **Epic** Wettbewerbs-Differenzierung | 🟡 P3 | Dach-Epic; viele Teile erledigt. |
-| 53 | Voice-Pipeline (whisper.cpp STT + Kokoro TTS) | 🟡 P3 | Backlog-Feature. |
-| 56/57 | RESEARCH Voice / Desktop-Computer-Use | 🟡 P3 | Reine Recherche. |
-| 51 | Telegram-Kanal | 🟡 P3 | **Bewusst zurückgestellt** (Matrix-only = Sicherheitsmerkmal). |
+**10 offen.** Vier wurden am 29.07. bereinigt (#45 Epic erfüllt · #51 Telegram bewusst verworfen ·
+#83 Kern erledigt, Rest → #88 · #66 Docker-Runtime in dieser Form abgelehnt, Begründung im Issue).
+PR #85 (Codex) geschlossen — Rosinen einzeln neu gebaut.
 
-**Empfehlung für den nächsten Agenten:** Erst **#81** (aktiver Bug, klein, Fix steht), dann **#13** (Release-Blocker, braucht aber Michis saubere Maschine).
+### Braucht Michi (kann ich nicht ersetzen)
+| # | Titel | Warum |
+|---|---|---|
+| **13** | Release-Blocker: Frisch-System-Test | saubere Maschine/VM. Vorbereitung erledigt, Checkliste im Issue |
+| **36** | Abnahme Linux + Windows | echte Geräte |
+| **14** | M365 Least Privilege | Azure-Zugang |
 
----
+### Grundsatzentscheidung nötig
+| # | Titel | Der Zielkonflikt |
+|---|---|---|
+| **12** | Matrix-E2EE | braucht `libolm` — der Listener ist bewusst abhängigkeitsfrei (Test schützt das). Entweder Zusatzdienst (pantalaimon) oder das stdlib-Prinzip aufgeben. Bis dahin ist der ehrliche README-Hinweis richtig |
+
+### Von mir baubar
+| # | Titel | Prio |
+|---|---|---|
+| **88** | Unbekannte PII in Werkzeug-Ergebnissen (Presidio-Pass) | 🟠 P2 — erst messen, Plan steht im Issue |
+| **87** | Tests mit ausliefern (»Meine Installation prüfen«) | 🟠 P2 — **nach** dem Launch |
+| **80** | Browser-Agent v2: Formulare mit Chat-Bestätigung | 🟡 P3 |
+
+### Backlog / Research (blockiert nichts)
+| # | Titel |
+|---|---|
+| 53 | Voice-Pipeline (whisper.cpp + Kokoro) |
+| 56 / 57 | Research: Echtzeit-Voice · Desktop-Computer-Use |
 
 ## 6. 🔴 Auslieferungs-Disziplin (verbindlich)
 
