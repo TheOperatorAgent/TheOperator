@@ -3656,3 +3656,15 @@ def test_nutzungsbericht_liest_csv_nicht_json():
     code = "\n".join(z for z in teil.splitlines() if not z.strip().startswith("#"))
     assert "$format=application/json" not in code, "Graph antwortet mit 400"
     assert "g_text(" in code and "csv.DictReader" in code
+
+
+def test_windows_installer_ruft_pip_nie_als_exe():
+    """Realer Abbruch (Michis Windows, 30.07.): »pip.exe install --upgrade pip« bricht ab
+    mit »ERROR: To modify pip, please run the following command: …python.exe -m pip
+    install --upgrade pip« — Windows kann die laufende pip.exe nicht ersetzen. Die
+    Installation stand mitten in Phase 8, der Kunde hatte kein Dashboard.
+    Deshalb: pip ausschließlich als »python.exe -m pip«."""
+    s = _ps1()
+    code = "\n".join(z for z in s.splitlines() if not z.strip().startswith("#"))
+    assert "pip.exe" not in code, "pip.exe-Aufruf bricht beim Selbst-Upgrade ab"
+    assert "-m pip install" in code, "pip wird nicht als Modul aufgerufen"

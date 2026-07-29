@@ -1,9 +1,7 @@
 {
- "version": "1.17.0",
+ "version": "1.17.1",
  "date": "2026-07-30",
  "highlights": [
-  "🗓️ Neu — die wichtigste Frage im Büro: »Wann haben alle Zeit?« Dein Operator fragt die Verfügbarkeit mehrerer Personen ab und nennt dir die gemeinsamen freien Fenster. Er sieht dabei nur frei oder belegt — nicht, was die anderen vorhaben.",
-  "🔍 Mail-Suche über das ganze Postfach, nicht nur die letzten Mails. Dazu: Ordner mit Ungelesenen-Zahl, Antworten und Weiterleiten (der Gesprächsfaden bleibt zusammen) und Termine verschieben oder absagen.",
-  "🔧 Fehler behoben: Wenn du im Dashboard ein Recht eingeschaltet und auf »Rechte aktualisieren« geklickt hast, konnte Microsoft trotzdem bis zu eine Stunde lang ablehnen. Der Zugangsschlüssel wird jetzt sofort erneuert."
+  "🪟 Windows: Die Installation brach beim Einrichten des Dashboards ab (»To modify pip, please run the following command«). Ursache war ein Aufruf, den Windows nicht erlaubt, während er selbst läuft. Behoben — die Installation läuft jetzt durch."
  ]
 }

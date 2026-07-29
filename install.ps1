@@ -428,11 +428,15 @@ if ($dashOptin -eq "ja") {
                 --accept-package-agreements --accept-source-agreements 2>$null | Out-Null
         } catch {}
     }
-    $pip = Join-Path $DashDir "venv\Scripts\pip.exe"
-    & $pip install -q --upgrade pip
-    & $pip install -q "fastapi==0.116.*" "uvicorn==0.35.*" "msal==1.33.*" "cryptography==45.*" `
+    # WICHTIG: pip immer als "python.exe -m pip" aufrufen, NIE als pip.exe.
+    # Realer Abbruch (Michis Windows, 30.07.): "pip.exe install --upgrade pip" bricht mit
+    # "ERROR: To modify pip, please run the following command: ...python.exe -m pip install
+    # --upgrade pip" ab - Windows kann die laufende pip.exe nicht ersetzen. Damit stand die
+    # Installation in Phase 8 und der Kunde hatte kein Dashboard.
+    & $VenvPy -m pip install -q --upgrade pip
+    & $VenvPy -m pip install -q "fastapi==0.116.*" "uvicorn==0.35.*" "msal==1.33.*" "cryptography==45.*" `
         "requests==2.32.*" "mcp==1.*" "starlette<0.49" "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker"
-    try { & $pip install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
+    try { & $VenvPy -m pip install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
     catch { Warn "Deutsches Sprachmodell nicht geladen - Pseudonymisierung meldet sich beim ersten Einsatz" }
     # Browser fuer den Agenten (nur zum Surfen - das Dashboard oeffnest du weiter mit deinem
     # normalen Standardbrowser). Schlaegt der Download fehl, nutzen wir ein vorhandenes
