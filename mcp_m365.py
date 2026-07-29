@@ -9,11 +9,13 @@ Eigenbau statt Fremd-Server (Entscheidung 2026-07-21, siehe RECHERCHE im Dev-Rep
 Start (macht der Listener automatisch via --mcp-config):
   ~/.claude/matrix-bot/dashboard/venv/bin/python3 ~/.claude/matrix-bot/mcp_m365.py
 """
+import datetime
 import json
 import os
 import re
 import sys
 import time
+import urllib.parse
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 sys.path.insert(0, os.path.join(BOT_DIR, "dashboard"))
@@ -73,9 +75,9 @@ def require(c, svc, mode):
                            f"im Dashboard unter 'Microsoft 365' aktivieren.")
 
 
-def token(c):
+def token(c, frisch=False):
     cached = tokens.load("m365_cc_token")
-    if cached and cached.get("expires_at", 0) > time.time():
+    if not frisch and cached and cached.get("expires_at", 0) > time.time():
         return cached["access_token"]
     r = requests.post(
         f"https://login.microsoftonline.com/{c['tenant_id']}/oauth2/v2.0/token",
@@ -90,12 +92,39 @@ def token(c):
 
 
 def g(c, method, path, payload=None):
-    r = requests.request(method, GRAPH + path,
-                         headers={"Authorization": "Bearer " + token(c)},
-                         json=payload, timeout=60)
+    """Graph-Aufruf. Bei 403 EINMAL mit frischem Token wiederholen: der Token traegt die
+    Rechte in sich, also ist ein zwischengespeicherter Token nach einer Rechte-Aenderung
+    veraltet — Graph antwortet dann mit »403 UnknownError« ohne Text (real erlebt 30.07.)."""
+    def ruf(frisch=False):
+        return requests.request(method, GRAPH + path,
+                                headers={"Authorization": "Bearer " + token(c, frisch)},
+                                json=payload, timeout=60)
+    r = ruf()
+    if r.status_code == 403:
+        r = ruf(frisch=True)
+    if r.status_code >= 400:
+        hinweis = ""
+        if r.status_code == 403:
+            hinweis = ("\n👉 Microsoft verweigert den Zugriff. Prüfe im Dashboard unter "
+                       "'Microsoft 365', ob der passende Regler an ist und ob du danach "
+                       "auf 'Rechte aktualisieren' geklickt hast.")
+        raise RuntimeError(f"Graph {r.status_code}: {r.text[:300]}{hinweis}")
+    return r.json() if r.text else {}
+
+
+def g_text(c, path):
+    """Wie g(), aber fuer Endpunkte, die KEIN JSON liefern (Microsofts Nutzungs-Berichte
+    kommen ausschliesslich als CSV). Gleicher 403-Wiederholversuch."""
+    def ruf(frisch=False):
+        return requests.get(GRAPH + path,
+                            headers={"Authorization": "Bearer " + token(c, frisch)},
+                            timeout=60)
+    r = ruf()
+    if r.status_code == 403:
+        r = ruf(frisch=True)
     if r.status_code >= 400:
         raise RuntimeError(f"Graph {r.status_code}: {r.text[:300]}")
-    return r.json() if r.text else {}
+    return r.text
 
 
 def user(c):
@@ -115,16 +144,25 @@ def audit(action, target):
         pass
 
 
-@mcp.tool()
-def mail_list(count: int = 10) -> str:
-    """Letzte Mails des Nutzers auflisten (ID, Datum, Absender, Betreff)."""
-    c = conn(); require(c, "mail", "read"); u = user(c)
-    res = g(c, "GET", f"/users/{u}/messages?$top={min(count, 50)}&$select=id,subject,from,receivedDateTime,isRead&$orderby=receivedDateTime desc")
-    audit("mail_list", u)
+def _mail_zeilen(mails):
+    """Einheitliche Kurzdarstellung — das Suffix in [] ist die Kennung für mail_read."""
     return "\n".join(
         f"[{m['id'][-12:]}] {m['receivedDateTime'][:16]} {'  ' if m.get('isRead') else '● '}"
         f"{m.get('from', {}).get('emailAddress', {}).get('address', '?')} | {m.get('subject', '')}"
-        for m in res.get("value", [])) or "(keine Mails)"
+        for m in mails)
+
+
+@mcp.tool()
+def mail_list(count: int = 10, ordner: str = "") -> str:
+    """Letzte Mails auflisten (ID, Datum, Absender, Betreff). ordner: leer = Posteingang;
+    sonst ein Name wie inbox, sentitems, drafts, archive oder eine Kennung aus mail_ordner."""
+    c = conn(); require(c, "mail", "read"); u = user(c)
+    ordner = _rid(ordner or "").strip()
+    basis = f"/users/{u}/mailFolders/{urllib.parse.quote(ordner)}/messages" if ordner \
+        else f"/users/{u}/messages"
+    res = g(c, "GET", f"{basis}?$top={min(count, 50)}&$select=id,subject,from,receivedDateTime,isRead&$orderby=receivedDateTime desc")
+    audit("mail_list", ordner or u)
+    return _mail_zeilen(res.get("value", [])) or "(keine Mails)"
 
 
 def _resolve_mail(c, u, mail_id, select):
@@ -218,15 +256,90 @@ def mail_send(to: str, subject: str, text: str) -> str:
 
 
 @mcp.tool()
+def mail_suchen(text: str, anzahl: int = 25) -> str:
+    """Das ganze Postfach durchsuchen — nicht nur die letzten Mails. Nutze das, sobald
+    jemand nach einer älteren Mail fragt (»die Mail von Petra über die Rechnung«).
+    text kann auch gezielt sein: »from:petra@firma.de rechnung« oder »subject:Angebot«."""
+    c = conn(); require(c, "mail", "read"); u = user(c)
+    text = _rid(text or "").strip()
+    if not text:
+        return "Suchbegriff fehlt."
+    # $search und $orderby dürfen bei Graph NICHT zusammen — Microsoft sortiert nach Relevanz.
+    suche = urllib.parse.quote(f'"{text}"')
+    res = g(c, "GET", f"/users/{u}/messages?$search={suche}&$top={min(anzahl, 50)}"
+                      "&$select=id,subject,from,receivedDateTime,isRead")
+    audit("mail_suchen", text[:60])
+    treffer = res.get("value", [])
+    if not treffer:
+        return f"Keine Mail zu »{text}« gefunden."
+    return f"{len(treffer)} Treffer (nach Relevanz):\n" + _mail_zeilen(treffer)
+
+
+@mcp.tool()
+def mail_ordner(unter: str = "") -> str:
+    """Mail-Ordner mit Anzahl und Ungelesenen auflisten. unter: leer = oberste Ebene,
+    sonst eine Ordner-Kennung, um dessen Unterordner zu sehen."""
+    c = conn(); require(c, "mail", "read"); u = user(c)
+    unter = _rid(unter or "").strip()
+    pfad = f"/users/{u}/mailFolders/{urllib.parse.quote(unter)}/childFolders" if unter \
+        else f"/users/{u}/mailFolders"
+    res = g(c, "GET", f"{pfad}?$top=50&$select=id,displayName,totalItemCount,unreadItemCount,childFolderCount")
+    audit("mail_ordner", unter or "/")
+    zeilen = []
+    for f in res.get("value", []):
+        mehr = f" · {f['childFolderCount']} Unterordner" if f.get("childFolderCount") else ""
+        zeilen.append(f"[{f['id'][-12:]}] {f.get('displayName', '?')}: "
+                      f"{f.get('totalItemCount', 0)} Mails, "
+                      f"{f.get('unreadItemCount', 0)} ungelesen{mehr}")
+    return "\n".join(zeilen) or "(keine Ordner)"
+
+
+@mcp.tool()
+def mail_antworten(mail_id: str, text: str, allen: bool = False) -> str:
+    """Auf eine Mail ANTWORTEN, statt eine neue zu schreiben — so bleibt der Gesprächs-
+    faden zusammen. allen=True antwortet allen Empfängern. Braucht Mail › Schreiben."""
+    c = conn(); require(c, "mail", "write"); u = user(c)
+    msg = _resolve_mail(c, u, mail_id, "id,subject,from")
+    if not msg:
+        return "Mail-ID nicht gefunden — Suffix aus mail_list oder mail_suchen verwenden."
+    # Surrogate → echte Werte, BEVOR die Antwort real rausgeht
+    aktion = "replyAll" if allen else "reply"
+    g(c, "POST", f"/users/{u}/messages/{msg['id']}/{aktion}", {"comment": _rid(text)})
+    audit(f"mail_{aktion}", msg.get("subject", "")[:60])
+    wem = "allen Beteiligten" if allen else \
+        msg.get("from", {}).get("emailAddress", {}).get("address", "dem Absender")
+    return f"Antwort auf »{msg.get('subject', '')}« an {wem} gesendet."
+
+
+@mcp.tool()
+def mail_weiterleiten(mail_id: str, an: str, text: str = "") -> str:
+    """Eine Mail weiterleiten (mehrere Empfänger mit Komma trennen).
+    Braucht Mail › Schreiben."""
+    c = conn(); require(c, "mail", "write"); u = user(c)
+    msg = _resolve_mail(c, u, mail_id, "id,subject")
+    if not msg:
+        return "Mail-ID nicht gefunden — Suffix aus mail_list oder mail_suchen verwenden."
+    adressen = [a.strip() for a in _rid(an or "").split(",") if a.strip()]
+    if not adressen:
+        return "Kein Empfänger angegeben."
+    g(c, "POST", f"/users/{u}/messages/{msg['id']}/forward",
+      {"comment": _rid(text), "toRecipients":
+          [{"emailAddress": {"address": a}} for a in adressen]})
+    audit("mail_weiterleiten", ", ".join(adressen))
+    return f"»{msg.get('subject', '')}« an {', '.join(adressen)} weitergeleitet."
+
+
+@mcp.tool()
 def calendar_list(days: int = 7) -> str:
     """Termine der nächsten Tage auflisten."""
     c = conn(); require(c, "calendar", "read"); u = user(c)
     start = time.strftime("%Y-%m-%dT00:00:00")
     end = time.strftime("%Y-%m-%dT23:59:59", time.localtime(time.time() + days * 86400))
-    res = g(c, "GET", f"/users/{u}/calendarView?startDateTime={start}&endDateTime={end}&$top=30&$select=subject,start,end,location&$orderby=start/dateTime")
+    res = g(c, "GET", f"/users/{u}/calendarView?startDateTime={start}&endDateTime={end}&$top=30&$select=id,subject,start,end,location&$orderby=start/dateTime")
     audit("calendar_list", u)
+    # Das Suffix in [] ist die Kennung für kalender_verschieben / kalender_absagen.
     return "\n".join(
-        f"{e['start']['dateTime'][:16]} – {e['end']['dateTime'][11:16]} | {e.get('subject', '')}"
+        f"[{e['id'][-12:]}] {e['start']['dateTime'][:16]} – {e['end']['dateTime'][11:16]} | {e.get('subject', '')}"
         + (f" ({e['location']['displayName']})" if e.get("location", {}).get("displayName") else "")
         for e in res.get("value", [])) or "(keine Termine)"
 
@@ -241,6 +354,140 @@ def calendar_add(subject: str, start_iso: str, end_iso: str) -> str:
         "end": {"dateTime": end_iso, "timeZone": "Europe/Berlin"}})
     audit("calendar_add", subject)
     return f"Termin '{subject}' angelegt."
+
+
+# ------------------------------------------------- Termin-Koordination (#118) --
+# Das eigentliche Kunststueck eines Assistenten ist nicht »Termine auflisten«, sondern
+# »wann haben alle Zeit«. Graph liefert dafuer eine Ziffernkette (availabilityView);
+# wir rechnen daraus echte Zeitfenster, statt dem Modell Ziffern zuzumuten.
+
+# Ziffern der availabilityView laut Microsoft-Doku
+FREI_ZIFFERN = "0"          # frei oder »arbeitet auswaerts«
+BELEGT_DE = {"1": "unter Vorbehalt", "2": "belegt", "3": "abwesend", "4": "unbekannt"}
+
+
+def _freie_fenster(views, start, minuten):
+    """Aus den Ziffernketten aller Personen die gemeinsamen freien Fenster berechnen.
+
+    Ein Fenster ist frei, wenn es bei JEDER Person frei ist. Fehlt bei einer Person
+    ein Zeichen (kürzere Kette), gilt das bewusst als NICHT frei — lieber ein Termin
+    zu wenig vorgeschlagen als einer, der kollidiert."""
+    if not views:
+        return []
+    laenge = max(len(v) for v in views)
+    fenster, lauf = [], None
+    for i in range(laenge):
+        frei = all(i < len(v) and v[i] in FREI_ZIFFERN for v in views)
+        if frei and lauf is None:
+            lauf = i
+        elif not frei and lauf is not None:
+            fenster.append((lauf, i)); lauf = None
+    if lauf is not None:
+        fenster.append((lauf, laenge))
+    return [(start + datetime.timedelta(minutes=a * minuten),
+             start + datetime.timedelta(minutes=b * minuten)) for a, b in fenster]
+
+
+@mcp.tool()
+def kalender_freibelegt(personen: str, von_iso: str, bis_iso: str,
+                        raster_min: int = 30) -> str:
+    """WANN HABEN ALLE ZEIT? Frei/Belegt mehrerer Personen abfragen und die gemeinsamen
+    freien Fenster nennen. personen: E-Mail-Adressen mit Komma getrennt.
+    Zeiten als ISO, z. B. 2026-08-03T08:00:00. raster_min: Taktung (5–1440).
+
+    Zeigt bewusst nur frei/belegt — nicht, WAS die anderen vorhaben."""
+    c = conn(); require(c, "calendar", "read")
+    adressen = [a.strip() for a in _rid(personen or "").split(",") if a.strip()][:20]
+    if not adressen:
+        return "Keine E-Mail-Adressen angegeben."
+    raster = max(5, min(int(raster_min or 30), 1440))
+    try:
+        start = datetime.datetime.fromisoformat(von_iso)
+        ende = datetime.datetime.fromisoformat(bis_iso)
+    except ValueError:
+        return "Zeiten bitte als ISO angeben, z. B. 2026-08-03T08:00:00."
+    if ende <= start:
+        return "Das Ende liegt vor dem Anfang."
+    u = user(c)
+    res = g(c, "POST", f"/users/{u}/calendar/getSchedule", {
+        "schedules": adressen,
+        "startTime": {"dateTime": start.isoformat(), "timeZone": "Europe/Berlin"},
+        "endTime": {"dateTime": ende.isoformat(), "timeZone": "Europe/Berlin"},
+        "availabilityViewInterval": raster})
+    audit("kalender_freibelegt", ", ".join(adressen))
+    eintraege = res.get("value", [])
+    if not eintraege:
+        return "Microsoft hat keine Verfügbarkeit geliefert."
+    zeilen, views, fehler = [], [], []
+    for e in eintraege:
+        wer = e.get("scheduleId", "?")
+        if e.get("error"):
+            fehler.append(f"{wer}: {e['error'].get('message', 'kein Zugriff')}")
+            continue
+        view = e.get("availabilityView", "")
+        views.append(view)
+        belegt = sorted({BELEGT_DE[z] for z in view if z in BELEGT_DE})
+        zeilen.append(f"{wer}: " + (", ".join(belegt) if belegt else "komplett frei"))
+    out = []
+    if views:
+        fenster = [(a, b) for a, b in _freie_fenster(views, start, raster)
+                   if (b - a).total_seconds() >= raster * 60]
+        if fenster:
+            out.append("Gemeinsam frei:")
+            out += [f"  {a.strftime('%a %d.%m. %H:%M')} – {b.strftime('%H:%M')}"
+                    f"  ({int((b - a).total_seconds() // 60)} Min)" for a, b in fenster]
+        else:
+            out.append("Kein gemeinsames freies Fenster in diesem Zeitraum.")
+    out.append("")
+    out += zeilen
+    if fehler:
+        out.append("")
+        out.append("Nicht abfragbar: " + "; ".join(fehler))
+    return "\n".join(out)
+
+
+def _resolve_event(c, u, tid, tage=60):
+    """Termin per ID finden — analog zu _resolve_mail: Surrogat auflösen, lange IDs
+    direkt laden, kurze Suffixe im Kalender der nächsten Wochen suchen."""
+    tid = _rid(tid or "").strip()
+    if len(tid) > 40:
+        try:
+            return g(c, "GET", f"/users/{u}/events/{tid}?$select=id,subject,start,end,organizer")
+        except Exception:
+            pass
+    start = time.strftime("%Y-%m-%dT00:00:00")
+    ende = time.strftime("%Y-%m-%dT23:59:59", time.localtime(time.time() + tage * 86400))
+    res = g(c, "GET", f"/users/{u}/calendarView?startDateTime={start}&endDateTime={ende}"
+                      "&$top=200&$select=id,subject,start,end,organizer")
+    return next((e for e in res.get("value", []) if e["id"].endswith(tid)), None)
+
+
+@mcp.tool()
+def kalender_verschieben(termin_id: str, start_iso: str, ende_iso: str) -> str:
+    """Einen Termin auf eine neue Zeit legen. termin_id: Suffix aus calendar_list.
+    Braucht Kalender › Schreiben."""
+    c = conn(); require(c, "calendar", "write"); u = user(c)
+    ev = _resolve_event(c, u, termin_id)
+    if not ev:
+        return "Termin nicht gefunden — Suffix aus calendar_list verwenden."
+    g(c, "PATCH", f"/users/{u}/events/{ev['id']}", {
+        "start": {"dateTime": start_iso, "timeZone": "Europe/Berlin"},
+        "end": {"dateTime": ende_iso, "timeZone": "Europe/Berlin"}})
+    audit("kalender_verschieben", ev.get("subject", "")[:60])
+    return f"»{ev.get('subject', '')}« liegt jetzt am {start_iso[:16]}."
+
+
+@mcp.tool()
+def kalender_absagen(termin_id: str, grund: str = "") -> str:
+    """Einen Termin absagen und die Teilnehmer benachrichtigen. Geht nur bei Terminen,
+    die der Nutzer selbst eingeladen hat. Braucht Kalender › Schreiben."""
+    c = conn(); require(c, "calendar", "write"); u = user(c)
+    ev = _resolve_event(c, u, termin_id)
+    if not ev:
+        return "Termin nicht gefunden — Suffix aus calendar_list verwenden."
+    g(c, "POST", f"/users/{u}/events/{ev['id']}/cancel", {"Comment": _rid(grund)})
+    audit("kalender_absagen", ev.get("subject", "")[:60])
+    return f"»{ev.get('subject', '')}« wurde abgesagt, die Teilnehmer sind benachrichtigt."
 
 
 @mcp.tool()
@@ -393,18 +640,25 @@ def m365_nutzung(tage: int = 7) -> str:
     Grober Überblick, keine Einzelpersonen."""
     c = conn(); require(c, "status", "read")
     zeitraum = {7: "D7", 30: "D30", 90: "D90", 180: "D180"}.get(tage, "D7")
-    # Diese Berichte liefern von Haus aus CSV — $format erzwingt JSON.
-    res = g(c, "GET", f"/reports/getOffice365ActiveUserCounts(period='{zeitraum}')"
-                      "?$format=application/json")
+    # Dieser Bericht liefert AUSSCHLIESSLICH CSV — »$format=application/json« lehnt Graph
+    # mit »JSON format is not supported« ab (real geprueft 30.07.). Also CSV lesen.
+    roh = g_text(c, f"/reports/getOffice365ActiveUserCounts(period='{zeitraum}')")
     audit("m365_nutzung", zeitraum)
-    reihen = res.get("value", [])
-    if not reihen:
-        return "(keine Nutzungsdaten — Berichte brauchen bei Microsoft ein bis zwei Tage)"
-    r = reihen[0]
-    felder = [("exchange", "Exchange"), ("teams", "Teams"),
-              ("sharePoint", "SharePoint"), ("oneDrive", "OneDrive"), ("yammer", "Viva Engage")]
-    zeilen = [f"{label}: {r[k]} aktive Nutzer" for k, label in felder if r.get(k) is not None]
-    return f"Zeitraum {zeitraum}, Stand {r.get('reportDate', '?')}\n" + "\n".join(zeilen)
+    zeilen = [z for z in roh.splitlines() if z.strip()]
+    if len(zeilen) < 2:
+        return "(keine Nutzungsdaten — Microsoft braucht dafür ein bis zwei Tage)"
+    import csv
+    reihen = list(csv.DictReader(zeilen))
+    # Die letzte Zeile mit Zahlen ist der aktuellste Tag; leere Felder = kein Wert
+    letzte = next((r for r in reversed(reihen)
+                   if any((r.get(k) or "").strip() for k in
+                          ("Exchange", "Teams", "SharePoint", "OneDrive"))), None)
+    if not letzte:
+        return "(keine Nutzungsdaten — Microsoft braucht dafür ein bis zwei Tage)"
+    felder = ["Exchange", "Teams", "SharePoint", "OneDrive", "Yammer", "Skype For Business"]
+    out = [f"{f}: {letzte[f]} aktive Nutzer" for f in felder if (letzte.get(f) or "").strip()]
+    return (f"Zeitraum {zeitraum}, Stand {letzte.get('Report Date', '?')}\n"
+            + ("\n".join(out) or "(an diesem Tag keine Aktivität gemeldet)"))
 
 
 if __name__ == "__main__":

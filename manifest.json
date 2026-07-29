@@ -1,5 +1,5 @@
 {
- "version": "1.16.0",
+ "version": "1.17.0",
  "files": [
   {
    "src": "listener.py",
@@ -174,7 +174,7 @@
   {
    "src": "m365.py",
    "dst": "m365.py",
-   "sha256": "8f4fed624b60269220c91f27ce0e919dacd900a7584ab74c6d4a7ca21ea87912"
+   "sha256": "f0c871e531d7692e3d5ded522bab1d7a20bb59b48d512f80e8ca1eb44f77e1ad"
   },
   {
    "src": "gdrive.py",
@@ -184,7 +184,7 @@
   {
    "src": "mcp_m365.py",
    "dst": "mcp_m365.py",
-   "sha256": "c12a295d3c330b60999ce4ddd8e2b699446673139a8c6457d96dd22284e024ee"
+   "sha256": "c11dfa40e5a36077df0661266748b063986db1c738ac3e659968b0c02974515c"
   },
   {
    "src": "vault.py",
@@ -239,7 +239,7 @@
   {
    "src": "dashboard/m365_setup.py",
    "dst": "dashboard/m365_setup.py",
-   "sha256": "33f861e79527c2db881f7f17b97f4b367ab660485775729042e26d4a4279168c"
+   "sha256": "be05774f280504720ffd649d703480086fd5fd229aa45442af3d903637f3b914"
   },
   {
    "src": "dashboard/google_auth.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "46081fd90571a274160408ebc81fc91b78ffca4049d477998e3b6909ac245e05"
+   "sha256": "00afc49f1599e59129a59b64c2b019de3fe35300c05bb9d96cb25002576ff43b"
   }
  ]
 }

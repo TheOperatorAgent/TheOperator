@@ -50,8 +50,10 @@ PERMISSION_MAP = {
     # #117 Status & Berichte: laeuft Microsoft ueberhaupt, was meldet das Message Center,
     # wie viele Lizenzen sind belegt. Bewusst EIN Regler statt drei und bewusst
     # ohne "Schreiben" — hier gibt es nichts zu veraendern.
-    "status":     {"read": ["ServiceHealth.Read.All", "Reports.Read.All",
-                            "Organization.Read.All"], "write": []},
+    # ServiceMessage.Read.All ist NICHT von ServiceHealth abgedeckt — das Message Center
+    # hat ein eigenes Recht (30.07. am 403 gemerkt, dann in der Doku nachgelesen).
+    "status":     {"read": ["ServiceHealth.Read.All", "ServiceMessage.Read.All",
+                            "Reports.Read.All", "Organization.Read.All"], "write": []},
 }
 
 # Dienste ohne sinnvollen Schreib-Regler (das Dashboard sperrt den Schalter)
@@ -288,6 +290,12 @@ def update_permissions(new_matrix: dict):
     conn["permissions"] = new_matrix
     conn["updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%S")
     _save_conn(conn)
+    # Realer Fehler (30.07.): Der zwischengespeicherte Zugangs-Token traegt die Rechte
+    # als Liste IN SICH. Nach einer Rechte-Aenderung ist er also veraltet und Graph
+    # antwortet bis zu einer Stunde mit »403 UnknownError« ohne Text — der Nutzer haette
+    # geklickt und trotzdem nichts gesehen. Deshalb hier wegwerfen, damit der naechste
+    # Aufruf einen frischen Token mit den neuen Rechten holt.
+    tokens.delete("m365_cc_token")
     return {"added": added, "removed": removed, "active_values": values}
 
 

@@ -75,9 +75,9 @@ def require(cmd, c):
                  f"im Dashboard unter 'Microsoft 365' aktivieren.")
 
 
-def token(c):
+def token(c, frisch=False):
     cached = tokens.load("m365_cc_token")
-    if cached and cached.get("expires_at", 0) > time.time():
+    if not frisch and cached and cached.get("expires_at", 0) > time.time():
         return cached["access_token"]
     secret = tokens.load("m365_secret")
     r = requests.post(
@@ -94,11 +94,20 @@ def token(c):
 
 
 def g(c, method, path, payload=None, raw=False):
-    r = requests.request(method, GRAPH + path,
-                         headers={"Authorization": "Bearer " + token(c)},
-                         json=payload, timeout=60)
+    """Bei 403 EINMAL mit frischem Token wiederholen — ein zwischengespeicherter Token
+    trägt die alten Rechte in sich (real erlebt 30.07., siehe mcp_m365.g)."""
+    def ruf(frisch=False):
+        return requests.request(method, GRAPH + path,
+                                headers={"Authorization": "Bearer " + token(c, frisch)},
+                                json=payload, timeout=60)
+    r = ruf()
+    if r.status_code == 403:
+        r = ruf(frisch=True)
     if r.status_code >= 400:
-        sys.exit(f"Graph-Fehler {r.status_code}: {r.text[:300]}")
+        extra = ("\n→ Prüfe im Dashboard unter 'Microsoft 365', ob der Regler an ist "
+                 "und ob du auf 'Rechte aktualisieren' geklickt hast."
+                 if r.status_code == 403 else "")
+        sys.exit(f"Graph-Fehler {r.status_code}: {r.text[:300]}{extra}")
     return r.content if raw else (r.json() if r.text else {})
 
 

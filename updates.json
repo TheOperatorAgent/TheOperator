@@ -1,9 +1,9 @@
 {
- "version": "1.16.0",
+ "version": "1.17.0",
  "date": "2026-07-30",
  "highlights": [
-  "📘 Dein Operator kennt jetzt die echte Microsoft-Doku. Statt zu raten, sucht er in learn.microsoft.com nach und nennt dir die Quelle — ohne Konto, ohne Schlüssel, ohne Lizenz. Ist ab Werk an.",
-  "🚦 Neu: »Status & Berichte«. Frag einfach »läuft Microsoft?« — der Operator zeigt dir eine Ampel je Dienst, offene Störungen, Meldungen aus dem Message Center, deine Lizenzen und wie viele Leute welchen Dienst nutzen. Reines Nachschauen, es gibt hier nichts zu verändern.",
-  "🪟 Windows-Fehler behoben: Die Microsoft-365-Werkzeuge waren auf Windows in der Erlaubnisliste, wurden aber nie registriert — dein Operator konnte dort also gar nicht auf Mail und Kalender zugreifen. Ab dieser Fassung passiert das beim Installieren automatisch."
+  "🗓️ Neu — die wichtigste Frage im Büro: »Wann haben alle Zeit?« Dein Operator fragt die Verfügbarkeit mehrerer Personen ab und nennt dir die gemeinsamen freien Fenster. Er sieht dabei nur frei oder belegt — nicht, was die anderen vorhaben.",
+  "🔍 Mail-Suche über das ganze Postfach, nicht nur die letzten Mails. Dazu: Ordner mit Ungelesenen-Zahl, Antworten und Weiterleiten (der Gesprächsfaden bleibt zusammen) und Termine verschieben oder absagen.",
+  "🔧 Fehler behoben: Wenn du im Dashboard ein Recht eingeschaltet und auf »Rechte aktualisieren« geklickt hast, konnte Microsoft trotzdem bis zu eine Stunde lang ablehnen. Der Zugangsschlüssel wird jetzt sofort erneuert."
  ]
 }

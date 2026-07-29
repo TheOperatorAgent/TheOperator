@@ -3537,3 +3537,122 @@ def test_status_route_wird_ohne_recht_nicht_rot():
     teil = src.split("def api_m365_dienstzustand()")[1].split("\n@app.")[0]
     assert '"verfuegbar": False' in teil and "hinweis" in teil
     assert "err(" not in teil, "würde als Fehler statt als Hinweis ankommen"
+
+
+# ------------------------------------------- #118 Scout-Kern: Frei/Belegt + Mail-Suche --
+def test_freie_fenster_rechnet_gemeinsame_zeiten():
+    """Das Kunststück eines Assistenten ist »wann haben alle Zeit«. Graph liefert nur
+    eine Ziffernkette; die Umrechnung in echte Fenster ist unsere Logik — und die muss
+    stimmen, sonst schlägt der Operator kollidierende Termine vor."""
+    import datetime
+    m = _mcp_m365()
+    start = datetime.datetime(2026, 8, 3, 8, 0)
+
+    def fenster(views, raster=30):
+        return [(a.strftime("%H:%M"), b.strftime("%H:%M"))
+                for a, b in m._freie_fenster(views, start, raster)]
+
+    assert fenster(["000000"]) == [("08:00", "11:00")]
+    # zwei Personen: nur wo BEIDE frei sind
+    assert fenster(["002200", "000022"]) == [("08:00", "09:00")]
+    assert fenster(["222222", "000000"]) == []
+    # 1 = unter Vorbehalt, 3 = abwesend → nicht frei
+    assert fenster(["010300"]) == [("08:00", "08:30"), ("09:00", "09:30"),
+                                   ("10:00", "11:00")]
+
+
+def test_freie_fenster_ist_fail_closed_bei_kurzer_kette():
+    """Wenn Microsoft für eine Person eine kürzere Kette liefert, darf der Rest NICHT
+    als frei gelten — lieber ein Termin zu wenig vorgeschlagen als einer, der kollidiert."""
+    import datetime
+    m = _mcp_m365()
+    start = datetime.datetime(2026, 8, 3, 8, 0)
+    f = m._freie_fenster(["0000", "000000"], start, 30)
+    assert [(a.strftime("%H:%M"), b.strftime("%H:%M")) for a, b in f] == [("08:00", "10:00")]
+
+
+def test_mailsuche_kombiniert_search_nicht_mit_orderby():
+    """Graph lehnt $search zusammen mit $orderby ab — das würde erst beim Kunden
+    auffallen. Deshalb hier als Wächter festgehalten."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
+    teil = src.split("def mail_suchen(")[1].split("\n@mcp.tool()")[0]
+    # Kommentarzeilen raus — der erklärende Kommentar nennt $orderby ja gerade deshalb
+    code = "\n".join(z for z in teil.splitlines() if not z.strip().startswith("#"))
+    assert "$search=" in code
+    assert "$orderby" not in code, "Graph antwortet dann mit 400"
+
+
+def test_antworten_haelt_den_faden_und_loest_pseudonyme_auf():
+    """Antworten statt neu schreiben ist der Punkt (der Gesprächsfaden bleibt zusammen) —
+    und der Text muss vor dem echten Versand re-identifiziert werden, sonst geht ein
+    Platzhalter-Name an einen echten Kunden."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
+    teil = src.split("def mail_antworten(")[1].split("\n@mcp.tool()")[0]
+    assert "replyAll" in teil and '"reply"' in teil
+    assert "_rid(text)" in teil, "Surrogat würde real rausgehen"
+    assert 'require(c, "mail", "write")' in teil
+    weiter = src.split("def mail_weiterleiten(")[1].split("\n@mcp.tool()")[0]
+    assert "_rid(an" in weiter and "_rid(text)" in weiter
+
+
+def test_terminliste_nennt_kennungen():
+    """kalender_verschieben/absagen brauchen eine Kennung. Ohne sie in calendar_list
+    hätte das Modell nichts, worauf es sich beziehen kann — der klassische stille
+    Bruch zwischen zwei Werkzeugen."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
+    teil = src.split("def calendar_list(")[1].split("\n@mcp.tool()")[0]
+    assert "$select=id," in teil, "ohne id gibt es keine Kennung"
+    assert "e['id'][-12:]" in teil, "Kennung wird nicht ausgegeben"
+
+
+def test_scout_kern_braucht_keine_neuen_rechte():
+    """Bewusste Grenze dieser Ausbaustufe: alles läuft mit den Rechten, die der Kunde
+    schon vergeben hat. Wer »Kalender › Lesen« erlaubt hat, bekommt Frei/Belegt dazu,
+    ohne erneut im Tenant Rechte vergeben zu müssen."""
+    assert m365_setup.PERMISSION_MAP["calendar"] == {
+        "read": ["Calendars.Read"], "write": ["Calendars.ReadWrite"]}
+    assert m365_setup.PERMISSION_MAP["mail"] == {
+        "read": ["Mail.Read"], "write": ["Mail.ReadWrite", "Mail.Send"]}
+
+
+def test_rechte_aenderung_wirft_den_token_weg():
+    """Realer Fehler (30.07., Michi am Dashboard): Regler eingeschaltet, »Rechte
+    aktualisieren« geklickt — und Graph antwortete trotzdem mit »403 UnknownError«
+    ohne Text. Ursache: Der Zugangs-Token trägt die Rechte als Liste IN SICH und lag
+    noch fast eine Stunde im Cache. Ohne diesen Wurf hätte JEDER Kunde nach dem
+    Umlegen eines Reglers bis zu eine Stunde ins Leere geschaut."""
+    src = open(os.path.expanduser(
+        "~/.claude/matrix-bot/dashboard/m365_setup.py")).read()
+    teil = src.split("def update_permissions(")[1].split("\ndef ")[0]
+    assert 'tokens.delete("m365_cc_token")' in teil, \
+        "veralteter Token bleibt liegen — Nutzer sieht 403 trotz korrekter Rechte"
+
+
+def test_graph_wiederholt_bei_403_mit_frischem_token():
+    """Zweiter Schutz, falls jemand die Rechte direkt im Azure-Portal ändert: ein 403
+    wird EINMAL mit frischem Token wiederholt, bevor der Fehler durchgereicht wird.
+    Beide Wege (MCP und CLI) müssen sich gleich verhalten."""
+    for datei in ("mcp_m365.py", "m365.py"):
+        src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
+        assert "def token(c, frisch=False)" in src, datei
+        assert "if r.status_code == 403:" in src, datei
+        assert "ruf(frisch=True)" in src, datei
+
+
+def test_message_center_hat_sein_eigenes_recht():
+    """Auch ein realer Fehler von mir (30.07.): ServiceHealth.Read.All deckt das
+    Message Center NICHT ab — /admin/serviceAnnouncement/messages braucht
+    ServiceMessage.Read.All. Mit frischem Token blieb der 403, das war der Beweis."""
+    lesen = m365_setup.PERMISSION_MAP["status"]["read"]
+    assert "ServiceMessage.Read.All" in lesen
+    assert "ServiceHealth.Read.All" in lesen
+
+
+def test_nutzungsbericht_liest_csv_nicht_json():
+    """Graph lehnt »$format=application/json« bei diesem Bericht mit »JSON format is
+    not supported« ab (live geprüft). Er kommt ausschließlich als CSV."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
+    teil = src.split("def m365_nutzung(")[1].split("\n@mcp.tool()")[0]
+    code = "\n".join(z for z in teil.splitlines() if not z.strip().startswith("#"))
+    assert "$format=application/json" not in code, "Graph antwortet mit 400"
+    assert "g_text(" in code and "csv.DictReader" in code
