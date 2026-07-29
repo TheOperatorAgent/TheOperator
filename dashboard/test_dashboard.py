@@ -2010,3 +2010,91 @@ def test_throttle_disabled_and_stdlib(tmp_path, monkeypatch):
     imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
                if isinstance(n, ast.Import) for a in n.names}
     assert imports <= {"json", "os", "time"}
+
+
+# ---------------------------------------------------------------- #65 Permission Broker --
+def _pb(tmp_path, monkeypatch):
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    monkeypatch.setattr(pb, "CONSUMED_FILE", str(tmp_path / "perm.json"))
+    monkeypatch.setattr(pb, "POLL_SECONDS", 0)
+    monkeypatch.setattr(pb, "_matrix", lambda: ("http://hs", "tok", "!r:hs", "@michi:hs"))
+    return pb
+
+
+def _antworten(pb, monkeypatch, events):
+    """Simuliert die Matrix-API: Frage senden + Antwort-Timeline zurückgeben."""
+    def fake_api(hs, tok, pfad, method="GET", body=None, timeout=20):
+        if method == "PUT":
+            return {"event_id": "$frage"}
+        return {"chunk": events}
+    monkeypatch.setattr(pb, "_api", fake_api)
+
+
+def test_broker_ja_erlaubt_genau_einmal(tmp_path, monkeypatch):
+    """Ja → erlaubt; dieselbe Freigabe ein zweites Mal → abgelehnt (Replay-Schutz)."""
+    pb = _pb(tmp_path, monkeypatch)
+    import time as _t
+    _antworten(pb, monkeypatch, [{"sender": "@michi:hs", "type": "m.room.message",
+                                  "origin_server_ts": (_t.time() + 5) * 1000,
+                                  "content": {"body": "ja"}}])
+    fp = pb.fingerprint("Bash", {"command": "rm -rf x"})
+    assert pb.ask_owner("Dateien löschen", fp, wait=5) is True
+    assert pb.ask_owner("Dateien löschen", fp, wait=5) is False   # Replay
+
+
+def test_broker_nein_und_fremder_sender(tmp_path, monkeypatch):
+    """Nein → abgelehnt. Ein fremder Account kann NICHTS freigeben."""
+    pb = _pb(tmp_path, monkeypatch)
+    import time as _t
+    spaeter = (_t.time() + 5) * 1000
+    _antworten(pb, monkeypatch, [{"sender": "@michi:hs", "type": "m.room.message",
+                                  "origin_server_ts": spaeter, "content": {"body": "nein"}}])
+    assert pb.ask_owner("etwas Riskantes", pb.fingerprint("Bash", {"command": "x"}), wait=5) is False
+
+    _antworten(pb, monkeypatch, [{"sender": "@fremd:hs", "type": "m.room.message",
+                                  "origin_server_ts": spaeter, "content": {"body": "ja"}}])
+    assert pb.ask_owner("etwas Riskantes", pb.fingerprint("Bash", {"command": "y"}), wait=1) is False
+
+
+def test_broker_alte_zustimmung_gilt_nicht(tmp_path, monkeypatch):
+    """Ein »ja« von VOR der Frage darf nie als Freigabe zählen."""
+    pb = _pb(tmp_path, monkeypatch)
+    import time as _t
+    _antworten(pb, monkeypatch, [{"sender": "@michi:hs", "type": "m.room.message",
+                                  "origin_server_ts": (_t.time() - 600) * 1000,
+                                  "content": {"body": "ja"}}])
+    assert pb.ask_owner("etwas Riskantes", pb.fingerprint("Bash", {"command": "z"}), wait=1) is False
+
+
+def test_broker_reaktion_und_timeout(tmp_path, monkeypatch):
+    """✅-Reaktion auf die Frage zählt; ohne Antwort → fail-closed."""
+    pb = _pb(tmp_path, monkeypatch)
+    import time as _t
+    _antworten(pb, monkeypatch, [{"sender": "@michi:hs", "type": "m.reaction",
+                                  "origin_server_ts": (_t.time() + 5) * 1000,
+                                  "content": {"m.relates_to": {"event_id": "$frage", "key": "✅"}}}])
+    assert pb.ask_owner("etwas Riskantes", pb.fingerprint("Bash", {"command": "a"}), wait=5) is True
+    _antworten(pb, monkeypatch, [])          # niemand antwortet
+    assert pb.ask_owner("etwas Riskantes", pb.fingerprint("Bash", {"command": "b"}), wait=1) is False
+
+
+def test_broker_geaenderte_argumente_neue_freigabe(tmp_path, monkeypatch):
+    """Fingerabdruck bindet an die konkreten Argumente."""
+    pb = _pb(tmp_path, monkeypatch)
+    a = pb.fingerprint("Bash", {"command": "rm -rf /tmp/a"})
+    b = pb.fingerprint("Bash", {"command": "rm -rf /tmp/b"})
+    assert a != b and len(a) == 32
+
+
+def test_broker_ist_stdlib_only():
+    """Der Hook läuft ohne venv — Broker muss stdlib-only bleiben."""
+    import ast
+    erlaubt = {"hashlib", "json", "os", "re", "time", "urllib", "sys", "secretstore"}
+    for datei in ("permission_broker.py", "claude_tool_hook.py"):
+        src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
+        imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
+                   if isinstance(n, ast.Import) for a in n.names}
+        imports |= {n.module.split(".")[0] for n in ast.walk(ast.parse(src))
+                    if isinstance(n, ast.ImportFrom) and n.module}
+        assert imports <= erlaubt | {"permission_broker"}, f"{datei}: {imports - erlaubt}"

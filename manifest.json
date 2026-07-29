@@ -1,5 +1,5 @@
 {
- "version": "1.7.7",
+ "version": "1.8.0",
  "files": [
   {
    "src": "listener.py",
@@ -64,6 +64,14 @@
   {
    "src": "throttle.py",
    "dst": "throttle.py"
+  },
+  {
+   "src": "claude_tool_hook.py",
+   "dst": "claude_tool_hook.py"
+  },
+  {
+   "src": "permission_broker.py",
+   "dst": "permission_broker.py"
   },
   {
    "src": "persona.py",

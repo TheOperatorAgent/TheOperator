@@ -953,6 +953,34 @@ def load_bot_sessions():
     return sessions
 
 
+def ensure_tool_hook():
+    """#65: Den PreToolUse-Hook in workspace/.claude/settings.json eintragen — mit dem
+    Interpreter, unter dem der Listener selbst läuft (plattformübergreifend korrekt).
+    Selbstheilend: stimmt der Eintrag nicht mehr, wird er geradegezogen."""
+    hook_py = f"{BOT_DIR}/claude_tool_hook.py"
+    if not os.path.exists(hook_py):
+        return
+    pfad = f"{WORKSPACE}/.claude/settings.json"
+    soll = [{"matcher": "*", "hooks": [
+        {"type": "command", "command": f'"{sys.executable}" "{hook_py}"', "timeout": 200}]}]
+    try:
+        cfg = json.load(open(pfad))
+    except (OSError, ValueError):
+        cfg = {}
+    if cfg.get("hooks", {}).get("PreToolUse") == soll:
+        return
+    cfg.setdefault("hooks", {})["PreToolUse"] = soll
+    try:
+        os.makedirs(os.path.dirname(pfad), exist_ok=True)
+        tmp = pfad + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(cfg, f, indent=2)
+        os.replace(tmp, pfad)
+        log("Sicherheits-Rückfrage (PreToolUse-Hook) eingerichtet")
+    except OSError as e:
+        log(f"Hook-Registrierung fehlgeschlagen: {e}")
+
+
 _health_state = {"last": 0.0}
 
 
@@ -1069,6 +1097,7 @@ def main():
     if not owner_token:
         log("FATAL: Owner-Token weder im Keychain noch in credentials.json")
         return
+    ensure_tool_hook()                 # #65: Rückfrage-Hook aktuell halten
     hs = CREDS["homeserver"]
     primary_room = CREDS["room_id"]
     owner = BotSession("owner", "owner", hs, owner_token, primary_room, CREDS["user_id"])
