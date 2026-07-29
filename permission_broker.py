@@ -27,6 +27,10 @@ import urllib.request
 
 BOT_DIR = os.environ.get("OPERATOR_BOT_DIR", os.path.expanduser("~/.claude/matrix-bot"))
 CONSUMED_FILE = os.path.join(BOT_DIR, "run", "permissions.json")
+# Antworten, die schon als Freigabe/Ablehnung gezählt haben. Der Listener liest die
+# Liste und behandelt diese Nachrichten NICHT nochmal als normalen Chat — sonst
+# antwortet der Operator nach jedem »ja« noch zusammenhanglos hinterher.
+REPLIES_FILE = os.path.join(BOT_DIR, "run", "broker_replies.json")
 WAIT_SECONDS = 180          # so lange wartet der Broker auf deine Antwort
 POLL_SECONDS = 3
 
@@ -130,6 +134,32 @@ def _consume(fp):
     return True
 
 
+def mark_reply_used(event_id):
+    """Merkt, dass diese Chat-Nachricht bereits eine Antwort auf eine Rückfrage war."""
+    if not event_id:
+        return
+    d = used_replies()
+    d[event_id] = time.time()
+    try:
+        os.makedirs(os.path.dirname(REPLIES_FILE), exist_ok=True)
+        tmp = REPLIES_FILE + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(d, f)
+        os.replace(tmp, REPLIES_FILE)
+    except OSError:
+        pass
+
+
+def used_replies():
+    """Event-IDs verbrauchter Antworten (letzte Stunde) — vom Listener gelesen."""
+    try:
+        d = json.load(open(REPLIES_FILE))
+        jetzt = time.time()
+        return {k: v for k, v in d.items() if v > jetzt - 3600}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
 # ---------------------------------------------------------------- Matrix-Umlauf --
 def _matrix():
     """(homeserver, token, raum, owner) — oder None, wenn nicht konfigurierbar."""
@@ -220,6 +250,9 @@ def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None):
             elif e.get("type") == "m.room.message":
                 a = _antwort_aus_text(e.get("content", {}).get("body"))
                 if a is not None:
+                    # Diese Nachricht war die Antwort auf die Rückfrage — der Listener
+                    # soll sie nicht zusätzlich als normalen Chat beantworten.
+                    mark_reply_used(e.get("event_id"))
                     return _entscheidung(a, fp, log)
     log("Permission-Broker: keine Antwort in der Wartezeit → abgelehnt (fail-closed)")
     try:

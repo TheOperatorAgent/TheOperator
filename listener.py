@@ -82,6 +82,10 @@ try:
     import throttle                    # noqa: E402  (#58 Fair-Use-Drossel)
 except Exception:
     throttle = None
+try:
+    import permission_broker           # noqa: E402  (#65 Rückfrage-Antworten kennen)
+except Exception:
+    permission_broker = None
 VENV_PY = _plat.venv_python(BOT_DIR)
 
 
@@ -903,11 +907,20 @@ class BotSession(threading.Thread):
                 since = data["next_batch"]
                 events = (data.get("rooms", {}).get("join", {}).get(self.room, {})
                           .get("timeline", {}).get("events", []))
+                # #65: »ja«/»nein« auf eine Sicherheits-Rückfrage wurde dort schon
+                # verbraucht — nicht zusätzlich als normalen Chat beantworten.
+                broker_antworten = set()
+                if permission_broker:
+                    try:
+                        broker_antworten = set(permission_broker.used_replies())
+                    except Exception:
+                        pass
                 new = [e for e in events
                        if e.get("type") == "m.room.message"
                        and e.get("sender") == OWNER
                        and e["content"].get("body")
-                       and e.get("event_id") not in self.seen_events]   # #86: kein Doppel
+                       and e.get("event_id") not in self.seen_events    # #86: kein Doppel
+                       and e.get("event_id") not in broker_antworten]
                 if new:
                     # Erst als gesehen verbuchen, dann antworten — liefert der Server die
                     # Events nach einem Netzfehler erneut, gibt es keine zweite Antwort.

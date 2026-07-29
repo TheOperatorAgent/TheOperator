@@ -1,8 +1,7 @@
 {
-  "version": "1.8.1",
+  "version": "1.8.2",
   "date": "2026-07-29",
   "highlights": [
-    "✓ Schöner im Chat: Statt der sperrigen Zeile »— ✓ geprüft von Prüfer« steht jetzt nur noch ein kleines Zeichen am Ende der Antwort — ✓ für gegengelesen, ✎ für überarbeitet.",
-    "📖 Neu im Dashboard (Übersicht): »Die kleinen Zeichen im Chat« erklärt alle Symbole in einfacher Sprache."
+    "🔇 Kein Nachplappern mehr: Wenn du auf eine Sicherheits-Rückfrage mit »ja« antwortest, wird diese Antwort nur noch für die Freigabe verwendet — der Operator antwortet nicht mehr zusätzlich darauf."
   ]
 }

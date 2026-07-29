@@ -2113,3 +2113,37 @@ def test_verify_mark_is_small_and_documented():
     for zeichen in ("✓", "✎", "🔐", "⚡"):
         assert zeichen in html, f"{zeichen} wird dem Nutzer nicht erklärt"
     assert "Gegengelesen" in html and "Überarbeitet" in html
+
+
+def test_broker_reply_not_answered_twice(tmp_path, monkeypatch):
+    """#65-Nachbesserung: Das »ja« auf eine Rückfrage wird vom Broker verbraucht —
+    der Listener darf es NICHT zusätzlich als normale Chat-Nachricht beantworten."""
+    pb = _pb(tmp_path, monkeypatch)
+    monkeypatch.setattr(pb, "REPLIES_FILE", str(tmp_path / "replies.json"))
+    import time as _t
+    _antworten(pb, monkeypatch, [{"sender": "@michi:hs", "type": "m.room.message",
+                                  "event_id": "$antwort1",
+                                  "origin_server_ts": (_t.time() + 5) * 1000,
+                                  "content": {"body": "ja"}}])
+    assert pb.ask_owner("etwas tun", pb.fingerprint("Bash", {"command": "q"}), wait=5) is True
+    assert "$antwort1" in pb.used_replies()          # als verbraucht vermerkt
+
+    # Gegenprobe: der Listener filtert genau diese Event-ID heraus
+    listener = _load_listener()
+    monkeypatch.setattr(listener, "permission_broker", pb)
+    s = listener.BotSession("owner", "owner", "http://hs", "tok", "!r:hs", "@claude:hs")
+    owner = listener.OWNER or "@michi:hs"
+    monkeypatch.setattr(listener, "OWNER", owner)
+    calls = []
+    monkeypatch.setattr(s, "answer", lambda bodies, eid: calls.append(bodies))
+    ev = {"type": "m.room.message", "sender": owner, "event_id": "$antwort1",
+          "content": {"body": "ja"}}
+    batch = {"next_batch": "n", "rooms": {"join": {s.room: {"timeline": {"events": [ev]}}}}}
+    responses = [dict(batch), {"next_batch": "n0", "rooms": {}}]
+    monkeypatch.setattr(s, "api", lambda *a, **k: responses.pop() if responses
+                        else (_ for _ in ()).throw(SystemExit))
+    try:
+        s.run()
+    except SystemExit:
+        pass
+    assert calls == [], "Broker-Antwort wurde fälschlich nochmal beantwortet"
