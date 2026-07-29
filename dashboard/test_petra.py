@@ -154,3 +154,13 @@ def test_ausfaelle_blockieren_petra_nicht():
     for modul in ("claude_health", "throttle", "permission_broker", "retention"):
         assert f"import {modul}" in listener and f"{modul} = None" in listener, \
             f"{modul} ist nicht ausfallsicher eingebunden"
+
+
+def test_arbeitsordner_ist_privat():
+    """#18: Agenten legen dort Ergebnisse ab — die gehören nur dem Nutzer."""
+    listener = _lies("listener.py")
+    assert "def ensure_private_workspace" in listener
+    assert "ensure_private_workspace()" in listener, "wird nie aufgerufen"
+    ws = os.path.join(BOT, "workspace")
+    if os.path.isdir(ws):
+        assert not (os.stat(ws).st_mode & 0o077), "Arbeitsordner ist für andere lesbar"

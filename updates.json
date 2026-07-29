@@ -1,8 +1,7 @@
 {
-  "version": "1.8.5",
+  "version": "1.8.6",
   "date": "2026-07-29",
   "highlights": [
-    "🧪 Einfachheit ist jetzt test-gesichert: Zehn automatische Prüfungen halten fest, dass der Operator bei harmloser Arbeit nie nachfragt, kein Terminal verlangt, keine Fachbegriffe benutzt und jeder Fehler den nächsten Schritt nennt.",
-    "Damit bleibt die Bedienbarkeit erhalten, auch wenn weiter Sicherheit dazukommt."
+    "🔐 Arbeitsordner privat: Der Ordner, in dem Agenten ihre Ergebnisse ablegen, war für andere Konten auf dem Rechner lesbar. Er wird jetzt bei jedem Start automatisch abgesichert."
   ]
 }

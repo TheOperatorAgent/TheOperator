@@ -973,6 +973,19 @@ def load_bot_sessions():
     return sessions
 
 
+def ensure_private_workspace():
+    """#18: Der Arbeitsordner gehört nur dir. Dort legen Agenten ihre Ergebnisse ab —
+    das können Auswertungen mit echten Kundendaten sein. Auf einem Rechner mit mehreren
+    Konten wäre »für alle lesbar« falsch. Wird bei jedem Start geradegezogen."""
+    for pfad in (WORKSPACE, f"{WORKSPACE}/.claude"):
+        try:
+            if os.path.isdir(pfad) and (os.stat(pfad).st_mode & 0o077):
+                os.chmod(pfad, 0o700)
+                log(f"Arbeitsordner abgesichert: {os.path.basename(pfad) or 'workspace'} nur für dich lesbar")
+        except OSError:
+            pass
+
+
 def ensure_tool_hook():
     """#65: Den PreToolUse-Hook in workspace/.claude/settings.json eintragen — mit dem
     Interpreter, unter dem der Listener selbst läuft (plattformübergreifend korrekt).
@@ -1117,6 +1130,7 @@ def main():
     if not owner_token:
         log("FATAL: Owner-Token weder im Keychain noch in credentials.json")
         return
+    ensure_private_workspace()         # #18: Arbeitsordner privat halten
     ensure_tool_hook()                 # #65: Rückfrage-Hook aktuell halten
     hs = CREDS["homeserver"]
     primary_room = CREDS["room_id"]
