@@ -3247,20 +3247,41 @@ def test_windows_installer_ueberlebt_irm_iex():
     assert i_guard < i_join, "Join-Path läuft vor der Prüfung"
 
 
+def test_windows_installer_installiert_python_selbst():
+    """Petra-Test: Auf macOS/Linux ist Python immer da, unter Windows oft nicht — dann
+    stand der Kunde bisher im Regen (»das kann der Kunde nicht«, Michi 29.07.).
+    Der Installer muss es mit EINER Frage selbst erledigen, ohne Klickstrecke und
+    ohne »PowerShell neu öffnen«."""
+    s = _ps1()
+    assert "function Ensure-Python" in s and "$Py = Ensure-Python" in s
+    kern = s.split("function Install-Python")[1].split("\nfunction ")[0]
+    assert "winget" in kern, "kein winget-Weg"
+    assert "python.org/ftp/python" in kern, "kein Rückfall ohne winget"
+    assert "PrependPath=1" in kern and "/quiet" in kern, "nicht still installiert"
+    assert "InstallAllUsers=0" in kern, "würde Administrator-Rechte verlangen"
+    # Der laufende Prozess muss den neuen Suchpfad kennen — sonst müsste der Nutzer
+    # PowerShell neu öffnen, genau der Handgriff, den wir ersparen wollen.
+    assert "function Update-PathFromRegistry" in s
+    assert "Update-PathFromRegistry" in kern
+    frage = s.split("function Ensure-Python")[1].split("\nfunction ")[0]
+    assert "Ask-YesNo" in frage, "installiert ungefragt"
+    assert "Store" in frage, "erklärt die Attrappen-Falle nicht"
+
+
 def test_windows_installer_erkennt_store_attrappe():
     """#113: Windows legt unter WindowsApps eine Attrappe namens python.exe ab, die nur
     den Store öffnet. Sie wurde als Python akzeptiert (»[ok] Python: … ()« — leere
     Version). Jeder Kandidat muss jetzt wirklich eine Versionsnummer liefern."""
     s = _ps1()
-    kern = s.split("function Get-Py")[1].split("\n}")[0]
-    assert "WindowsApps" in kern, "Store-Attrappe wird nicht erkannt"
+    kern = s.split("function Test-Python")[1].split("\nfunction ")[0]
     assert "sys.version_info" in kern, "Kandidat wird nicht wirklich ausgeführt"
-    assert "python.org" in kern and "PATH" in kern, "Fehlermeldung ohne nächsten Schritt"
+    ensure = s.split("function Ensure-Python")[1].split("\nfunction ")[0]
+    assert "python.org" in ensure and "PATH" in ensure, "Notfall-Anleitung fehlt"
 
 
 def test_windows_installer_gibt_umlaute_richtig_aus():
     """#114: Ohne UTF-8-Ausgabe wird »für« zu »fÃ¼r« — das Erste, was ein Interessent sieht."""
     s = _ps1()
     assert "[Console]::OutputEncoding" in s
-    assert s.index("[Console]::OutputEncoding") < s.index("function Get-Py"), \
+    assert s.index("[Console]::OutputEncoding") < s.index("function Test-Python"), \
         "Encoding wird zu spät gesetzt"

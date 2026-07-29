@@ -1,8 +1,7 @@
 {
-  "version": "1.13.1",
+  "version": "1.13.2",
   "date": "2026-07-29",
   "highlights": [
-    "🪟 Windows-Installation repariert: Der Ein-Zeiler brach mitten in der Einrichtung ab — nach der Matrix-Anmeldung, aber bevor irgendetwas auf dem Rechner lag. Das ist behoben.",
-    "🐍 Außerdem erkennt der Installer jetzt die Windows-Attrappe, die sich als Python ausgibt und in Wahrheit nur den Store öffnet — statt sie zu akzeptieren und später mit unverständlichen Fehlern zu scheitern. Und deutsche Umlaute werden korrekt angezeigt."
+    "🪟 Windows: Fehlt Python auf dem Rechner, installiert der Operator es jetzt selbst — eine Ja/Nein-Frage, danach kein Handgriff mehr. Kein Herunterladen, keine Klickstrecke, kein »PowerShell neu öffnen«. Damit ist die Installation auch unter Windows wirklich ein Befehl."
   ]
 }

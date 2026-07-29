@@ -27,34 +27,113 @@ function Ok($m)   { Write-Host "  [ok] $m" -ForegroundColor Green }
 function Warn($m) { Write-Host "  [!] $m" -ForegroundColor Yellow }
 function Die($m)  { Write-Host "  [x] $m" -ForegroundColor Red; exit 1 }
 
-# Python-Launcher finden (py bevorzugt, sonst python)
-function Get-Py {
+# ---------------------------------------------------------------- Python bereitstellen --
+# Auf macOS/Linux ist Python immer da — unter Windows oft nicht. Ein Kunde soll EINEN
+# Befehl eingeben und fertig sein (EINFACHHEIT.md). Deshalb installiert der Installer
+# Python bei Bedarf selbst: eine Ja/Nein-Frage, danach kein Handgriff mehr.
+function Test-Python($pfad) {
     # Windows legt unter WindowsApps eine ATTRAPPE namens python.exe ab, die nur den
-    # Microsoft Store oeffnet. Get-Command findet sie — sie ist aber kein Python.
-    # Am 29.07. wurde sie akzeptiert und meldete eine leere Version; alles Weitere
-    # waere daran gescheitert. Deshalb: jeden Kandidaten wirklich AUSFUEHREN.
+    # Microsoft Store oeffnet. Sie meldet keine Version — deshalb jeden Kandidaten
+    # wirklich AUSFUEHREN statt nur seine Existenz zu pruefen.
+    if (-not $pfad) { return $null }
+    $ver = ""
+    try { $ver = (& $pfad -c "import sys;print('%d.%d' % sys.version_info[:2])" 2>$null | Out-String).Trim() } catch { return $null }
+    if ($ver -match '^(\d+)\.(\d+)$') { return $pfad }
+    return $null
+}
+
+function Find-Python {
     foreach ($c in @("py", "python", "python3")) {
         $p = Get-Command $c -ErrorAction SilentlyContinue
-        if (-not $p) { continue }
-        if ($p.Source -like "*\WindowsApps\*") {
-            $probe = ""
-            try { $probe = (& $p.Source --version 2>$null | Out-String).Trim() } catch {}
-            if (-not $probe) { continue }        # Attrappe: keine Ausgabe
-        }
-        $ver = ""
-        try { $ver = (& $p.Source -c "import sys;print('%d.%d' % sys.version_info[:2])" 2>$null | Out-String).Trim() } catch {}
-        if ($ver -match '^\d+\.\d+$') { return $p.Source }
+        if ($p -and (Test-Python $p.Source)) { return $p.Source }
     }
-    Die @"
-Es wurde kein funktionierendes Python gefunden.
-Falls Windows gerade den Store geoeffnet hat: Das ist nur ein Platzhalter, kein Python.
-So geht es weiter:
+    # Frisch installiertes Python ist im PATH dieser Sitzung noch nicht sichtbar —
+    # deshalb zusaetzlich an den ueblichen Orten nachsehen.
+    $orte = @()
+    foreach ($basis in @("$env:LOCALAPPDATA\Programs\Python", "$env:ProgramFiles\Python",
+                         "${env:ProgramFiles(x86)}\Python", "$env:LOCALAPPDATA\Programs\Python\Launcher")) {
+        if (Test-Path $basis) {
+            $orte += (Get-ChildItem $basis -Directory -ErrorAction SilentlyContinue |
+                      Sort-Object Name -Descending | ForEach-Object { Join-Path $_.FullName "python.exe" })
+        }
+    }
+    $orte += "$env:LOCALAPPDATA\Programs\Python\Launcher\py.exe"
+    foreach ($o in $orte) { if ((Test-Path $o) -and (Test-Python $o)) { return $o } }
+    return $null
+}
+
+function Update-PathFromRegistry {
+    # Nach der Installation kennt die LAUFENDE Sitzung den neuen PATH noch nicht.
+    # Ohne diese Auffrischung muesste der Nutzer PowerShell neu oeffnen — genau der
+    # Handgriff, den wir ihm ersparen wollen.
+    try {
+        $m = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        $u = [Environment]::GetEnvironmentVariable("Path", "User")
+        $env:Path = (($m, $u) -ne $null) -join ";"
+    } catch {}
+}
+
+function Install-Python {
+    # Weg 1: winget (auf aktuellen Windows-Versionen an Bord, sauberste Loesung)
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Host "  Lade Python herunter und installiere es (dauert 1-2 Minuten) ..."
+        try {
+            winget install --id Python.Python.3.13 --source winget --silent `
+                --accept-package-agreements --accept-source-agreements `
+                --scope user 2>$null | Out-Null
+        } catch {}
+        Update-PathFromRegistry
+        $p = Find-Python
+        if ($p) { return $p }
+    }
+    # Weg 2: offizielles Installationsprogramm still ausfuehren (auch ohne winget)
+    Write-Host "  Lade Python direkt von python.org ..."
+    $arch = if ([Environment]::Is64BitOperatingSystem) { "amd64" } else { "win32" }
+    $url  = "https://www.python.org/ftp/python/3.13.1/python-3.13.1-$arch.exe"
+    $exe  = Join-Path $env:TEMP "python-setup-operator.exe"
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $exe -UseBasicParsing
+        # PrependPath=1 setzt den Suchpfad; InstallLauncherAllUsers=0 vermeidet die
+        # Administrator-Abfrage — der Nutzer soll nichts bestaetigen muessen.
+        Start-Process -FilePath $exe -Wait -ArgumentList @(
+            "/quiet", "InstallAllUsers=0", "PrependPath=1", "Include_launcher=1",
+            "Include_test=0", "SimpleInstall=1")
+    } catch {
+        return $null
+    } finally {
+        Remove-Item $exe -ErrorAction SilentlyContinue
+    }
+    Update-PathFromRegistry
+    return (Find-Python)
+}
+
+function Ensure-Python {
+    $p = Find-Python
+    if ($p) { return $p }
+    Warn "Auf diesem Rechner ist noch kein Python installiert — das braucht dein Operator."
+    Write-Host "  (Falls Windows dir gerade den Store angeboten hat: Das ist nur ein"
+    Write-Host "   Platzhalter, kein echtes Python.)"
+    $ja = Ask-YesNo "Soll ich Python jetzt fuer dich installieren?" "ja"
+    if ($ja -ne "ja") {
+        Die @"
+Ohne Python kann der Operator nicht laufen.
+Du kannst es spaeter selbst installieren (https://www.python.org/downloads/,
+Haken 'Add python.exe to PATH') und diesen Befehl danach erneut ausfuehren.
+"@
+    }
+    $p = Install-Python
+    if (-not $p) {
+        Die @"
+Die automatische Installation hat nicht geklappt.
+So geht es von Hand:
   1. https://www.python.org/downloads/ oeffnen und Python 3 herunterladen
   2. Beim Installieren den Haken 'Add python.exe to PATH' setzen
   3. PowerShell schliessen, neu oeffnen und diesen Befehl erneut ausfuehren
 "@
+    }
+    Ok "Python installiert: $p"
+    return $p
 }
-$Py = Get-Py
 
 # Secret-Store über secretstore.py (DPAPI). Modul muss in $BotDir liegen.
 function Secret-Set($account, $value) {
@@ -156,7 +235,10 @@ if ($Uninstall) {
 # ------------------------------------------------------------ Phase 1: PRÜFEN
 Bold "Operator-Installation (Windows) — your operator inside the Matrix"
 Bold "Phase 1/7 - Voraussetzungen"
-Ok "Python: $Py ($(& $Py --version))"
+# Python bei Bedarf selbst installieren — der Kunde soll nur EINEN Befehl eingeben.
+# (Steht hier und nicht oben, weil Ask-YesNo erst weiter oben im Skript definiert wird.)
+$Py = Ensure-Python
+Ok "Python: $Py ($((& $Py --version 2>&1 | Out-String).Trim()))"
 
 # ------------------------------------------------------------ Phase 2: CLAUDE
 Bold "Phase 2/7 - Claude CLI"
