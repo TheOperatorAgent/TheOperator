@@ -74,6 +74,11 @@ echter Name raus — die Zuordnung existiert nur flüchtig und lokal.
 | **listener.py** | Kern-Daemon **ausschließlich mit Python-Standardbibliothek** — kleine, prüfbare Angriffsfläche. | Weniger Abhängigkeiten = weniger Lieferketten-Risiko. |
 | **skillguard.py** | Sicherheits-Scan neuer/geänderter Skills. | Schutz vor riskanten Automatisierungen. |
 | **persona.py** | Persona (Auftreten) + Nutzerprofil, rein lokal (`persona.json`/`profile.json`). | Personalisierung **transparent**: sichtbar, editierbar, jederzeit löschbar, auditiert — keine verdeckte Bindungs-Mechanik (bewusst; vgl. EU AI Act / EDPS zu KI-Companions). |
+| **permission_broker.py** + **claude_tool_hook.py** | Stuft **jeden** Werkzeug-Aufruf ein. Riskante Aktionen (Löschen, `sudo`, Systemdateien, Mail senden, `curl\|bash`) lösen eine Rückfrage im Matrix-Chat aus. | **fail-closed:** ohne ausdrückliches Ja des Owners passiert nichts. Freigabe an einen Argument-Fingerabdruck gebunden, genau einmal verbrauchbar; fremde Sender wirkungslos; Antworten *vor* der Frage zählen nicht. |
+| **net_guard.py** | Löst jeden Hostnamen auf und prüft **jede** dabei gefundene IP gegen Loopback, private Netze, Link-Local (inkl. `169.254.169.254`) und reservierte Bereiche. Nur `http`/`https`. | Kein Zugriff auf Dashboard, Router, NAS oder interne Server — auch nicht über **Weiterleitungen** (Prüfung bei jeder einzelnen Browser-Anfrage) oder Zahlenschreibweisen wie `2130706433`. |
+| **retention.py** | Löscht abgelaufene lokale Daten: Gesprächsverlauf 30 Tage, Betriebsprotokoll 14, Sicherheits-Audit 90 (einstellbar). Läuft täglich. | Datensparsamkeit ohne Zutun. Gekürzte Dateien behalten `0600`. |
+| **claude_health.py** | Erkennt einen abgelaufenen Claude-Zugang und warnt **genau einmal** vor. Probe nur, wenn längere Zeit kein echter Lauf stattfand. | Kein Auflaufen mitten in einer Anfrage. **Ohne jeden Zugriff auf Zugangsdaten** — der Zustand ergibt sich allein aus Rückgabecodes. |
+| **throttle.py** | Obergrenze für automatische Läufe (Standard 6/Stunde, 40/Tag). | Ein fehlkonfigurierter Zeitplan kann das Kontingent nicht leerlaufen. **Interaktive Nachrichten werden nie gedrosselt** (test-gesichert). |
 
 ---
 
@@ -92,6 +97,17 @@ ohne zum Risiko zu werden, laufen alle Werkzeuge in einem mehrfach abgesicherten
 
 *Belegt:* Der Agent legt Dateien an und führt sie aus; Ausbruchsversuche (`../../etc/passwd`,
 `sudo rm -rf /`) werden nachweislich abgewiesen.
+
+**Egress-Schutz für Werkzeug-Ergebnisse:** Was ein Agent aus der echten Welt liest — Shell-
+Ausgaben, Datei-Inhalte, Browser-Seitentext — geht **nicht roh** an ein Fremd-Modell. Vor der
+Übergabe werden Geheimnisse maskiert und bekannte Personendaten durch dieselben Platzhalter
+ersetzt wie im übrigen Gespräch. *Bekannte* Grenze, offen dokumentiert: völlig neue, dem
+Gespräch unbekannte Namen aus einer gelesenen Datei erkennt diese Stufe noch nicht — dafür
+ist ein zusätzlicher Erkennungs-Durchlauf vorgesehen (Latenz-Abwägung läuft).
+
+**Rückfrage statt Vertrauensvorschuss:** Seit 1.8 hängt vor jedem Werkzeug-Einsatz eine
+Einstufung. Harmloses läuft ohne Unterbrechung; alles mit bleibender Wirkung braucht ein
+ausdrückliches Ja im Chat (siehe `permission_broker.py` oben).
 
 **Browser-Werkzeug (v1, bewusst eingegrenzt):** Agenten mit dem `Browser`-Werkzeug können im
 headless-Browser **navigieren** (`open_page`, `click_link`) und Text/Daten extrahieren — aber
@@ -118,14 +134,39 @@ beworbenes Feature — kein Gegenbeweis.
 | Geheimnis-Handling | verschlüsselter Tresor + **FIDO2** + Redaction + OS-Schlüsselbund | anbieterabhängig | anbieterabhängig |
 | Werkzeug-Ausführung | **abgeschottet** (Pfad-Käfig, Sperrliste, Limits, Audit) | Terminal/Dateien (Sandbox anbieterabhängig) | Terminal/Dateien (dito) |
 | Modell & Kosten | **Claude-Abo — kein API-Key, keine Token-Kosten** (oder lokal Ollama/OpenAI/Azure) | API-Key eines Anbieters nötig | API-Key eines Anbieters nötig |
+| Rückfrage vor riskanten Aktionen | **ja — im Chat, fail-closed**, Freigabe einmalig und argument-gebunden | Befehls-Freigabe (anbieterabhängig) | Command-Approval |
+| Zugriff aufs eigene Heimnetz | **technisch gesperrt**, inkl. Weiterleitungen und Zahlen-IPs | nicht dokumentiert | nicht dokumentiert |
+| Werkzeug-Ergebnisse vor dem Modell gereinigt | **ja** (Geheimnisse maskiert, Namen pseudonymisiert) | nicht dokumentiert | nicht dokumentiert |
+| Löschfristen für lokale Daten | **ja, automatisch** (30 / 14 / 90 Tage, einstellbar) | nicht dokumentiert | nicht dokumentiert |
 | Nachvollziehbarkeit | manipulationsevidentes Audit-Log | nicht dokumentiert | nicht dokumentiert |
 | Antwort-Qualitätssicherung | optionale **Zweitmodell-Prüfung** | nicht dokumentiert | nicht dokumentiert |
 | Bedienbarkeit | **für Nicht-Techniker** (kein Terminal, geführte Abläufe) | entwicklerzentriert | entwicklerzentriert |
 
-**Ehrliche Einordnung:** OpenClaw und Hermes sind bei der **Kanal-Breite** (viele Messenger)
-voraus — das ist ihr Stärkefeld. Der Operator setzt bewusst den Gegenakzent: **Matrix-only +
-automatischer PII-Schutz + FIDO2-Tresor + Claude-Abo statt API-Key**. Datenschutz und
-Sicherheit sind hier der Bauplan, keine Checkbox.
+**Ehrliche Einordnung:** OpenClaw und Hermes sind bei der **Kanal-Breite** voraus — das ist
+ihr Stärkefeld, und wir holen es bewusst nicht ein. Der Operator setzt den Gegenakzent eine
+Ebene tiefer: **was das Modell überhaupt zu sehen bekommt**, wo Geheimnisse liegen, wie viele
+Türen offen stehen, und ob der Assistent fragt, bevor er handelt.
+
+**Und das lässt sich nachprüfen.** Der Quellcode ist offen, und **152 automatische Tests**
+halten genau diese Zusagen fest — unter anderem:
+
+| Was der Test beweist | Testname |
+|---|---|
+| Der Browser-Agent kann keine Formulare absenden | `test_browser_tools_are_readonly` |
+| 16 interne Ziele sind gesperrt (Dashboard, Router, Cloud-Metadaten, Zahlen-IPs …) | `test_net_guard_blocks_internal_targets` |
+| Werkzeug-Ergebnisse werden vor dem Modell gereinigt | `test_tool_result_egress_sanitized` |
+| Ein »ja« von vor der Frage gilt nie als Freigabe | `test_broker_alte_zustimmung_gilt_nicht` |
+| Fremde Accounts können nichts freigeben | `test_broker_nein_und_fremder_sender` |
+| Keine Gesprächsinhalte im Protokoll | `test_no_message_content_in_log` |
+| Nur alte Daten werden gelöscht, frische bleiben | `test_retention_deletes_only_old_data` |
+| Harmlose Arbeit löst nie eine Rückfrage aus | `test_harmlose_arbeit_fragt_nie_nach` |
+| Interaktive Nachrichten werden nie gedrosselt | `test_throttle_limits_automation_never_chat` |
+| Der Kern läuft ohne jede Zusatzsoftware | `test_alles_laeuft_ohne_zusatzsoftware` |
+
+Zu den Petra-Tests gehört außerdem eine Gegenprobe: Sie wurden absichtlich zu brechen versucht
+(harmlosen Befehl als riskant einstufen, eine Zeichen-Erklärung entfernen, Antworttexte wieder
+ins Log schreiben) — alle drei Verstöße wurden gefangen. Tests, die nie fehlschlagen, beweisen
+nichts.
 
 ---
 

@@ -64,6 +64,40 @@ installieren. Deinstallation: `bash install.sh --uninstall`.
   wachsendem Wissen immer teurer wird. Der Operator speichert Merkenswertes selbst
   (Shell-Freigabe nötig) und kann Einträge korrigieren oder vergessen.
 
+## Neu in 1.8 — der Operator fragt nach, bevor er etwas Riskantes tut
+
+Die größte Sorge bei einem Assistenten mit Shell-Zugriff ist einfach: *Was, wenn er etwas
+tut, das ich nicht wollte?* Genau dafür gibt es jetzt eine Antwort.
+
+**🔐 Rückfrage im Chat, bevor etwas passiert.** Will der Operator Dateien löschen,
+Administrator-Rechte nutzen, Systemdateien ändern, eine E-Mail versenden oder ein Skript aus
+dem Netz ausführen, fragt er dich vorher — in einem Satz, in normaler Sprache. Du antwortest
+**ja** oder **nein** (oder tippst auf ✅ / ❌). Ohne dein Ja passiert nichts. Keine Antwort,
+ein Zeitablauf, eine Störung oder ein fremder Account bedeuten immer *nicht ausführen*.
+Jede Freigabe gilt genau einmal und genau für diese eine Aktion.
+
+**Und im Alltag merkst du davon nichts.** Lesen, Suchen, Recherchieren, normale Befehle,
+Arbeiten im Arbeitsordner — alles läuft ohne eine einzige Rückfrage weiter. Gefragt wird nur
+bei echtem Risiko. Dass das so bleibt, sichern elf automatische Tests ab.
+
+**🛡️ Dein Heimnetz ist tabu.** Der Operator darf ins öffentliche Internet — aber nicht auf
+dein Dashboard, deinen Router, deinen NAS oder deine internen Server. Auch nicht über eine
+Weiterleitung von einer präparierten Webseite: Jede einzelne Anfrage wird geprüft, nicht nur
+die erste.
+
+**🧹 Deine Daten räumen sich selbst auf.** Gesprächsverlauf 30 Tage, Protokolle 14, das
+Sicherheits-Audit 90 — danach wird automatisch gelöscht. Fristen änderbar, alles einsehbar,
+exportierbar und auf Knopfdruck löschbar. Und im Protokoll stehen keine Gesprächsinhalte
+mehr, nur noch technische Kennzahlen.
+
+**🔑 Kein böses Erwachen.** Läuft dein Claude-Zugang ab, sagt der Operator dir das *einmal*
+freundlich vorher — statt dich mitten in einer Frage auflaufen zu lassen. Mit hinterlegtem
+Reserve-Schlüssel arbeitet er einfach weiter.
+
+**🛟 Fair-Use-Schutz.** Automatische Läufe haben eine Obergrenze, damit ein falsch gesetzter
+Zeitplan dein Kontingent nicht leerlaufen kann. Deine eigenen Nachrichten sind davon nie
+betroffen.
+
 ## Neu in 1.7 — Browser-Agent (im Web navigieren)
 
 - Agenten können jetzt nicht nur Webseiten *lesen*, sondern im **Browser navigieren**: Seiten
@@ -131,13 +165,22 @@ Nachricht frisch geladen — Änderungen wirken sofort, ohne Neustart.
 
 - **Nur du wirst beantwortet.** Der Bot reagiert ausschließlich auf die Matrix-ID, die du
   bei der Installation angibst. Nachrichten aller anderen werden ignoriert.
-- **Shell-Zugriff ist Opt-in.** Standardmäßig darf der Assistent nur lesen und im Web
-  recherchieren. Erst wenn du es im Wizard ausdrücklich erlaubst, darf er Kommandos auf
-  deinem Mac ausführen — dann kann jede deiner Chat-Nachrichten Kommandos auslösen.
-  Aktiviere das nur, wenn dir klar ist, was das bedeutet.
-- **Der Bot-Raum ist unverschlüsselt** (Ende-zu-Ende-Verschlüsselung steht auf der
-  Roadmap). Schick deinem Assistenten keine Passwörter oder Geheimnisse.
-- Zugangsdaten liegen lokal unter `~/.claude/matrix-bot/credentials.json` (Rechte 600).
+- **Shell-Zugriff ist Opt-in — und abgesichert.** Standardmäßig darf der Assistent nur
+  lesen und im Web recherchieren. Erlaubst du ihm Kommandos, greift seit 1.8 die
+  **Rückfrage vor riskanten Aktionen**: Löschen, Administrator-Rechte, Systemdateien,
+  Skripte aus dem Netz — alles braucht dein ausdrückliches Ja im Chat. Harmlose Befehle
+  laufen weiterhin ohne Unterbrechung.
+- **Kein Zugriff auf dein Heimnetz.** Weder der Browser-Agent noch der Webseiten-Abruf
+  erreichen interne Adressen (Dashboard, Router, NAS, interne Server) — auch nicht über
+  Weiterleitungen.
+- **Der Bot-Raum ist noch unverschlüsselt.** Matrix-Ende-zu-Ende-Verschlüsselung braucht
+  eine zusätzliche Bibliothek; der Listener kommt bewusst mit der Python-Standard­bibliothek
+  aus, damit er überall läuft und leicht prüfbar bleibt. Wir sagen das lieber ehrlich, als
+  es zu verschweigen: **Schick deinem Assistenten keine Passwörter** — dafür gibt es den
+  Tresor, der Geheimnisse als Platzhalter einsetzt.
+- Zugangsdaten liegen lokal unter `~/.claude/matrix-bot/credentials.json` (Rechte 600),
+  Tokens im Schlüsselbund deines Betriebssystems. Der Arbeitsordner der Agenten ist nur
+  für dich lesbar.
 
 ## Sicherheit & Datenschutz — und wie wir uns abheben
 
@@ -146,6 +189,9 @@ Jede Nachricht durchläuft dieselbe Schutz-Pipeline, **bevor** sie ein Sprachmod
 
 ```
 Nachricht → 🔑 Secret-Redaction → 🎭 Pseudonymisierung → Modell → ↩︎ Re-Identifikation → 🔑 Maskierung → Antwort
+                                                      ↑
+                          Werkzeug-Ergebnisse (Shell · Dateien · Browser) laufen
+                          durch dieselbe Reinigung, bevor ein Modell sie sieht
 ```
 
 Ein externes Modell sieht **nie** echte Namen, E-Mails oder Passwörter — nur unverfängliche
@@ -166,14 +212,31 @@ sondern in **Datenschutz-Tiefe, Kanal-Philosophie und Kosten**. (Wettbewerber-Sp
 | PII-Schutz **vor** dem Modell | **automatische Pseudonymisierung** (Presidio + Faker) | nicht dokumentiert | nicht dokumentiert |
 | Geheimnisse | verschlüsselter Tresor + **FIDO2** + Redaction + OS-Schlüsselbund | anbieterabhängig | anbieterabhängig |
 | Werkzeug-Ausführung | **abgeschottet** (Pfad-Käfig, Sperrliste, Limits, Audit) | Terminal/Dateien (Sandbox anbieterabhängig) | Terminal/Dateien (dito) |
+| Rückfrage vor riskanten Aktionen | **ja — im Chat, fail-closed** (ohne dein Ja passiert nichts) | Befehls-Freigabe, anbieterabhängig | Command-Approval |
+| Zugriff aufs eigene Heimnetz | **technisch gesperrt** (auch über Weiterleitungen) | nicht dokumentiert | nicht dokumentiert |
+| Werkzeug-Ergebnisse vor dem Modell gereinigt | **ja** (Secrets maskiert, Namen pseudonymisiert) | nicht dokumentiert | nicht dokumentiert |
+| Automatische Löschfristen für lokale Daten | **ja** (30 / 14 / 90 Tage, einstellbar) | nicht dokumentiert | nicht dokumentiert |
 | Modell & Kosten | **Claude-Abo — kein API-Key, keine Token-Kosten** (oder lokal Ollama/OpenAI/Azure) | API-Key eines Anbieters nötig | API-Key eines Anbieters nötig |
 | Antwort-Prüfung | optionale **Zweitmodell-Prüfung** vor dem Senden | nicht dokumentiert | nicht dokumentiert |
 | Bedienbarkeit | **für Nicht-Techniker** (kein Terminal, geführte Abläufe) | entwicklerzentriert | entwicklerzentriert |
 
-**Unser Alleinstellungsmerkmal:** OpenClaw und Hermes sind breiter bei den Messengern —
-der Operator setzt bewusst auf **Matrix-only + automatischen PII-Schutz + FIDO2-Tresor** und
-läuft über dein **Claude-Abo statt eines kostenpflichtigen API-Keys**. Datenschutz ist der
-Bauplan, nicht ein Feature. Vollständiges Konzept: **[docs/SICHERHEIT_UND_ARCHITEKTUR.md](docs/SICHERHEIT_UND_ARCHITEKTUR.md)**.
+**Wo wir wirklich anders sind.** OpenClaw und Hermes sind breiter bei den Messengern — das
+ist ihr Vorteil. Unserer liegt eine Ebene tiefer: **was das Sprachmodell überhaupt zu sehen
+bekommt**, wo Geheimnisse liegen, wie viele Türen offen stehen und ob der Assistent fragt,
+bevor er handelt. Ein Kanal statt zwanzig ist dabei kein Mangel, sondern die Entscheidung
+für **einen kontrollierten Eingang**, den du selbst betreibst.
+
+Dazu kommt ein Unterschied, den man erst im Alltag merkt: Operator läuft über **dein
+bestehendes Claude-Abo** — kein API-Schlüssel, keine Kosten pro Anfrage, keine Rechnung, die
+mit der Nutzung wächst.
+
+**Und das Beste daran: Du musst uns nicht glauben.** Der komplette Quellcode ist offen, und
+**152 automatische Prüfungen** halten genau diese Zusagen fest — dass der Browser-Agent keine
+Formulare absenden kann, dass interne Adressen gesperrt sind, dass Werkzeug-Ergebnisse
+gereinigt werden, dass keine Gesprächsinhalte im Protokoll landen und dass harmlose Arbeit nie
+eine Rückfrage auslöst. Nachlesbar im Repo, ausführbar auf deinem eigenen Rechner.
+
+Vollständiges Konzept: **[docs/SICHERHEIT_UND_ARCHITEKTUR.md](docs/SICHERHEIT_UND_ARCHITEKTUR.md)**.
 
 ## Fehlerbehebung
 
@@ -190,8 +253,31 @@ Claude subscription, and a dedicated Matrix account for the bot. Run the install
 above — the wizard walks you through the Claude browser login and all Matrix setup, then
 starts a background service. Your assistant answers within seconds, powered by your own
 Claude login on your own machine. Customize its behavior in
-`~/.claude/matrix-bot/VERHALTEN.md` (hot-reloaded per message). Security: only your Matrix
-ID is answered; shell access is opt-in; the bot room is not end-to-end encrypted yet.
+`~/.claude/matrix-bot/VERHALTEN.md` (hot-reloaded per message).
+
+**New in 1.8 — it asks before doing anything risky.** Deleting files, admin rights, touching
+system files, sending an email, running a script from the web: Operator asks you in the chat
+first, in one plain sentence. You reply **yes** or **no** (or tap ✅ / ❌). Without your
+explicit yes, nothing happens — no answer, a timeout, a failure or a stranger's message all
+mean *don't do it*. Each approval is valid exactly once, for exactly that action. Everyday
+work — reading, searching, normal commands — runs without a single interruption, and eleven
+automated tests make sure it stays that way.
+
+Also new: **your home network is off-limits** (no access to your dashboard, router or internal
+servers — not even via a redirect from a prepared web page), **local data cleans itself up**
+(history 30 days, logs 14, security audit 90 — adjustable, exportable, deletable), and **no
+conversation content is written to the log** any more.
+
+Security in short: only your Matrix ID is answered; shell access is opt-in and gated by the
+approval flow; the bot room is not end-to-end encrypted yet — we say so plainly rather than
+hiding it, because E2EE would require an extra dependency and the listener deliberately runs
+on the Python standard library alone. Use the built-in vault for passwords instead of typing
+them into chat.
+
+**You don't have to take our word for it:** the full source is open and **152 automated checks**
+lock in exactly these promises — that the browser agent cannot submit forms, that internal
+addresses are blocked, that tool output is sanitized before any model sees it, and that safe
+work never triggers a prompt.
 
 **New in 1.5:** agents that *actually work* — foreign models (e.g. Kimi K2.7 Code via Ollama
 Cloud, local models, OpenAI, Azure) can now create files, run commands and test them, safely
@@ -210,7 +296,8 @@ is in the security section above and in
 - **v2.0 — Dashboard:** lokale Web-Oberfläche zur Verwaltung von Agenten (Modelle, Werkzeuge,
   Veröffentlichung als eigene Matrix-Bots) sowie geführte Anbindung von Google Drive und
   Microsoft 365 mit Lese-/Schreib-Reglern je Dienst — Datenschutz by Design, alles bleibt lokal
-- Ende-zu-Ende-Verschlüsselung des Bot-Raums
+- Ende-zu-Ende-Verschlüsselung des Bot-Raums (bedingt einen Zusatzdienst — Abwägung läuft)
+- Sprachein- und -ausgabe · Formulare im Browser mit Bestätigung
 
 ## Passwort-Tresor
 
