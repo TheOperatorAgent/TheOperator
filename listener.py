@@ -78,6 +78,10 @@ try:
     import claude_health               # noqa: E402  (#59 Login-Vorwarnung)
 except Exception:
     claude_health = None
+try:
+    import throttle                    # noqa: E402  (#58 Fair-Use-Drossel)
+except Exception:
+    throttle = None
 VENV_PY = _plat.venv_python(BOT_DIR)
 
 
@@ -596,23 +600,38 @@ class BotSession(threading.Thread):
                      system=system, verify=verify)
 
     def run_automation(self, job):
+        # #58: Fair-Use — Automationen dürfen das Abo nicht leerlaufen lassen.
+        if throttle:
+            ok, grund = throttle.allow("cron")
+            if not ok:
+                log(f"[{self.bot_name}] Automation '{job.get('name')}' verschoben — {grund}")
+                return
         framing = f"[Automation „{job['name']}“ wurde planmäßig ausgelöst] {job['prompt']}"
         prompt, tools, model, mapping, msg_rec, system, verify = self.build([framing])
         if mapping is False:
             log(f"[{self.bot_name}] Automation '{job['name']}' abgebrochen (Pseudonymisierung aus)")
             return
         log(f"[{self.bot_name}] Automation '{job['name']}' startet")
+        if throttle:
+            throttle.record("cron")
         self.execute(prompt, tools, model, msg_rec, kind="cron", mapping=mapping,
                      system=system, verify=verify)
 
     def run_event(self, name, framing):
         """#47: proaktiver Lauf, von einem externen Ereignis ausgelöst (triggers.drain).
         Gleicher Pfad wie Chat/Automation — Pseudonymisierung, Werkzeuge, Audit inklusive."""
+        if throttle:                        # #58: auch Ereignis-Läufe fair drosseln
+            ok, grund = throttle.allow("event")
+            if not ok:
+                log(f"[{self.bot_name}] Ereignis '{name}' verschoben — {grund}")
+                return
         prompt, tools, model, mapping, msg_rec, system, verify = self.build([framing])
         if mapping is False:
             log(f"[{self.bot_name}] Ereignis '{name}' abgebrochen (Pseudonymisierung aus)")
             return
         log(f"[{self.bot_name}] Ereignis '{name}' startet proaktiven Lauf")
+        if throttle:
+            throttle.record("event")
         self.execute(prompt, tools, model, msg_rec, kind="event", mapping=mapping,
                      system=system, verify=verify)
 

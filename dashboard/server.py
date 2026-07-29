@@ -301,10 +301,16 @@ def api_status():
         claude_login = claude_health.state()
     except Exception:
         claude_login = {"state": "unknown", "checked_at": 0}
+    try:                                  # #58: Fair-Use-Drossel (fail-open)
+        import throttle
+        fair_use = throttle.stats()
+    except Exception:
+        fair_use = {}
 
     return {
         "listener_running": listener,
         "claude_login": claude_login,
+        "fair_use": fair_use,
         "version": _app_version(),
         "author": PRODUCT_AUTHOR,
         "owner": c.get("owner_id"),

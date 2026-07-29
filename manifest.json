@@ -1,5 +1,5 @@
 {
- "version": "1.7.6",
+ "version": "1.7.7",
  "files": [
   {
    "src": "listener.py",
@@ -60,6 +60,10 @@
   {
    "src": "claude_health.py",
    "dst": "claude_health.py"
+  },
+  {
+   "src": "throttle.py",
+   "dst": "throttle.py"
   },
   {
    "src": "persona.py",

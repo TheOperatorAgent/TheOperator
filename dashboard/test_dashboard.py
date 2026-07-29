@@ -1955,3 +1955,58 @@ def test_version_fields_consistent():
     man = _j.load(open(os.path.join(base, "manifest.json")))["version"]
     upd = _j.load(open(os.path.join(base, "updates.json")))["version"]
     assert ver == man == upd, f"Versionen driften: VERSION={ver} manifest={man} updates={upd}"
+
+
+# ---------------------------------------------------------------- #58 Fair-Use --
+def test_throttle_limits_automation_never_chat(tmp_path, monkeypatch):
+    """#58: Automationen werden gedrosselt, interaktive Chats NIEMALS."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import throttle
+    monkeypatch.setattr(throttle, "STATE_FILE", str(tmp_path / "t.json"))
+    monkeypatch.setattr(throttle, "CONFIG_FILE", str(tmp_path / "cfg.json"))
+    (tmp_path / "cfg.json").write_text(
+        '{"fair_use": {"enabled": true, "max_per_hour": 3, "max_per_day": 5}}')
+
+    for i in range(3):                       # Stundengrenze ausschöpfen
+        ok, _ = throttle.allow("cron")
+        assert ok, f"Lauf {i+1} müsste erlaubt sein"
+        throttle.record("cron")
+    ok, grund = throttle.allow("cron")
+    assert not ok and "Stunde" in grund      # 4. Lauf blockiert
+    ok, grund = throttle.allow("event")
+    assert not ok                            # gilt auch für Ereignis-Läufe
+    ok, _ = throttle.allow("chat")
+    assert ok, "Chat darf NIE gedrosselt werden"
+
+
+def test_throttle_day_limit_and_window(tmp_path, monkeypatch):
+    """Tagesgrenze greift; alte Läufe fallen aus dem 24-h-Fenster."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import throttle, time as _t
+    monkeypatch.setattr(throttle, "STATE_FILE", str(tmp_path / "t2.json"))
+    monkeypatch.setattr(throttle, "CONFIG_FILE", str(tmp_path / "cfg2.json"))
+    (tmp_path / "cfg2.json").write_text(
+        '{"fair_use": {"enabled": true, "max_per_hour": 100, "max_per_day": 3}}')
+    now = _t.time()
+    for i in range(3):
+        throttle.record("cron", now=now - 7200 - i)     # 2 h alt → Stundenlimit egal
+    ok, grund = throttle.allow("cron", now=now)
+    assert not ok and "24" in grund
+    # 25 h später sind sie aus dem Fenster
+    ok, _ = throttle.allow("cron", now=now + 25 * 3600)
+    assert ok
+
+
+def test_throttle_disabled_and_stdlib(tmp_path, monkeypatch):
+    """Abschaltbar; und stdlib-only, weil der Listener es importiert."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import throttle, ast
+    monkeypatch.setattr(throttle, "STATE_FILE", str(tmp_path / "t3.json"))
+    monkeypatch.setattr(throttle, "CONFIG_FILE", str(tmp_path / "cfg3.json"))
+    (tmp_path / "cfg3.json").write_text('{"fair_use": {"enabled": false, "max_per_hour": 0}}')
+    ok, _ = throttle.allow("cron")
+    assert ok, "abgeschaltet → keine Drosselung"
+    src = open(os.path.expanduser("~/.claude/matrix-bot/throttle.py")).read()
+    imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
+               if isinstance(n, ast.Import) for a in n.names}
+    assert imports <= {"json", "os", "time"}
