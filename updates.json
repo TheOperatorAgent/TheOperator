@@ -1,9 +1,8 @@
 {
-  "version": "1.8.7",
+  "version": "1.9.0",
   "date": "2026-07-29",
   "highlights": [
-    "🌐 Browser zum Surfen wird jetzt beim Einrichten gleich mitinstalliert — und auf Geräten, für die es keinen fertigen gibt (z. B. Raspberry Pi), nutzt der Operator ein bereits vorhandenes Chromium.",
-    "🖥️ Dashboard per SSH: Wer auf einem Rechner ohne Bildschirm arbeitet, bekommt jetzt eine verständliche Anleitung statt eines stumm fehlschlagenden Browser-Starts.",
-    "🔤 Dashboard-Hintergrund: Der Code-Regen bestand aus japanischen Schriftzeichen und wurde für Chinesisch gehalten — jetzt nur noch Zeichen, die jeder lesen kann."
+    "💬 Operator-Dock: Dein Chat mit dem Operator jetzt direkt im Dashboard — ein-/ausklappbar, andockbar rechts, links oder unten. Es ist derselbe Chat wie auf dem Handy; vom Dashboard Gesendetes erscheint dort mit 🖥️.",
+    "🔒 Dabei wie immer: keine zweite Datenkopie, Nachrichten werden nur als Text angezeigt, alles bleibt auf deinem Rechner (127.0.0.1)."
   ]
 }

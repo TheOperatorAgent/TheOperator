@@ -231,7 +231,7 @@ bestehendes Claude-Abo** — kein API-Schlüssel, keine Kosten pro Anfrage, kein
 mit der Nutzung wächst.
 
 **Und das Beste daran: Du musst uns nicht glauben.** Der komplette Quellcode ist offen, und
-**152 automatische Prüfungen** halten genau diese Zusagen fest — dass der Browser-Agent keine
+**166 automatische Prüfungen** halten genau diese Zusagen fest — dass der Browser-Agent keine
 Formulare absenden kann, dass interne Adressen gesperrt sind, dass Werkzeug-Ergebnisse
 gereinigt werden, dass keine Gesprächsinhalte im Protokoll landen und dass harmlose Arbeit nie
 eine Rückfrage auslöst. Nachlesbar im Repo, ausführbar auf deinem eigenen Rechner.
@@ -274,7 +274,7 @@ hiding it, because E2EE would require an extra dependency and the listener delib
 on the Python standard library alone. Use the built-in vault for passwords instead of typing
 them into chat.
 
-**You don't have to take our word for it:** the full source is open and **152 automated checks**
+**You don't have to take our word for it:** the full source is open and **166 automated checks**
 lock in exactly these promises — that the browser agent cannot submit forms, that internal
 addresses are blocked, that tool output is sanitized before any model sees it, and that safe
 work never triggers a prompt.

@@ -2367,3 +2367,111 @@ def test_oeffentlicher_installer_ist_die_ausgelieferte_fassung():
                   "claude_health.py", "throttle.py", "repo_raw.txt"):
         assert modul in a, f"{modul} fehlt im Auslieferungs-Installer"
         assert modul in b, f"{modul} fehlt im öffentlichen Installer"
+
+
+# ------------------------------------------------ Operator-Dock (#90–#94) --
+def test_matrix_room_is_stdlib_only():
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/matrix_room.py")).read()
+    imports = set()
+    for n in ast.walk(ast.parse(src)):
+        if isinstance(n, ast.Import):
+            imports.update(a.name.split(".")[0] for a in n.names)
+        elif isinstance(n, ast.ImportFrom) and n.module:
+            imports.add(n.module.split(".")[0])
+    assert imports <= {"json", "os", "sys", "time", "urllib", "secretstore"}, imports
+
+
+def test_matrix_room_speichert_nichts():
+    """#91: read-through — die Brücke darf keinen eigenen Nachrichten-Speicher anlegen,
+    sonst entsteht ein zweiter Datenbestand neben sessions.db, den retention.py
+    nicht kennt."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/matrix_room.py")).read()
+    verboten = ["sqlite3", 'open(os.path.join(BOT_DIR, "dock', "pickle", "shelve"]
+    schreibt = [z for z in src.splitlines()
+                if (('"w"' in z or "'w'" in z) and "open(" in z)]
+    assert not schreibt, f"matrix_room.py schreibt Dateien: {schreibt}"
+    for v in verboten:
+        assert v not in src, v
+
+
+def test_dock_eintrag_normalisierung():
+    """Owner-Handy, Dashboard-Spiegelung, Operator und Fremde werden korrekt
+    unterschieden — Fremde werden gekennzeichnet, nie versteckt."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import matrix_room as mr
+    owner, bot = "@michi:hs", "@claude:hs"
+    f = lambda ev: mr._eintrag(ev, owner, bot)
+    e = f({"type": "m.room.message", "sender": owner,
+           "content": {"body": "hallo"}, "origin_server_ts": 1, "event_id": "$a"})
+    assert (e["wer"], e["quelle"]) == ("du", "handy")
+    e = f({"type": "m.room.message", "sender": bot,
+           "content": {"body": "🖥️ hi", mr.MARKER: {"text": "hi"}},
+           "origin_server_ts": 2, "event_id": "$b"})
+    assert (e["wer"], e["quelle"], e["text"]) == ("du", "dashboard", "hi")
+    e = f({"type": "m.room.message", "sender": bot,
+           "content": {"body": "Antwort"}, "origin_server_ts": 3, "event_id": "$c"})
+    assert e["wer"] == "operator"
+    e = f({"type": "m.room.message", "sender": "@boese:anderswo",
+           "content": {"body": "hi"}, "origin_server_ts": 4, "event_id": "$d"})
+    assert e["wer"] == "fremd" and e["quelle"] == "@boese:anderswo"
+    assert f({"type": "m.room.member", "sender": owner, "content": {}}) is None
+
+
+def test_listener_dashboard_marker_owner_gebunden():
+    """#94.5: Der Marker-Weg darf keine Hintertür sein. Er greift NUR im Owner-Chat,
+    NUR wenn der Absender das eigene Bot-Konto ist, NUR mit Text im Marker."""
+    import importlib.util as ilu
+    spec = ilu.spec_from_file_location(
+        "listener", os.path.expanduser("~/.claude/matrix-bot/listener.py"))
+    li = ilu.module_from_spec(spec)
+    spec.loader.exec_module(li)
+
+    class S:  # minimales Sitzungs-Double
+        kind = "owner"
+        user = "@claude:hs"
+    s = S()
+    ok = {"sender": "@claude:hs",
+          "content": {"body": "🖥️ x", li.DASHBOARD_MARKER: {"text": "x"}}}
+    assert li.BotSession._vom_dashboard(s, ok) is True
+    fremd = {"sender": "@boese:hs",
+             "content": {"body": "🖥️ x", li.DASHBOARD_MARKER: {"text": "x"}}}
+    assert li.BotSession._vom_dashboard(s, fremd) is False
+    ohne = {"sender": "@claude:hs", "content": {"body": "normale Antwort"}}
+    assert li.BotSession._vom_dashboard(s, ohne) is False, "Echo-Schleife!"
+    s.kind = "agent"
+    assert li.BotSession._vom_dashboard(s, ok) is False, "Agent-Raum nimmt Dashboard an"
+
+
+def test_dock_frontend_rendert_nur_text():
+    """#93: Nachrichten sind Fremddaten. Der Dock-Teil von app.js darf sie nie als
+    HTML einsetzen — nur textContent/createTextNode."""
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "static", "app.js")).read()
+    dock = src.split("Operator-Dock (#90)")[-1]
+    assert "innerHTML" not in dock, "innerHTML im Dock — XSS-Tor"
+    assert "insertAdjacentHTML" not in dock
+    assert "createTextNode" in dock or "textContent" in dock
+
+
+def test_dock_stream_token_nie_in_url():
+    """#94.4: Der Dashboard-Token darf nie als Query-Parameter laufen (Server-Logs)."""
+    src = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "static", "app.js")).read()
+    dock = src.split("Operator-Dock (#90)")[-1]
+    assert "token=" not in dock.lower().replace("localstorage", ""), \
+        "Token in einer URL im Dock-Code"
+    assert '"Authorization": "Bearer " + TOKEN' in dock
+
+
+def test_dock_origin_wache():
+    """#94.3: Fremder Origin → abgewiesen; eigener/kein Origin → erlaubt."""
+    import server as sv
+
+    class R:
+        def __init__(self, origin):
+            self.headers = {"origin": origin} if origin else {}
+    port = list(sv.ALLOWED_HOSTS)[0].rsplit(":", 1)[-1]
+    assert sv._dock_origin_ok(R(f"http://127.0.0.1:{port}")) is True
+    assert sv._dock_origin_ok(R("")) is True                 # curl u. Ä. — Token schützt
+    assert sv._dock_origin_ok(R("https://boese-seite.example")) is False

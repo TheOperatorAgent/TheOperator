@@ -262,6 +262,9 @@ def reidentify(text, mapping):
 
 CLAUDE = CREDS.get("claude_bin") or shutil.which("claude") or "claude"
 OWNER = CREDS.get("owner_id", "")
+# #90 Dock: Dashboard-Eingaben werden vom Bot-Konto mit diesem Inhalts-Schlüssel in den
+# Raum gespiegelt (matrix_room.senden_dashboard). Nur der Bot-Token kann so senden.
+DASHBOARD_MARKER = "bayern.vonaschenbrenner.operator.dashboard"
 OWNER_TOOLS = CREDS.get("allowed_tools", ["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill"])
 # Owner-Verify (#46): opt-in, live umschaltbar über dashboard.json (owner_verify_cfg() liest frisch).
 CLAUDE_SLOTS = threading.Semaphore(2)
@@ -404,11 +407,21 @@ class BotSession(threading.Thread):
         self.token = token
         self.room = room_id
         self.room_enc = urllib.parse.quote(room_id)
+        self.user = user_id
         self.user_enc = urllib.parse.quote(user_id)
         self.stop_event = threading.Event()
         # #86: bereits beantwortete Event-IDs — verhindert Doppel-Antworten, wenn der
         # Server nach einem Netzfehler dieselben Events erneut liefert.
         self.seen_events = collections.deque(maxlen=200)
+
+    def _vom_dashboard(self, e):
+        """#90 Dock: Ist dieses Ereignis eine gespiegelte Dashboard-Eingabe des Owners?
+        Drei Bedingungen, alle hart: (1) nur im Owner-Chat — Agent-Räume nehmen keine
+        Dashboard-Eingaben an; (2) Absender ist unser eigenes Bot-Konto — niemand sonst
+        kann den Marker setzen, ohne den Bot-Token zu besitzen; (3) der Marker trägt Text."""
+        return (self.kind == "owner"
+                and e.get("sender") == self.user
+                and bool(((e.get("content") or {}).get(DASHBOARD_MARKER) or {}).get("text")))
 
     # ---------- Matrix-API ----------
     def api(self, path, timeout=90, method="GET", body=None):
@@ -924,10 +937,16 @@ class BotSession(threading.Thread):
                         pass
                 new = [e for e in events
                        if e.get("type") == "m.room.message"
-                       and e.get("sender") == OWNER
+                       and (e.get("sender") == OWNER or self._vom_dashboard(e))
                        and e["content"].get("body")
                        and e.get("event_id") not in self.seen_events    # #86: kein Doppel
                        and e.get("event_id") not in broker_antworten]
+                # #90 Dock: Dashboard-Eingaben tragen den Rohtext im Marker —
+                # den verarbeiten, nicht den 🖥️-Anzeigetext.
+                for e in new:
+                    m = (e.get("content") or {}).get(DASHBOARD_MARKER) or {}
+                    if m.get("text"):
+                        e["content"]["body"] = str(m["text"])
                 if new:
                     # Erst als gesehen verbuchen, dann antworten — liefert der Server die
                     # Events nach einem Netzfehler erneut, gibt es keine zweite Antwort.

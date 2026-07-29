@@ -81,11 +81,11 @@ Hinweis: Der Listener baut sich bei Änderung an `bots.json` selbst neu auf; fü
 | **1.8.1–1.8.2** | **Chat-Zeichen** — dezentes ✓/✎ statt Textfußzeile, im Dashboard erklärt; Antwort auf eine Rückfrage wird nicht mehr doppelt verarbeitet | ✅ live |
 | **1.8.3** | **#82 Netz-Isolation** — `net_guard.py`: Hostname auflösen, JEDE IP gegen privat/loopback/link-local prüfen; Playwright-Route-Wache auf **jede** Anfrage (Weiterleitungen!); Claudes WebFetch über den Hook. Geräte-Namen (fritz.box, pi.hole) hart gesperrt | ✅ live, 137 Tests |
 | **1.8.4/1.8.6** | **#18 Datenhygiene** — `retention.py`: Sessions 30 T, Logs 14, Audit 90, täglich automatisch; **keine Gesprächsinhalte mehr im Protokoll** (dort stand vorher jede Antwort); Dashboard: sehen/exportieren/löschen; Arbeitsordner auf 0700 | ✅ live |
-| **1.8.5** | **#84 Petra-Gate als Tests** — `dashboard/test_petra.py`, 11 Prüfungen der Einfachheits-Zusagen; Mutationstest bestanden (3 absichtliche Verstöße gefangen) | ✅ live, **152 Tests** |
+| **1.8.5** | **#84 Petra-Gate als Tests** — `dashboard/test_petra.py`, 11 Prüfungen der Einfachheits-Zusagen; Mutationstest bestanden (3 absichtliche Verstöße gefangen) | ✅ live, **166 Tests** |
 
 **Multi-LLM-Detail:** siehe Memory [[multi_llm_feature]]. **Wichtig:** Kein lokales Ollama-Modell auf dem MacBook (stürzt ab) — Kimi läuft über **Ollama-Cloud** (`ollama/kimi-k2.7-code:cloud`).
 
-Tests: **152 pytest grün** (Stand 1.8.6; 111 vor 1.7.1) (persona, hints, browser-readonly, wants_dashboard u. a.). Listener bleibt **stdlib-only** — harte Regel, `llm_runner.py`/Dashboard dürfen venv nutzen, `listener.py`/`providers.py`/`persona.py` NICHT.
+Tests: **166 pytest grün** (Stand 1.8.6; 111 vor 1.7.1) (persona, hints, browser-readonly, wants_dashboard u. a.). Listener bleibt **stdlib-only** — harte Regel, `llm_runner.py`/Dashboard dürfen venv nutzen, `listener.py`/`providers.py`/`persona.py` NICHT.
 
 ---
 

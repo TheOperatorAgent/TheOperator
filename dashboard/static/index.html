@@ -306,6 +306,28 @@
   </section>
 </main>
 <div id="toast" class="hidden"></div>
+
+<!-- Operator-Dock (#90): derselbe Chat wie auf dem Handy, immer zur Stelle.
+     Nachrichten werden AUSSCHLIESSLICH als Text gerendert (textContent) — nie als HTML. -->
+<button id="dock-toggle" title="Chat mit deinem Operator öffnen (derselbe wie auf dem Handy)">💬 Operator</button>
+<aside id="dock" class="zu" aria-label="Chat mit deinem Operator">
+  <div class="dock-kopf">
+    <span class="dock-titel">💬 Operator</span>
+    <span id="dock-status" class="dock-status">verbinde …</span>
+    <span class="dock-knoepfe">
+      <button id="dock-seite" class="dock-btn" title="Andocken: rechts → links → unten">⇄</button>
+      <button id="dock-zu" class="dock-btn" title="Einklappen (Esc)">✕</button>
+    </span>
+  </div>
+  <p class="dock-hinweis">Das ist dein echter Matrix-Chat — dein Handy zeigt dasselbe.
+    Vom Dashboard Gesendetes erscheint dort mit 🖥️.</p>
+  <div id="dock-verlauf" aria-live="polite"></div>
+  <div class="dock-eingabe">
+    <textarea id="dock-text" rows="1" placeholder="Nachricht an deinen Operator … (Enter sendet)"></textarea>
+    <button id="dock-senden" class="primary">➤</button>
+  </div>
+</aside>
+
 <script src="app.js"></script>
 </body>
 </html>

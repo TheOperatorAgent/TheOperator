@@ -32,6 +32,7 @@ import skills as skills_store       # noqa: E402
 import vault as vault_store         # noqa: E402
 import vaultwarden as vw_store       # noqa: E402  (optionales Vaultwarden-Backend)
 import secretstore                   # noqa: E402  (plattformübergreifender Secret-Store)
+import matrix_room                   # noqa: E402  (#90 Dock: Raum-Brücke, read-through)
 import servicemgr                    # noqa: E402  (Dienst-Status/Neustart je OS)
 import platform_compat               # noqa: E402  (Plattform-Abstraktion)
 import providers as providers_reg    # noqa: E402  (Multi-LLM-Provider-Registry)
@@ -345,6 +346,85 @@ def api_listener_restart():
     if not ok:
         return err("listener", "Neustart des Listener-Dienstes fehlgeschlagen", 500)
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- Operator-Dock (#90) --
+# Der Chat mit dem Operator im Dashboard. Kein eigener Speicher — read-through auf den
+# Matrix-Raum (matrix_room.py). Details/Bedrohungsmodell: Issues #91–#94.
+
+def _dock_origin_ok(request: Request) -> bool:
+    """CSRF-Wache: Schreibzugriffe nur aus dem Dashboard selbst. Eine fremde Webseite im
+    selben Browser kann 127.0.0.1 zwar erreichen, schickt dabei aber ihren eigenen Origin
+    mit — und fliegt hier raus. Kein Origin-Header (curl, ältere Clients) ist okay:
+    dann schützt weiterhin das Bearer-Token, das eine fremde Seite nicht kennt."""
+    origin = request.headers.get("origin", "")
+    if not origin:
+        return True
+    host = origin.split("://", 1)[-1]
+    return host in ALLOWED_HOSTS
+
+
+@app.get("/api/dock/verlauf")
+def api_dock_verlauf(limit: int = 50):
+    try:
+        eintraege = matrix_room.verlauf(min(max(int(limit), 1), 200))
+        return {"eintraege": eintraege, "sync": matrix_room.sync_start()}
+    except Exception:
+        return err("dock", "Keine Verbindung zum Chat-Server — läuft dein "
+                   "Matrix-Server? 👉 Tab System zeigt den Status.", 502)
+
+
+@app.get("/api/dock/stream")
+async def api_dock_stream(request: Request):
+    """Live-Nachschub per SSE. Auth läuft über den normalen Bearer-Header (fetch-Stream
+    im Frontend, kein EventSource) — der Token steht NIE in der URL, sonst läge er in
+    Server-Logs (Bedrohungsmodell #94.4)."""
+    try:
+        since = request.query_params.get("sync") or matrix_room.sync_start()
+    except Exception:
+        return err("dock", "Keine Verbindung zum Chat-Server", 502)
+
+    async def stream():
+        s = since
+        import asyncio
+        while True:
+            if await request.is_disconnected():
+                return
+            try:
+                # Long-Poll im Thread, damit uvicorn nicht blockiert.
+                neu, s2 = await asyncio.to_thread(matrix_room.neue_seit, s, 25000)
+                s = s2
+                for e in neu:
+                    yield "data: " + json.dumps(e, ensure_ascii=False) + "\n\n"
+                yield ": tick\n\n"   # Lebenszeichen, hält Proxies/Browser wach
+            except Exception:
+                yield "data: " + json.dumps({"wer": "system", "text": "getrennt"}) + "\n\n"
+                return
+
+    return StreamingResponse(stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache"})
+
+
+@app.post("/api/dock/senden")
+async def api_dock_senden(request: Request):
+    if not _dock_origin_ok(request):
+        audit("dashboard", "dock.senden", "origin-abgewiesen", ok=False)
+        return err("dock", "Anfrage kam nicht aus dem Dashboard", 403)
+    text = ((await request.json()).get("text") or "").strip()
+    if not text:
+        return err("dock", "Leere Nachricht", 400)
+    try:
+        event_id = matrix_room.senden_dashboard(text)
+    except ValueError as e:
+        return err("dock", "Nachricht zu lang (max. 8000 Zeichen)" if "lang" in str(e)
+                   else "Leere Nachricht", 400)
+    except Exception:
+        audit("dashboard", "dock.senden", ok=False)
+        return err("dock", "Senden fehlgeschlagen — keine Verbindung zum Chat-Server. "
+                   "👉 Tab System zeigt den Status.", 502)
+    # Audit ohne Inhalt (Log-Hygiene #18): nur dass gesendet wurde und wie viel.
+    audit("dashboard", "dock.senden", f"{len(text)} Zeichen")
+    return {"ok": True, "event_id": event_id}
 
 
 @app.get("/api/audit")
