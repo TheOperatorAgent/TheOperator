@@ -9,6 +9,7 @@ Ein Daemon, ein Thread je Matrix-Bot-Account:
 bots.json wird zur Laufzeit überwacht (mtime) — Publish/Unpublish greift ohne Neustart.
 100 % Python-Standardbibliothek (läuft auch ohne Dashboard-venv).
 """
+import collections
 import json
 import os
 import re
@@ -389,6 +390,9 @@ class BotSession(threading.Thread):
         self.room_enc = urllib.parse.quote(room_id)
         self.user_enc = urllib.parse.quote(user_id)
         self.stop_event = threading.Event()
+        # #86: bereits beantwortete Event-IDs — verhindert Doppel-Antworten, wenn der
+        # Server nach einem Netzfehler dieselben Events erneut liefert.
+        self.seen_events = collections.deque(maxlen=200)
 
     # ---------- Matrix-API ----------
     def api(self, path, timeout=90, method="GET", body=None):
@@ -547,6 +551,18 @@ class BotSession(threading.Thread):
         return prompt, tools, model, mapping, messages_p, None, None
 
     # ---------- Claude ----------
+    def record_direct(self, bodies, reply):
+        """#86: Direkt-Antworten (ohne Modell-Lauf) in den Verlauf schreiben, damit das
+        Modell bei Folgefragen den Austausch kennt. kind="chat", weil recent_dialog()
+        (Gesprächskontext) genau darauf filtert; model="direkt" kennzeichnet die Runde.
+        Fail-open, redact übernimmt sessions.record."""
+        if sessions_db:
+            try:
+                sessions_db.record(self.bot_name, "\n".join(bodies), reply, 0, 0,
+                                   kind="chat", model="direkt")
+            except Exception:
+                pass
+
     def answer(self, bodies, last_event_id):
         # Login-Kurzbefehl: »dashboard« → Ein-Klick-Link, ohne Claude-Lauf (nur für den Owner).
         if self.kind == "owner" and wants_dashboard(bodies):
@@ -556,6 +572,9 @@ class BotSession(threading.Thread):
                 f"{dashboard_link()}\n"
                 "Öffne ihn auf dem Rechner, auf dem dein Operator läuft — der Browser merkt "
                 "sich den Zugang danach dauerhaft, du musst das nur einmal machen.")
+            # Verlauf OHNE den Einmal-Link (Token gehört nicht in die durchsuchbare DB)
+            self.record_direct(bodies, "(Ich habe dem Nutzer einen Ein-Klick-Login-Link "
+                                       "zum lokalen Operator-Dashboard in den Chat geschickt.)")
             return
         prompt, tools, model, mapping, msg_rec, system, verify = self.build(bodies)
         self.mark_read(last_event_id)
@@ -565,6 +584,9 @@ class BotSession(threading.Thread):
                               "Sprachmodell geschickt. Prüfen oder (bewusst) deaktivieren: "
                               f"{dashboard_link()} — Einmal-Link, 10 Min gültig, funktioniert "
                               "auf dem Rechner, auf dem dein Operator läuft.")
+            self.record_direct(bodies, "(Pseudonymisierung war nicht verfügbar — Nachricht "
+                                       "wurde aus Datenschutzgründen NICHT ans Modell geschickt; "
+                                       "Nutzer wurde informiert.)")
             return
         self.execute(prompt, tools, model, msg_rec, kind="chat", mapping=mapping,
                      system=system, verify=verify)
@@ -839,8 +861,12 @@ class BotSession(threading.Thread):
                 new = [e for e in events
                        if e.get("type") == "m.room.message"
                        and e.get("sender") == OWNER
-                       and e["content"].get("body")]
+                       and e["content"].get("body")
+                       and e.get("event_id") not in self.seen_events]   # #86: kein Doppel
                 if new:
+                    # Erst als gesehen verbuchen, dann antworten — liefert der Server die
+                    # Events nach einem Netzfehler erneut, gibt es keine zweite Antwort.
+                    self.seen_events.extend(e["event_id"] for e in new)
                     self.answer([e["content"]["body"] for e in new], new[-1]["event_id"])
             except urllib.error.HTTPError as e:
                 if e.code == 401:

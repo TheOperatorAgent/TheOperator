@@ -1797,3 +1797,66 @@ def test_accept_owner_invites_only_owner(monkeypatch):
     assert any("!good" in p or "good" in p for p in calls["join"])   # good beigetreten
     assert not any("spam" in p for p in calls["join"])     # Fremd-Einladung NICHT beigetreten
     assert any("grp" in p for p in calls["leave"])         # Gruppenraum wieder verlassen
+
+
+# ---------------------------------------------------------------- #86 Verlauf/Dedup --
+def test_dashboard_intercept_records_history(monkeypatch, tmp_path):
+    """Kurzbefehl »dashboard« landet im Verlauf (kind=chat) — OHNE den OTT-Link."""
+    listener = _load_listener()
+    import sessions
+    monkeypatch.setattr(sessions, "DB", str(tmp_path / "s.db"))
+    monkeypatch.setattr(listener, "sessions_db", sessions)
+    monkeypatch.setattr(listener, "dashboard_link",
+                        lambda: "http://127.0.0.1:8738/#ott=deadbeef")
+    s = listener.BotSession("owner", "owner", "http://hs", "tok", "!r:hs", "@claude:hs")
+    sent = []
+    monkeypatch.setattr(s, "send_message", lambda text: sent.append(text))
+    monkeypatch.setattr(s, "mark_read", lambda eid: None)
+    s.answer(["dashboard"], "$evt1")
+    assert sent and "#ott=deadbeef" in sent[0]          # Link ging in den Chat …
+    rounds = sessions.recent_dialog("owner")
+    assert rounds, "Kurzbefehl-Runde fehlt im Verlauf"
+    msgs, reply = rounds[-1]
+    assert "dashboard" in msgs
+    assert "#ott=" not in reply                          # … aber NICHT in die DB
+    assert "Login-Link" in reply
+
+
+def test_pseudonym_fail_records_history(monkeypatch, tmp_path):
+    """Auch die Pseudonymisierungs-Ausfall-Meldung landet im Verlauf."""
+    listener = _load_listener()
+    import sessions
+    monkeypatch.setattr(sessions, "DB", str(tmp_path / "s.db"))
+    monkeypatch.setattr(listener, "sessions_db", sessions)
+    monkeypatch.setattr(listener, "dashboard_link", lambda: "http://x/#ott=abc")
+    s = listener.BotSession("owner", "owner", "http://hs", "tok", "!r:hs", "@claude:hs")
+    monkeypatch.setattr(s, "send_message", lambda text: None)
+    monkeypatch.setattr(s, "mark_read", lambda eid: None)
+    monkeypatch.setattr(s, "build", lambda bodies: (None, None, None, False, None, None, None))
+    s.answer(["was steht heute an?"], "$evt2")
+    rounds = sessions.recent_dialog("owner")
+    assert rounds and "Pseudonymisierung" in rounds[-1][1]
+    assert "#ott=" not in rounds[-1][1]
+
+
+def test_sync_event_dedup(monkeypatch):
+    """Dieselbe event_id ein zweites Mal im Sync → answer() läuft nur einmal (#86)."""
+    listener = _load_listener()
+    s = listener.BotSession("owner", "owner", "http://hs", "tok", "!r:hs", "@claude:hs")
+    owner = listener.OWNER or "@michi:hs"
+    monkeypatch.setattr(listener, "OWNER", owner)
+    calls = []
+    monkeypatch.setattr(s, "answer", lambda bodies, eid: calls.append(bodies))
+    batch = {"next_batch": "n2", "rooms": {"join": {s.room: {"timeline": {"events": [
+        {"type": "m.room.message", "sender": owner, "event_id": "$dup",
+         "content": {"body": "dashboard bitte"}}]}}}}}
+    # pop() nimmt von hinten: erst Start-Sync, dann ZWEIMAL derselbe Event-Batch —
+    # genau der Netzfehler-Fall, in dem der Server Events erneut liefert.
+    responses = [dict(batch), dict(batch), {"next_batch": "n0", "rooms": {}}]
+    monkeypatch.setattr(s, "api", lambda *a, **k: responses.pop() if responses else
+                        (_ for _ in ()).throw(SystemExit))
+    try:
+        s.run()
+    except SystemExit:
+        pass
+    assert len(calls) == 1, f"Doppel-Antwort: answer lief {len(calls)}x"
