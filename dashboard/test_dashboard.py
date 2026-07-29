@@ -3222,3 +3222,45 @@ def test_gedaechtnis_bewertung_hybrid_nicht_schlechter():
     if len(zahlen) == 2:                      # nur wenn ein Anbieter verfügbar ist
         ohne, mit = int(zahlen[0][0]), int(zahlen[1][0])
         assert mit >= ohne, f"Hybrid schlechter als reine Wortsuche ({mit} < {ohne})"
+
+
+# ------------------------------------------------ Windows-Installer (#112–#114) --
+def _ps1():
+    for p in ("/tmp/_diff_op/install.ps1", "/tmp/_rel10gh/install.ps1",
+              "/tmp/operator-site/public/install.ps1"):
+        if os.path.exists(p):
+            return open(p, encoding="utf-8").read()
+    import pytest
+    pytest.skip("install.ps1 nicht ausgecheckt")
+
+
+def test_windows_installer_ueberlebt_irm_iex():
+    """#112 (Blocker, erster echter Windows-Lauf 29.07.): Beim beworbenen Ein-Zeiler
+    »irm … | iex« läuft das Skript aus dem Speicher — $PSScriptRoot ist LEER und
+    Join-Path wirft. Die Installation starb in Phase 5, NACH der Matrix-Anmeldung:
+    Bot-Account und Raum existierten, auf dem Rechner lag nichts."""
+    s = _ps1()
+    assert "if ($PSScriptRoot) {" in s, "lokale Kopie wird ungeschützt geprüft"
+    kern = s.split("function Fetch-File")[1].split("\n}")[0]
+    i_guard = kern.index("if ($PSScriptRoot)")
+    i_join = kern.index("Join-Path $PSScriptRoot")
+    assert i_guard < i_join, "Join-Path läuft vor der Prüfung"
+
+
+def test_windows_installer_erkennt_store_attrappe():
+    """#113: Windows legt unter WindowsApps eine Attrappe namens python.exe ab, die nur
+    den Store öffnet. Sie wurde als Python akzeptiert (»[ok] Python: … ()« — leere
+    Version). Jeder Kandidat muss jetzt wirklich eine Versionsnummer liefern."""
+    s = _ps1()
+    kern = s.split("function Get-Py")[1].split("\n}")[0]
+    assert "WindowsApps" in kern, "Store-Attrappe wird nicht erkannt"
+    assert "sys.version_info" in kern, "Kandidat wird nicht wirklich ausgeführt"
+    assert "python.org" in kern and "PATH" in kern, "Fehlermeldung ohne nächsten Schritt"
+
+
+def test_windows_installer_gibt_umlaute_richtig_aus():
+    """#114: Ohne UTF-8-Ausgabe wird »für« zu »fÃ¼r« — das Erste, was ein Interessent sieht."""
+    s = _ps1()
+    assert "[Console]::OutputEncoding" in s
+    assert s.index("[Console]::OutputEncoding") < s.index("function Get-Py"), \
+        "Encoding wird zu spät gesetzt"

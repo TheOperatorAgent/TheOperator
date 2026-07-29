@@ -7,6 +7,12 @@
 # =============================================================================
 param([switch]$Uninstall)
 $ErrorActionPreference = "Stop"
+# Ohne das erscheinen Umlaute als »fÃ¼r« / »geprÃ¼ft« (Windows-Konsole nutzt sonst
+# eine Codepage, die unsere UTF-8-Texte falsch deutet).
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+    $OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {}
 
 $BotDir  = Join-Path $HOME ".claude\matrix-bot"
 $DashDir = Join-Path $BotDir "dashboard"
@@ -23,11 +29,30 @@ function Die($m)  { Write-Host "  [x] $m" -ForegroundColor Red; exit 1 }
 
 # Python-Launcher finden (py bevorzugt, sonst python)
 function Get-Py {
+    # Windows legt unter WindowsApps eine ATTRAPPE namens python.exe ab, die nur den
+    # Microsoft Store oeffnet. Get-Command findet sie — sie ist aber kein Python.
+    # Am 29.07. wurde sie akzeptiert und meldete eine leere Version; alles Weitere
+    # waere daran gescheitert. Deshalb: jeden Kandidaten wirklich AUSFUEHREN.
     foreach ($c in @("py", "python", "python3")) {
         $p = Get-Command $c -ErrorAction SilentlyContinue
-        if ($p) { return $p.Source }
+        if (-not $p) { continue }
+        if ($p.Source -like "*\WindowsApps\*") {
+            $probe = ""
+            try { $probe = (& $p.Source --version 2>$null | Out-String).Trim() } catch {}
+            if (-not $probe) { continue }        # Attrappe: keine Ausgabe
+        }
+        $ver = ""
+        try { $ver = (& $p.Source -c "import sys;print('%d.%d' % sys.version_info[:2])" 2>$null | Out-String).Trim() } catch {}
+        if ($ver -match '^\d+\.\d+$') { return $p.Source }
     }
-    Die "Python nicht gefunden — installiere Python 3 von https://python.org (Haken 'Add to PATH')"
+    Die @"
+Es wurde kein funktionierendes Python gefunden.
+Falls Windows gerade den Store geoeffnet hat: Das ist nur ein Platzhalter, kein Python.
+So geht es weiter:
+  1. https://www.python.org/downloads/ oeffnen und Python 3 herunterladen
+  2. Beim Installieren den Haken 'Add python.exe to PATH' setzen
+  3. PowerShell schliessen, neu oeffnen und diesen Befehl erneut ausfuehren
+"@
 }
 $Py = Get-Py
 
@@ -48,9 +73,15 @@ function Rand-Hex { & $Py -c "import secrets;print(secrets.token_hex(32))" }
 
 # Datei holen: lokal aus dem Skriptordner, sonst vom Repo
 function Fetch-File($rel, $dest) {
-    $local = Join-Path $PSScriptRoot $rel
-    if (Test-Path $local) { Copy-Item $local $dest -Force }
-    else { Invoke-WebRequest -Uri "$RepoRaw/$($rel -replace '\\','/')" -OutFile $dest -UseBasicParsing }
+    # Der Ein-Zeiler »irm ... | iex« fuehrt das Skript aus dem Speicher aus — dabei ist
+    # $PSScriptRoot LEER, und Join-Path wirft dann einen Fehler. Genau daran ist die
+    # Installation am 29.07. in Phase 5 abgebrochen. Lokale Kopie nur pruefen, wenn es
+    # ueberhaupt einen Skriptordner gibt.
+    if ($PSScriptRoot) {
+        $local = Join-Path $PSScriptRoot $rel
+        if (Test-Path $local) { Copy-Item $local $dest -Force; return }
+    }
+    Invoke-WebRequest -Uri "$RepoRaw/$($rel -replace '\\','/')" -OutFile $dest -UseBasicParsing
 }
 
 # Dienst als Task-Scheduler-Aufgabe (onlogon, Neustart bei Fehler ≈ KeepAlive)
