@@ -47,7 +47,15 @@ PERMISSION_MAP = {
     "planner":    {"read": ["Tasks.Read.All"],      "write": ["Tasks.ReadWrite.All"]},
     # Teams v1: nur Basisdaten; ChannelMessage.Read.All = Protected API, Senden app-only unmoeglich
     "teams":      {"read": ["Team.ReadBasic.All", "Channel.ReadBasic.All"], "write": []},
+    # #117 Status & Berichte: laeuft Microsoft ueberhaupt, was meldet das Message Center,
+    # wie viele Lizenzen sind belegt. Bewusst EIN Regler statt drei und bewusst
+    # ohne "Schreiben" — hier gibt es nichts zu veraendern.
+    "status":     {"read": ["ServiceHealth.Read.All", "Reports.Read.All",
+                            "Organization.Read.All"], "write": []},
 }
+
+# Dienste ohne sinnvollen Schreib-Regler (das Dashboard sperrt den Schalter)
+NUR_LESEN = tuple(k for k, v in PERMISSION_MAP.items() if not v["write"])
 
 
 def setup_client_id() -> str:

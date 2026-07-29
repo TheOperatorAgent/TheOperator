@@ -14,6 +14,18 @@ Prüfung. Tokens landen (MCP-Standard) in der `.mcp.json` bzw. deren env; darauf
 # fields[i]: key, label, secret(optional). build_entry() kennt die Templates je id.
 CATALOG = [
     {
+        # Sonderfall: braucht KEINE Nutzer-Angaben und keinen Login — deshalb wird dieser
+        # Eintrag beim Installieren gleich mit verdrahtet (Gitea #120). Native HTTP statt
+        # »npx mcp-remote«, damit auf einem Raspberry Pi kein Node.js nötig ist.
+        "id": "learn", "emoji": "📘", "label": "Microsoft Learn",
+        "desc": "Die echte Microsoft-Doku durchsuchen und zitieren, statt zu raten "
+                "(Suche, Volltext, Code-Beispiele).",
+        "homepage": "https://learn.microsoft.com/en-us/training/support/mcp",
+        "setup": "Nichts einzurichten — kein Konto, kein Schlüssel, keine Lizenz. "
+                 "Ist bei einer neuen Installation schon an.",
+        "fields": [],
+    },
+    {
         "id": "notion", "emoji": "📝", "label": "Notion",
         "desc": "Seiten & Datenbanken durchsuchen, lesen und anlegen.",
         "homepage": "https://github.com/makenotion/notion-mcp-server",
@@ -60,6 +72,10 @@ CATALOG = [
 
 _BY_ID = {c["id"]: c for c in CATALOG}
 
+# Der eine Eintrag, der bei jeder Installation vorbelegt wird (#120). Öffentlicher
+# Microsoft-Endpunkt ohne Anmeldung — hier landet also kein Geheimnis in der .mcp.json.
+LEARN_ENTRY = {"type": "http", "url": "https://learn.microsoft.com/api/mcp"}
+
 
 def get(cid):
     """Katalogeintrag per id (oder None)."""
@@ -84,6 +100,9 @@ def build_entry(cid, fields):
         miss = [k for k in keys if not f.get(k)]
         if miss:
             raise ValueError("Bitte ausfüllen: " + ", ".join(miss))
+
+    if cid == "learn":
+        return dict(LEARN_ENTRY)
 
     if cid == "notion":
         need("token")

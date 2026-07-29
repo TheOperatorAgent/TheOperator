@@ -414,10 +414,10 @@ phase3_questions() {
     echo "  Okay — nochmal von vorn (Enter übernimmt den bisherigen Wert)."
   done
   if [ "$BASH_OPTIN" = "ja" ]; then
-    ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
+    ALLOWED_TOOLS='["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n", "mcp__learn"]'
     TOOLS_TEXT="Du darfst Shell-Kommandos ausführen (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Kleine Aufgaben direkt erledigen; Unumkehrbares nur nach Rückfrage im Chat."
   else
-    ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
+    ALLOWED_TOOLS='["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n", "mcp__learn"]'
     TOOLS_TEXT="Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben."
   fi
   state_save   # Antworten (ohne Passwort) sichern — ein Abbruch kostet keine Neueingabe
@@ -601,9 +601,14 @@ if os.path.exists(p):
     except ValueError: pass
 data.setdefault("mcpServers", {})["m365"] = {"command": venv_py, "args": [os.path.join(bot, "mcp_m365.py")]}
 data["mcpServers"]["n8n"] = {"command": venv_py, "args": [os.path.join(bot, "mcp_n8n.py")]}
+# Microsoft Learn: oeffentliche Doku-Suche, kein Konto, kein Schluessel, keine Lizenz (#120).
+# Deshalb ab Werk an — der Operator raet dann nicht mehr ueber Microsoft-Themen.
+sys.path.insert(0, os.path.join(bot, "dashboard"))
+import mcp_catalog
+data["mcpServers"].setdefault("learn", dict(mcp_catalog.LEARN_ENTRY))
 open(p, "w").write(json.dumps(data, indent=1))
 PYMCP
-  ok "Standard-MCPs m365 + n8n registriert"
+  ok "Standard-MCPs m365 + n8n + learn registriert"
   mkdir -p "$WORKSPACE/.claude/skills"
   python3 - "$BOT_DIR" <<'PYSCOUT'
 import hashlib, json, os, sys

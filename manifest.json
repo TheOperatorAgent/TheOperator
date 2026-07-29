@@ -1,5 +1,5 @@
 {
- "version": "1.15.1",
+ "version": "1.16.0",
  "files": [
   {
    "src": "listener.py",
@@ -184,7 +184,7 @@
   {
    "src": "mcp_m365.py",
    "dst": "mcp_m365.py",
-   "sha256": "4599fd414c0b2f530e2d0bac468fed6f20e64d40f51e9147a79446ea61c49c7a"
+   "sha256": "c12a295d3c330b60999ce4ddd8e2b699446673139a8c6457d96dd22284e024ee"
   },
   {
    "src": "vault.py",
@@ -224,7 +224,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "bfe5a69e5a142bab891ececba5c9bb805114ee397153bdde01a5d82f05a46040"
+   "sha256": "f0361d0f8265ce10a3726f85018c73fa0f297755eaa2135a66c96357d5bc63c3"
   },
   {
    "src": "dashboard/tokens.py",
@@ -239,7 +239,7 @@
   {
    "src": "dashboard/m365_setup.py",
    "dst": "dashboard/m365_setup.py",
-   "sha256": "89d840bb05beedb70b605dd460111b1f2c1e7e9f9ccb62179e44b14feb1561b9"
+   "sha256": "33f861e79527c2db881f7f17b97f4b367ab660485775729042e26d4a4279168c"
   },
   {
    "src": "dashboard/google_auth.py",
@@ -254,7 +254,7 @@
   {
    "src": "dashboard/mcp_catalog.py",
    "dst": "dashboard/mcp_catalog.py",
-   "sha256": "d556b63b5b35e4e58fdc676e91b5e30bbac7f0378dd8f4fa1984481bed9ff3c1"
+   "sha256": "28693185dbf388319a51bf5595bad26058d4094483f7c4dc8c4bb09e8c67e2d4"
   },
   {
    "src": "dashboard/static/index.html",
@@ -264,7 +264,7 @@
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "f1b01d1a6ab269a1a400fbfeef0e066df1106c065af34e682bfa8d7c2155c4bc"
+   "sha256": "c26fe721d0a5e0eca65461aca3d85c6862d78dcff29938cb59042f1cc23f603d"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "9599debae673b5bcb946c2845e7f783d1b8e8f01289cadfa0e82cd44e9b54285"
+   "sha256": "46081fd90571a274160408ebc81fc91b78ffca4049d477998e3b6909ac245e05"
   }
  ]
 }

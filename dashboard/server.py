@@ -700,6 +700,29 @@ def api_m365_status():
     return m365_setup.status()
 
 
+@app.get("/api/m365/dienstzustand")
+def api_m365_dienstzustand():
+    """#117: Läuft Microsoft? Ampel je Dienst + offene Störungen, fürs Dashboard.
+
+    Bewusst tolerant: fehlt das Recht oder ist gar nichts verbunden, kommt keine
+    rote Fehlermeldung, sondern ein Satz, der sagt, was zu tun ist (Petra-Test)."""
+    import importlib
+    mcp_m365 = importlib.import_module("mcp_m365")
+    try:
+        c = mcp_m365.conn()
+        mcp_m365.require(c, "status", "read")
+        roh = mcp_m365.g(c, "GET", "/admin/serviceAnnouncement/healthOverviews")
+    except Exception as e:                       # Graph/Recht/Verbindung — alles gleich behandelt
+        return {"verfuegbar": False, "hinweis": str(e)[:300]}
+    dienste = []
+    for d in sorted(roh.get("value", []), key=lambda x: x.get("service", "")):
+        text, ampel = mcp_m365.zustand(d.get("status"))
+        dienste.append({"name": d.get("service", "?"), "text": text, "ampel": ampel,
+                        "ok": ampel == "🟢"})
+    return {"verfuegbar": True, "dienste": dienste,
+            "alles_gut": all(x["ok"] for x in dienste) if dienste else None}
+
+
 @app.post("/api/m365/auth/start")
 def api_m365_auth_start():
     try:

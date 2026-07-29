@@ -315,10 +315,10 @@ $Human = Ask-Loop "Deine eigene Matrix-ID (nur diese wird beantwortet)" "" {
 }
 $BashOptin = Ask-YesNo "Shell-Zugriff erlauben?" "nein"
 if ($BashOptin -eq "ja") {
-    $AllowedTools = '["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
+    $AllowedTools = '["Bash", "Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n", "mcp__learn"]'
     $ToolsText = "Du darfst Shell-Kommandos ausfuehren (Bash), Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Unumkehrbares nur nach Rueckfrage."
 } else {
-    $AllowedTools = '["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n"]'
+    $AllowedTools = '["Read", "WebFetch", "WebSearch", "Agent", "Skill", "mcp__m365", "mcp__n8n", "mcp__learn"]'
     $ToolsText = "Du darfst Dateien lesen, im Web recherchieren und an deine Agenten delegieren. Shell-Zugriff ist NICHT freigegeben."
 }
 
@@ -479,6 +479,33 @@ if ($dashOptin -eq "ja") {
     & $Py -c "import json;p=r'$BotDir\dashboard.json';d=json.load(open(p));d.setdefault('pseudonymize',{}).setdefault('enabled',False);json.dump(d,open(p,'w'),indent=1)"
     Install-Service "pseudonym" $VenvPy (Join-Path $BotDir "pseudonym_daemon.py")
     Ok "Datenschutz-Filter vorbereitet - dein Operator bietet dir gleich an, ihn einzuschalten"
+    # Standard-MCPs registrieren (#120). Fehlte auf Windows komplett: die Werkzeuge
+    # mcp__m365 / mcp__n8n standen in der Erlaubnisliste, waren aber nie eingetragen -
+    # der Operator hatte auf Windows also gar keine Microsoft-365-Werkzeuge.
+    # learn = oeffentliche Microsoft-Doku, kein Konto, kein Schluessel, keine Lizenz.
+    $McpPy = @'
+import json, os, sys
+bot = sys.argv[1]
+venv_py = os.path.join(bot, "dashboard", "venv", "Scripts", "python.exe")
+sys.path.insert(0, bot); sys.path.insert(0, os.path.join(bot, "dashboard"))
+import platform_compat, mcp_catalog
+p = os.path.join(platform_compat.workspace(), ".mcp.json")
+data = {"mcpServers": {}}
+if os.path.exists(p):
+    try: data = json.load(open(p))
+    except ValueError: pass
+s = data.setdefault("mcpServers", {})
+s["m365"] = {"command": venv_py, "args": [os.path.join(bot, "mcp_m365.py")]}
+s["n8n"] = {"command": venv_py, "args": [os.path.join(bot, "mcp_n8n.py")]}
+s.setdefault("learn", dict(mcp_catalog.LEARN_ENTRY))
+os.makedirs(os.path.dirname(p), exist_ok=True)
+open(p, "w").write(json.dumps(data, indent=1))
+'@
+    $McpTmp = Join-Path $env:TEMP ("op_mcp_" + [guid]::NewGuid().ToString("N") + ".py")
+    Set-Content -Path $McpTmp -Value $McpPy -Encoding ASCII
+    try { & $VenvPy $McpTmp $BotDir; Ok "Standard-MCPs m365 + n8n + learn registriert" }
+    catch { Warn "Standard-MCPs konnten nicht registriert werden - im Dashboard unter System nachtragen" }
+    finally { Remove-Item $McpTmp -ErrorAction SilentlyContinue }
     Ok "Dashboard oeffnen mit:  $VenvPy $DashDir\open.py"
 }
 

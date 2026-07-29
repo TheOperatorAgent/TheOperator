@@ -1,8 +1,9 @@
 {
-  "version": "1.15.1",
-  "date": "2026-07-29",
-  "highlights": [
-    "🎭 Der Datenschutz-Filter blockiert die Installation nicht mehr. Er startet aus, alles läuft sofort, und dein Operator bietet dir selbst an, ihn einzuschalten — »Datenschutz an« im Chat genügt. Läuft er auf deinem Rechner nicht, sagt er dir das ehrlich, statt dich mit einem stummen Assistenten sitzen zu lassen.",
-    "🪟 Windows: Die Visual-C++-Laufzeit für numpy und spaCy wird mitinstalliert — das war die Ursache für »DLL load failed while importing numpy_ops«."
-  ]
+ "version": "1.16.0",
+ "date": "2026-07-30",
+ "highlights": [
+  "📘 Dein Operator kennt jetzt die echte Microsoft-Doku. Statt zu raten, sucht er in learn.microsoft.com nach und nennt dir die Quelle — ohne Konto, ohne Schlüssel, ohne Lizenz. Ist ab Werk an.",
+  "🚦 Neu: »Status & Berichte«. Frag einfach »läuft Microsoft?« — der Operator zeigt dir eine Ampel je Dienst, offene Störungen, Meldungen aus dem Message Center, deine Lizenzen und wie viele Leute welchen Dienst nutzen. Reines Nachschauen, es gibt hier nichts zu verändern.",
+  "🪟 Windows-Fehler behoben: Die Microsoft-365-Werkzeuge waren auf Windows in der Erlaubnisliste, wurden aber nie registriert — dein Operator konnte dort also gar nicht auf Mail und Kalender zugreifen. Ab dieser Fassung passiert das beim Installieren automatisch."
+ ]
 }

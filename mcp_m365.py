@@ -35,7 +35,28 @@ GRAPH = "https://graph.microsoft.com/v1.0"
 mcp = FastMCP("m365")
 
 DIENST_DE = {"mail": "Mail", "calendar": "Kalender", "onedrive": "OneDrive",
-             "sharepoint": "SharePoint", "planner": "Planner", "teams": "Teams"}
+             "sharepoint": "SharePoint", "planner": "Planner", "teams": "Teams",
+             "status": "Status & Berichte"}
+
+# Graph-Zustand -> Klartext + Ampel (#117). Microsoft liefert englische CamelCase-Werte.
+ZUSTAND_DE = {
+    "serviceOperational": ("läuft normal", "🟢"),
+    "investigating": ("Microsoft untersucht etwas", "🟡"),
+    "restoringService": ("Wiederherstellung läuft", "🟡"),
+    "verifyingService": ("Microsoft prüft die Behebung", "🟡"),
+    "serviceRestored": ("wieder hergestellt", "🟢"),
+    "postIncidentReviewPublished": ("Nachbericht veröffentlicht", "🟢"),
+    "serviceDegradation": ("eingeschränkt", "🔴"),
+    "serviceInterruption": ("Störung", "🔴"),
+    "extendedRecovery": ("erholt sich noch", "🟡"),
+    "falsePositive": ("Fehlalarm", "🟢"),
+    "investigationSuspended": ("Untersuchung ausgesetzt", "🟡"),
+}
+
+
+def zustand(wert):
+    """Graph-Zustand in Klartext + Ampel — unbekannte Werte werden durchgereicht."""
+    return ZUSTAND_DE.get(wert, (wert or "unbekannt", "⚪"))
 
 
 def conn():
@@ -273,6 +294,117 @@ def teams_list() -> str:
             continue
     audit("teams_list", "")
     return "\n".join(out) or "(keine Teams)"
+
+
+# ---------------------------------------------------------- Status & Berichte (#117) --
+# Alles hier ist reines Nachschauen: es gibt keinen Schreib-Regler, und es geht ohne
+# den delegierten Anmeldeweg (app-only reicht). Deshalb der erste Ausbau-Schritt.
+
+
+@mcp.tool()
+def m365_status() -> str:
+    """Läuft Microsoft überhaupt? Zustand aller abonnierten Dienste (Exchange, Teams,
+    SharePoint …) mit Ampel. Nutze das, wenn der Nutzer fragt, ob etwas gestört ist,
+    oder wenn ein anderes M365-Werkzeug unerwartet scheitert."""
+    c = conn(); require(c, "status", "read")
+    res = g(c, "GET", "/admin/serviceAnnouncement/healthOverviews")
+    audit("m365_status", "")
+    zeilen = []
+    for d in sorted(res.get("value", []), key=lambda x: x.get("service", "")):
+        text, ampel = zustand(d.get("status"))
+        zeilen.append(f"{ampel} {d.get('service', '?')}: {text}")
+    if not zeilen:
+        return "(keine Dienste gemeldet)"
+    schlecht = [z for z in zeilen if not z.startswith("🟢")]
+    kopf = "Alles läuft normal." if not schlecht else f"{len(schlecht)} Dienst(e) nicht normal."
+    return kopf + "\n" + "\n".join(zeilen)
+
+
+@mcp.tool()
+def m365_stoerungen(tage: int = 7) -> str:
+    """Offene und kürzlich behobene Störungen der letzten Tage (mit Microsoft-Kennung
+    wie MO123456), damit man dem Nutzer sagen kann, was los ist."""
+    c = conn(); require(c, "status", "read")
+    seit = time.strftime("%Y-%m-%dT00:00:00Z",
+                         time.gmtime(time.time() - max(tage, 1) * 86400))
+    res = g(c, "GET", "/admin/serviceAnnouncement/issues"
+                      f"?$filter=lastModifiedDateTime ge {seit}"
+                      "&$select=id,title,service,classification,status,startDateTime,isResolved"
+                      "&$orderby=lastModifiedDateTime desc&$top=25")
+    audit("m365_stoerungen", str(tage))
+    eintraege = res.get("value", [])
+    if not eintraege:
+        return f"Keine Störungen in den letzten {tage} Tagen."
+    out = []
+    for e in eintraege:
+        text, ampel = zustand(e.get("status"))
+        erledigt = "erledigt" if e.get("isResolved") else "OFFEN"
+        out.append(f"{ampel} [{e.get('id', '?')}] {e.get('service', '?')} · {erledigt} · {text}\n"
+                   f"    {e.get('title', '')} (seit {str(e.get('startDateTime', ''))[:16]})")
+    return "\n".join(out)
+
+
+@mcp.tool()
+def m365_meldungen(tage: int = 14) -> str:
+    """Nachrichten aus dem Message Center — was Microsoft an Änderungen ankündigt
+    (neue Funktionen, Umstellungen, Handlungsbedarf)."""
+    c = conn(); require(c, "status", "read")
+    seit = time.strftime("%Y-%m-%dT00:00:00Z",
+                         time.gmtime(time.time() - max(tage, 1) * 86400))
+    res = g(c, "GET", "/admin/serviceAnnouncement/messages"
+                      f"?$filter=lastModifiedDateTime ge {seit}"
+                      "&$select=id,title,category,severity,actionRequiredByDateTime,services"
+                      "&$orderby=lastModifiedDateTime desc&$top=25")
+    audit("m365_meldungen", str(tage))
+    eintraege = res.get("value", [])
+    if not eintraege:
+        return f"Keine neuen Meldungen in den letzten {tage} Tagen."
+    out = []
+    for e in eintraege:
+        frist = str(e.get("actionRequiredByDateTime") or "")[:10]
+        out.append(f"[{e.get('id', '?')}] {e.get('category', '')} · {e.get('severity', '')}"
+                   + (f" · Handlungsbedarf bis {frist}" if frist else "")
+                   + f"\n    {e.get('title', '')}")
+    return "\n".join(out)
+
+
+@mcp.tool()
+def m365_lizenzen() -> str:
+    """Welche Microsoft-Lizenzen sind gekauft und wie viele davon sind belegt?
+    Zeigt auch, wo es knapp wird."""
+    c = conn(); require(c, "status", "read")
+    res = g(c, "GET", "/subscribedSkus?$select=skuPartNumber,prepaidUnits,consumedUnits,capabilityStatus")
+    audit("m365_lizenzen", "")
+    out = []
+    for s in res.get("value", []):
+        if s.get("capabilityStatus") not in (None, "Enabled", "Warning"):
+            continue
+        gekauft = (s.get("prepaidUnits") or {}).get("enabled", 0)
+        belegt = s.get("consumedUnits", 0)
+        frei = gekauft - belegt
+        knapp = " ⚠️ knapp" if gekauft and frei <= 0 else ""
+        out.append(f"{s.get('skuPartNumber', '?')}: {belegt}/{gekauft} belegt, {frei} frei{knapp}")
+    return "\n".join(out) or "(keine Lizenzen gefunden)"
+
+
+@mcp.tool()
+def m365_nutzung(tage: int = 7) -> str:
+    """Wie viele Leute haben Exchange, Teams, SharePoint und OneDrive zuletzt genutzt?
+    Grober Überblick, keine Einzelpersonen."""
+    c = conn(); require(c, "status", "read")
+    zeitraum = {7: "D7", 30: "D30", 90: "D90", 180: "D180"}.get(tage, "D7")
+    # Diese Berichte liefern von Haus aus CSV — $format erzwingt JSON.
+    res = g(c, "GET", f"/reports/getOffice365ActiveUserCounts(period='{zeitraum}')"
+                      "?$format=application/json")
+    audit("m365_nutzung", zeitraum)
+    reihen = res.get("value", [])
+    if not reihen:
+        return "(keine Nutzungsdaten — Berichte brauchen bei Microsoft ein bis zwei Tage)"
+    r = reihen[0]
+    felder = [("exchange", "Exchange"), ("teams", "Teams"),
+              ("sharePoint", "SharePoint"), ("oneDrive", "OneDrive"), ("yammer", "Viva Engage")]
+    zeilen = [f"{label}: {r[k]} aktive Nutzer" for k, label in felder if r.get(k) is not None]
+    return f"Zeitraum {zeitraum}, Stand {r.get('reportDate', '?')}\n" + "\n".join(zeilen)
 
 
 if __name__ == "__main__":

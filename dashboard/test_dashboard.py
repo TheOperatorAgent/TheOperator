@@ -1175,9 +1175,14 @@ def _catalog():
 
 def test_mcp_catalog_has_expected_integrations():
     ids = {c["id"] for c in _catalog().public_catalog()}
-    assert {"notion", "homeassistant", "obsidian", "calendar"} <= ids
+    assert {"notion", "homeassistant", "obsidian", "calendar", "learn"} <= ids
+    # »learn« ist der einzige Eintrag ohne Eingabefelder — er braucht weder Konto noch
+    # Schlüssel und ist deshalb ab Werk verdrahtet (#120). Jeder ANDERE Eintrag muss
+    # sagen, was er vom Nutzer braucht, sonst wäre die Karte nicht bedienbar.
+    ohne_felder = {"learn"}
     for c in _catalog().public_catalog():
-        assert c["label"] and c["homepage"].startswith("http") and c["fields"]
+        assert c["label"] and c["homepage"].startswith("http")
+        assert bool(c["fields"]) is (c["id"] not in ohne_felder), c["id"]
 
 
 def test_mcp_catalog_build_notion():
@@ -3415,3 +3420,120 @@ def test_operator_bietet_datenschutz_an():
     teil = src.split("def datenschutz_angebot")[1].split("\ndef ")[0]
     assert "selftest" in teil, "verspricht etwas, ohne es geprüft zu haben"
     assert "datenschutz-angebot.json" in teil, "würde bei jedem Tick nerven"
+
+
+# ------------------------------------------- #120 Microsoft Learn als Standard-MCP --
+def test_learn_mcp_braucht_keine_angaben_und_kein_geheimnis():
+    """Der einzige Katalog-Eintrag, der ab Werk an ist — deshalb darf er nichts
+    verlangen und nichts Geheimes in die .mcp.json schreiben."""
+    import mcp_catalog
+    eintrag = mcp_catalog.get("learn")
+    assert eintrag and eintrag["fields"] == [], "Learn darf keine Eingaben fordern"
+    gebaut = mcp_catalog.build_entry("learn", {})
+    assert gebaut == {"type": "http", "url": "https://learn.microsoft.com/api/mcp"}
+    assert "env" not in gebaut, "kein Schlüssel, kein Token — sonst wäre es kein Standard"
+
+
+def test_learn_mcp_ohne_node_erreichbar():
+    """Bewusst nativ per HTTP statt »npx mcp-remote«: auf einem Raspberry Pi ist
+    Node.js nicht garantiert da, und ein Standard-MCP darf nichts nachinstallieren."""
+    import mcp_catalog
+    gebaut = mcp_catalog.build_entry("learn", {})
+    assert "command" not in gebaut and "args" not in gebaut, "würde npx/node brauchen"
+
+
+def test_installer_verdrahtet_learn_ab_werk():
+    """#120: Bei einer frischen Installation soll Learn schon an sein — sonst raten
+    wir weiter über Microsoft-Themen, obwohl die echte Doku gratis erreichbar ist."""
+    for pfad in ("/tmp/_diff_op/install.sh", "/tmp/_diff_op/install.ps1"):
+        if not os.path.exists(pfad):
+            continue
+        src = open(pfad, encoding="utf-8").read()
+        assert "LEARN_ENTRY" in src, f"{pfad} verdrahtet Learn nicht"
+        assert "mcp__learn" in src, f"{pfad} erlaubt die Learn-Werkzeuge nicht"
+        assert 'setdefault("learn"' in src, \
+            f"{pfad} überschreibt eine bestehende Nutzer-Einstellung"
+
+
+def test_windows_installer_registriert_standard_mcps():
+    """Realer Paritätsfehler (29.07.): install.ps1 hat die .mcp.json NIE geschrieben —
+    mcp__m365 stand in der Erlaubnisliste, der Server war aber nicht eingetragen.
+    Auf Windows hatte der Operator damit gar keine Microsoft-365-Werkzeuge."""
+    s = _ps1()
+    assert ".mcp.json" in s, "install.ps1 schreibt die MCP-Konfiguration nicht"
+    for name in ('s["m365"]', 's["n8n"]', 'setdefault("learn"'):
+        assert name in s, f"install.ps1 registriert {name} nicht"
+
+
+# --------------------------------------------- #117 Status & Berichte (M365-Health) --
+def _mcp_m365():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import mcp_m365
+    return mcp_m365
+
+
+def test_status_dienst_hat_keinen_schreibregler():
+    """Reines Nachschauen — ein »Schreiben«-Regler wäre eine Lüge und würde Rechte
+    verlangen, die niemand braucht."""
+    assert m365_setup.PERMISSION_MAP["status"]["write"] == []
+    assert "status" in m365_setup.NUR_LESEN and "teams" in m365_setup.NUR_LESEN
+    werte = m365_setup.matrix_to_values({"status": {"read": True, "write": True}})
+    assert "ServiceHealth.Read.All" in werte
+    assert not any(w.endswith("ReadWrite.All") for w in werte), werte
+
+
+def test_status_regler_aus_heisst_kein_zugriff():
+    """Der Regler ist die Wahrheit: ohne ihn muss jedes Status-Werkzeug abbrechen —
+    und die Meldung muss den Reglernamen nennen, nicht einen Graph-Fehlercode."""
+    import pytest
+    mcp_m365 = _mcp_m365()
+    with pytest.raises(RuntimeError) as e:
+        mcp_m365.require({"permissions": {"status": {"read": False}}}, "status", "read")
+    assert "Status & Berichte" in str(e.value) and "Lesen" in str(e.value)
+    mcp_m365.require({"permissions": {"status": {"read": True}}}, "status", "read")
+
+
+def test_zustand_uebersetzt_und_bleibt_bei_unbekanntem_ehrlich():
+    """Microsoft kann jederzeit neue Zustandswerte einführen. Dann darf nichts
+    verschluckt und nichts erfunden werden — der Rohwert wird durchgereicht."""
+    mcp_m365 = _mcp_m365()
+    assert mcp_m365.zustand("serviceOperational") == ("läuft normal", "🟢")
+    assert mcp_m365.zustand("serviceInterruption")[1] == "🔴"
+    assert mcp_m365.zustand("investigating")[1] == "🟡"
+    assert mcp_m365.zustand("brandNeuerWert") == ("brandNeuerWert", "⚪")
+    assert mcp_m365.zustand(None) == ("unbekannt", "⚪")
+
+
+def test_status_werkzeuge_lesen_die_richtigen_graph_pfade():
+    """Wächter gegen stille Pfad-Fehler: die fünf Werkzeuge müssen genau die
+    dokumentierten Endpunkte treffen (sonst schlägt es erst beim Kunden fehl)."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
+    for pfad in ("/admin/serviceAnnouncement/healthOverviews",
+                 "/admin/serviceAnnouncement/issues",
+                 "/admin/serviceAnnouncement/messages",
+                 "/subscribedSkus",
+                 "/reports/getOffice365ActiveUserCounts"):
+        assert pfad in src, f"{pfad} fehlt"
+    assert "$format=application/json" in src, \
+        "die Report-Endpunkte liefern sonst CSV — das würde der Parser nicht verstehen"
+
+
+def test_status_kachel_blockiert_den_tab_nicht():
+    """Eine langsame Microsoft-Antwort darf den ganzen Microsoft-Tab nicht aufhalten:
+    die Ampel wird NACH dem Rendern getrennt geladen und Fehler bleiben lokal."""
+    js = open(os.path.expanduser(
+        "~/.claude/matrix-bot/dashboard/static/app.js"), encoding="utf-8").read()
+    teil = js.split("async function loadM365Zustand()")[1].split("\nasync function ")[0]
+    assert "catch" in teil, "ein Fehler würde den Tab zerreißen"
+    assert "👉" in teil, "ohne Recht muss der nächste Schritt dastehen (Petra-Test)"
+    assert "esc(" in teil, "Microsoft-Text ungeprüft ins HTML wäre eine XSS-Lücke"
+
+
+def test_status_route_wird_ohne_recht_nicht_rot():
+    """Fehlt das Recht, ist das kein Fehler, sondern ein Hinweis — sonst sieht der
+    Nutzer eine rote Meldung für etwas, das er selbst in zwei Klicks einschalten kann."""
+    src = open(os.path.expanduser(
+        "~/.claude/matrix-bot/dashboard/server.py")).read()
+    teil = src.split("def api_m365_dienstzustand()")[1].split("\n@app.")[0]
+    assert '"verfuegbar": False' in teil and "hinweis" in teil
+    assert "err(" not in teil, "würde als Fehler statt als Hinweis ankommen"

@@ -810,7 +810,10 @@ const M365_SERVICES = [
   ["mail", "Mail", ""], ["calendar", "Kalender", ""], ["onedrive", "OneDrive", ""],
   ["sharepoint", "SharePoint", ""], ["planner", "Planner", ""],
   ["teams", "Teams", "Nur Basisdaten (Teams/Kanäle). Nachrichten lesen = von Microsoft geschützte API, Senden app-seitig nicht möglich."],
+  ["status", "Status & Berichte", "Läuft Microsoft? Störungen, Meldungen aus dem Message Center, Lizenzen, Nutzung. Reines Nachschauen — hier gibt es nichts zu verändern."],
 ];
+// Dienste ohne sinnvollen Schreib-Regler (spiegelt m365_setup.NUR_LESEN)
+const M365_NUR_LESEN = ["teams", "status"];
 async function loadM365() {
   const s = await api("GET", "/api/m365/status");
   const c = $("#m365-content");
@@ -858,10 +861,13 @@ async function loadM365() {
          </div>
          <button class="primary" onclick="m365Login()">Als Admin anmelden</button>`}
     </div>
+    <div class="card"><h2>Microsoft-Status</h2>
+      <div id="m365-zustand"><p class="hint">wird geladen …</p></div>
+    </div>
     <div class="card"><h2>Berechtigungen je Dienst</h2>
       ${M365_SERVICES.map(([k, label, note]) => {
         const p = perms[k] || { read: false, write: false };
-        const noWrite = k === "teams";
+        const noWrite = M365_NUR_LESEN.includes(k);
         return `<div class="svc"><div><div class="name">${label}</div>${note ? `<div class="note">${note}</div>` : ""}</div>
           <div class="toggles">
             <label class="switch"><input type="checkbox" data-svc="${k}" data-mode="read" ${p.read ? "checked" : ""}>Lesen</label>
@@ -876,6 +882,32 @@ async function loadM365() {
       „Schreiben" erlaubt automatisch auch „Lesen". Schaltest du einen Regler wieder AUS,
       wird das Recht bei Microsoft <strong>wirklich entzogen</strong> — nicht nur versteckt.</p>
     </div>`;
+  loadM365Zustand();
+}
+// #117: Ampel je Microsoft-Dienst. Läuft absichtlich NACH dem Rendern und getrennt —
+// eine langsame oder fehlende Microsoft-Antwort darf den ganzen Tab nicht blockieren.
+async function loadM365Zustand() {
+  const box = $("#m365-zustand");
+  if (!box) return;
+  try {
+    const z = await api("GET", "/api/m365/dienstzustand");
+    if (!z.verfuegbar) {
+      box.innerHTML = `<p class="hint">Noch kein Einblick in den Microsoft-Status.
+        👉 Schalte oben <strong>„Status &amp; Berichte → Lesen"</strong> ein und klicke
+        auf <strong>„Rechte aktualisieren"</strong>.</p>
+        <p class="small mono">${esc(z.hinweis || "")}</p>`;
+      return;
+    }
+    const kopf = z.alles_gut === null ? "Microsoft meldet keine Dienste."
+      : z.alles_gut ? "🟢 Alles läuft normal."
+        : "Nicht alles läuft normal — die Zeilen unten zeigen, wo.";
+    box.innerHTML = `<p class="small" style="margin:2px 0 8px"><strong>${esc(kopf)}</strong></p>`
+      + z.dienste.map((d) => `<div class="agent-row" style="padding:6px 14px">
+           <div>${esc(d.ampel)} <strong>${esc(d.name)}</strong></div>
+           <span class="small">${esc(d.text)}</span></div>`).join("");
+  } catch (e) {
+    box.innerHTML = `<p class="hint">Status gerade nicht abrufbar: ${esc(friendlyError(e))}</p>`;
+  }
 }
 async function saveM365Cid() {
   try { await api("PUT", "/api/m365/setup-client", { client_id: $("#m365-cid").value.trim() }); toast("Gespeichert"); loadM365(); }
