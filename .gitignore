@@ -44,3 +44,31 @@ dashboard/venv/
 # Backups des Updaters
 *.bak
 *.tmp
+
+# Python tooling
+.coverage
+coverage/
+htmlcov/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+*.egg
+dist/
+build/
+*.whl
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# CI artifacts
+ci-artifacts/
