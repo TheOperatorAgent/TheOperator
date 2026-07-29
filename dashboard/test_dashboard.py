@@ -2278,3 +2278,54 @@ def test_retention_is_stdlib_only():
     imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
                if isinstance(n, ast.Import) for a in n.names}
     assert imports <= {"json", "os", "time", "sqlite3", "sys"}
+
+
+# ------------------------------------------------ Browser: Dashboard vs. Agent-Surfen --
+def test_open_url_meldet_fehlenden_bildschirm(monkeypatch):
+    """Auf einem Linux-Rechner ohne Bildschirm (per SSH auf dem Pi) darf open_url nicht
+    stumm 'erfolgreich' melden — sonst denkt open.py, das Dashboard sei aufgegangen."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import platform_compat as pc
+    monkeypatch.setattr(pc, "IS_WIN", False)
+    monkeypatch.setattr(pc, "IS_MAC", False)
+    monkeypatch.delenv("DISPLAY", raising=False)
+    monkeypatch.delenv("WAYLAND_DISPLAY", raising=False)
+    assert pc.open_url("http://127.0.0.1:8737/") is False
+    monkeypatch.setenv("DISPLAY", ":0")
+    monkeypatch.setattr("webbrowser.open", lambda *_a, **_k: True)
+    assert pc.open_url("http://127.0.0.1:8737/") is True
+
+
+def test_open_py_erklaert_ssh_tunnel_statt_stumm_zu_scheitern():
+    """Ohne Bildschirm muss open.py den Weg zum Dashboard erklären (SSH-Tunnel),
+    nicht einfach nichts tun — sonst kommt niemand auf dem Pi ans Dashboard."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/open.py")).read()
+    assert "ssh -N -L" in src
+    assert "if platform_compat.open_url(url)" in src
+
+
+def test_installer_richtet_surf_browser_ein():
+    """Playwright bringt nicht für jede Architektur ein Chromium mit (ARM/Raspberry Pi).
+    Der Installer muss es holen UND einen Rückfall auf System-Chromium haben."""
+    src = ""
+    for kandidat in ("/tmp/_diff_op/install.sh", "/tmp/_rel10gh/install.sh",
+                     "/tmp/operator-site/public/install.sh",
+                     os.path.expanduser("~/.claude/matrix-bot/install.sh")):
+        if os.path.exists(kandidat):
+            src = open(kandidat).read()
+            break
+    if not src:
+        import pytest
+        pytest.skip("Keine install.sh zum Prüfen gefunden (Auslieferungs-Repo nicht ausgecheckt)")
+    assert "install_agent_browser" in src
+    assert "playwright" in src and "install chromium" in src
+    assert "chromium-browser" in src            # Rückfall auf vorhandenes System-Chromium
+    assert "browser_path.txt" in src
+
+
+def test_llm_runner_nutzt_system_chromium_als_rueckfall():
+    src = open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py")).read()
+    assert "_system_chromium" in src
+    assert "executable_path=" in src
+    # Die Fehlermeldung darf den Nutzer nicht glauben lassen, sein Dashboard sei kaputt.
+    assert "Dashboard" in src.split("Executable doesn't exist")[1][:400]
