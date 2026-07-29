@@ -570,6 +570,9 @@ phase5_files() {
   # VERSION mitliefern (fürs Self-Update #64; manifest.json/updates.json holt der Updater live)
   if [ -f "$SCRIPT_DIR/VERSION" ]; then cp "$SCRIPT_DIR/VERSION" "$BOT_DIR/VERSION"
   else curl -fsSL "$REPO_RAW/VERSION" -o "$BOT_DIR/VERSION" 2>/dev/null || true; fi
+  # Update-Quelle hinterlegen: der Updater (updater.py) aktualisiert aus DERSELBEN Quelle,
+  # aus der installiert wurde (GitHub bei Website-Installationen, Gitea intern bei uns).
+  printf '%s' "$REPO_RAW" > "$BOT_DIR/repo_raw.txt"
   mkdir -p "$BOT_DIR/workspace/.claude/agents"
   local AGENTS="recherche schreiber"
   [ "$BASH_OPTIN" = "ja" ] && AGENTS="$AGENTS sysadmin"

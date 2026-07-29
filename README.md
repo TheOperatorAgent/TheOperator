@@ -30,12 +30,12 @@ Ein Befehl — passend zu deinem Betriebssystem:
 
 **macOS / Linux** (Terminal):
 ```bash
-curl -fsSL http://192.168.178.53:3000/root/the-operator/raw/branch/main/install.sh | bash
+curl -fsSL https://operator.bayern/install.sh | bash
 ```
 
 **Windows** (PowerShell):
 ```powershell
-irm http://192.168.178.53:3000/root/the-operator/raw/branch/main/install.ps1 | iex
+irm https://operator.bayern/install.ps1 | iex
 ```
 
 Der Wizard führt durch alles:

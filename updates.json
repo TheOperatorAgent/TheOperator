@@ -1,8 +1,8 @@
 {
-  "version": "1.7.3",
-  "date": "2026-07-28",
+  "version": "1.7.4",
+  "date": "2026-07-29",
   "highlights": [
-    "🧠 Kein Gedächtnis-Loch mehr: Auch Kurzbefehl-Antworten (z. B. der Dashboard-Login-Link) landen jetzt im Gesprächsverlauf — Folgefragen wie »öffne es in Chrome« versteht der Operator sofort.",
-    "🔁 Keine Doppel-Antworten mehr nach Netzwerk-Aussetzern: Nachrichten werden jetzt eindeutig nur einmal beantwortet."
+    "🚀 Launch-fertig: Wer über operator.bayern installiert, bekommt Updates künftig automatisch aus derselben öffentlichen Quelle (GitHub) — das Update-Banner funktioniert damit für alle.",
+    "📄 Öffentliche Install-Befehle in der Anleitung (operator.bayern statt interner Adressen)."
   ]
 }

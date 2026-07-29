@@ -266,6 +266,8 @@ $core = @("listener.py","send.py","memory.py","skills.py","sessions.py","cron_ru
           "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py","persona.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py","updater.py","audit_log.py")
 foreach ($f in $core) { Fetch-File $f (Join-Path $BotDir $f); Ok "$f" }
 try { Fetch-File "VERSION" (Join-Path $BotDir "VERSION") } catch {}   # Self-Update #64
+# Update-Quelle hinterlegen: Updater zieht aus derselben Quelle wie die Installation
+Set-Content -Path (Join-Path $BotDir "repo_raw.txt") -Value $RepoRaw -NoNewline
 $agents = @("recherche","schreiber"); if ($BashOptin -eq "ja") { $agents += "sysadmin" }
 foreach ($a in $agents) {
     $dest = Join-Path $BotDir "workspace\.claude\agents\$a.md"

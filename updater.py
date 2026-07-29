@@ -20,9 +20,26 @@ import urllib.request
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 sys.path.insert(0, BOT_DIR)
-REPO_RAW = os.environ.get(
-    "OPERATOR_REPO_RAW",
-    "http://192.168.178.53:3000/root/the-operator/raw/branch/main")
+RAW_FILE = os.path.join(BOT_DIR, "repo_raw.txt")   # vom Installer geschrieben
+
+
+def _load_repo_raw():
+    """Update-Quelle: 1. Env-Override, 2. vom Installer hinterlegte Quelle
+    (repo_raw.txt — so aktualisieren Website-/GitHub-Installationen aus GitHub),
+    3. Standard-Repo."""
+    env = os.environ.get("OPERATOR_REPO_RAW")
+    if env:
+        return env.rstrip("/")
+    try:
+        saved = open(RAW_FILE).read().strip()
+        if saved.startswith(("http://", "https://")):
+            return saved.rstrip("/")
+    except OSError:
+        pass
+    return "http://192.168.178.53:3000/root/the-operator/raw/branch/main"
+
+
+REPO_RAW = _load_repo_raw()
 VERSION_FILE = os.path.join(BOT_DIR, "VERSION")
 TIMEOUT = 20
 

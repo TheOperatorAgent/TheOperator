@@ -1860,3 +1860,21 @@ def test_sync_event_dedup(monkeypatch):
     except SystemExit:
         pass
     assert len(calls) == 1, f"Doppel-Antwort: answer lief {len(calls)}x"
+
+
+def test_updater_repo_raw_resolution(monkeypatch, tmp_path):
+    """#13-Launch: Updater zieht aus der Quelle der Installation (repo_raw.txt),
+    Env-Override gewinnt, sonst Standard-Repo."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import updater
+    monkeypatch.setattr(updater, "RAW_FILE", str(tmp_path / "repo_raw.txt"))
+    monkeypatch.delenv("OPERATOR_REPO_RAW", raising=False)
+    assert updater._load_repo_raw().startswith("http://192.168.178.53")   # Standard
+    (tmp_path / "repo_raw.txt").write_text(
+        "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main\n")
+    assert updater._load_repo_raw() == \
+        "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main"
+    (tmp_path / "repo_raw.txt").write_text("kaputt kein-schema")          # defensiv
+    assert updater._load_repo_raw().startswith("http://192.168.178.53")
+    monkeypatch.setenv("OPERATOR_REPO_RAW", "https://example.org/repo/")
+    assert updater._load_repo_raw() == "https://example.org/repo"          # Env gewinnt
