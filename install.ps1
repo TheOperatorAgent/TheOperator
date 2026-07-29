@@ -420,7 +420,7 @@ if ($dashOptin -eq "ja") {
     $VenvPy = Join-Path $DashDir "venv\Scripts\python.exe"
     if (-not (Test-Path $VenvPy)) { & $Py -m venv (Join-Path $DashDir "venv") }
     # Die kompilierten Teile von numpy/spacy brauchen die Microsoft-Visual-C++-Laufzeit.
-    # Auf frischem Windows fehlt sie — dann scheitert der Datenschutz-Filter mit
+    # Auf frischem Windows fehlt sie - dann scheitert der Datenschutz-Filter mit
     # "DLL load failed while importing numpy_ops" (Michis Rechner, 29.07.).
     if (Get-Command winget -ErrorAction SilentlyContinue) {
         try {

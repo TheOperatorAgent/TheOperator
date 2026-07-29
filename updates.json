@@ -1,8 +1,8 @@
 {
-  "version": "1.15.0",
+  "version": "1.15.1",
   "date": "2026-07-29",
   "highlights": [
-    "🎭 Der Datenschutz-Filter blockiert die Installation nicht mehr. Er braucht ein großes Sprachmodell und Systembibliotheken, die nicht auf jedem Rechner da sind — lief er nicht, konnte dein Operator gar nichts mehr beantworten. Jetzt startet er aus, alles läuft sofort, und dein Operator bietet dir selbst an, ihn einzuschalten (»Datenschutz an« im Chat genügt).",
-    "🪟 Windows: Die Visual-C++-Laufzeit, die numpy und spaCy brauchen, wird jetzt mitinstalliert — das war die Ursache für »DLL load failed while importing numpy_ops«."
+    "🎭 Der Datenschutz-Filter blockiert die Installation nicht mehr. Er startet aus, alles läuft sofort, und dein Operator bietet dir selbst an, ihn einzuschalten — »Datenschutz an« im Chat genügt. Läuft er auf deinem Rechner nicht, sagt er dir das ehrlich, statt dich mit einem stummen Assistenten sitzen zu lassen.",
+    "🪟 Windows: Die Visual-C++-Laufzeit für numpy und spaCy wird mitinstalliert — das war die Ursache für »DLL load failed while importing numpy_ops«."
   ]
 }
