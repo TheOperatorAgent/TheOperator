@@ -1,9 +1,8 @@
 {
-  "version": "1.8.0",
+  "version": "1.8.1",
   "date": "2026-07-29",
   "highlights": [
-    "🔐 Der Operator fragt jetzt nach, bevor er etwas Riskantes tut: Dateien löschen, Administrator-Rechte, E-Mails versenden, Systemdateien ändern. Du antwortest einfach »ja« oder »nein« im Chat — oder tippst auf ✅ / ❌.",
-    "🛡️ Ohne dein Ja passiert nichts: Keine Antwort, Zeitablauf oder eine Störung bedeuten immer »nicht ausführen«. Fremde Accounts können nichts freigeben, und jede Freigabe gilt genau einmal für genau diese Aktion.",
-    "⚡ Normale Arbeit läuft ungebremst weiter — gefragt wird nur bei echtem Risiko."
+    "✓ Schöner im Chat: Statt der sperrigen Zeile »— ✓ geprüft von Prüfer« steht jetzt nur noch ein kleines Zeichen am Ende der Antwort — ✓ für gegengelesen, ✎ für überarbeitet.",
+    "📖 Neu im Dashboard (Übersicht): »Die kleinen Zeichen im Chat« erklärt alle Symbole in einfacher Sprache."
   ]
 }

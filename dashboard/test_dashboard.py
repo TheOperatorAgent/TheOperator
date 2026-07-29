@@ -1092,9 +1092,10 @@ def test_verify_interpret_fail_open_on_empty():
 
 def test_verify_footer_and_prompts():
     vl = _vl()
-    assert "geprüft von opus" in vl.footer("opus", False)
-    assert "überarbeitet von opus" in vl.footer("opus", True)
-    assert "Prüfer" in vl.footer(None, False)
+    # Seit 1.8.1: dezentes Zeichen statt Textfußzeile (im Dashboard erklärt)
+    assert vl.footer("opus", False).strip() == vl.MARK_OK
+    assert vl.footer("opus", True).strip() == vl.MARK_REVISED
+    assert vl.footer(None, False).strip() == vl.MARK_OK   # Zeichen ist modellunabhängig
     system, user = vl.verifier_prompts("Was ist 2+2?", "5")
     assert "VERIFIZIERT" in system
     assert "Was ist 2+2?" in user and "5" in user
@@ -1125,7 +1126,7 @@ def test_verify_and_send_integration_ok(monkeypatch):
     s._verify_and_send((True, "opus"), "Wer bin ich?", "Du bist Ingeburg.", mapping, False)
     assert len(sent) == 1
     assert "Du bist Michi." in sent[0]           # PII zurückübersetzt
-    assert "geprüft von opus" in sent[0]          # Fußzeile, nicht überarbeitet
+    assert sent[0].rstrip().endswith("✓")        # Prüfzeichen, nicht überarbeitet
 
 
 def test_verify_and_send_integration_revise(monkeypatch):
@@ -1140,7 +1141,7 @@ def test_verify_and_send_integration_revise(monkeypatch):
     s._verify_and_send((True, "sonnet"), "Hauptstadt Australiens?",
                        "Die Hauptstadt ist Sydney.", {}, False)
     assert "Canberra" in sent[0] and "Sydney" not in sent[0]
-    assert "überarbeitet von sonnet" in sent[0]
+    assert sent[0].rstrip().endswith("✎")        # Überarbeitungs-Zeichen
 
 
 def test_verify_and_send_fail_open(monkeypatch):
@@ -2098,3 +2099,17 @@ def test_broker_ist_stdlib_only():
         imports |= {n.module.split(".")[0] for n in ast.walk(ast.parse(src))
                     if isinstance(n, ast.ImportFrom) and n.module}
         assert imports <= erlaubt | {"permission_broker"}, f"{datei}: {imports - erlaubt}"
+
+
+def test_verify_mark_is_small_and_documented():
+    """Prüfzeichen statt sperriger Fußzeile — und im Dashboard erklärt (#Michi-Feedback)."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import verify_loop as vl
+    ok, revised = vl.footer("claude", False), vl.footer("claude", True)
+    assert ok.strip() == "✓" and revised.strip() == "✎"
+    assert "geprüft von" not in ok and len(ok) <= 4      # keine Textfußzeile mehr
+    html = open(os.path.expanduser(
+        "~/.claude/matrix-bot/dashboard/static/index.html")).read()
+    for zeichen in ("✓", "✎", "🔐", "⚡"):
+        assert zeichen in html, f"{zeichen} wird dem Nutzer nicht erklärt"
+    assert "Gegengelesen" in html and "Überarbeitet" in html

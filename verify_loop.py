@@ -89,7 +89,12 @@ def interpret(verifier_output, original_answer):
     return text, True
 
 
+# Dezente Prüfzeichen statt sperriger Fußzeile — der Nutzer soll die Antwort lesen,
+# nicht die Meta-Information. Die Bedeutung erklärt das Dashboard (Übersicht).
+MARK_OK = "✓"        # zweites Modell hat gegengelesen, Antwort blieb unverändert
+MARK_REVISED = "✎"   # zweites Modell hat etwas korrigiert
+
+
 def footer(verify_model, revised):
-    """Kurze, transparente Fußzeile für den Chat. verify_model None ⇒ 'Prüfer'."""
-    who = verify_model or "Prüfer"
-    return f"\n\n— {'✓ überarbeitet' if revised else '✓ geprüft'} von {who}"
+    """Kleines Prüfzeichen, das ans Ende der Antwort gehängt wird."""
+    return f"  {MARK_REVISED}" if revised else f"  {MARK_OK}"

@@ -40,6 +40,27 @@
   <section id="tab-overview" class="tab active">
     <div id="update-banner"></div>
     <div class="tiles" id="overview-tiles"></div>
+    <div class="card" id="marks-card">
+      <h2>Die kleinen Zeichen im Chat</h2>
+      <p class="small">Am Ende mancher Antworten steht ein kleines Zeichen. Es sagt dir, wie die
+        Antwort zustande kam — mehr musst du dazu nicht tun.</p>
+      <div class="marks">
+        <div><span class="mark">✓</span><div><strong>Gegengelesen</strong>
+          <span class="small">Ein zweites Sprachmodell hat die Antwort geprüft und für richtig
+          befunden. Sie kam unverändert zu dir.</span></div></div>
+        <div><span class="mark">✎</span><div><strong>Überarbeitet</strong>
+          <span class="small">Das zweite Modell hat etwas gefunden und die Antwort korrigiert,
+          bevor sie zu dir ging.</span></div></div>
+        <div><span class="mark">🔐</span><div><strong>Rückfrage</strong>
+          <span class="small">Der Operator möchte etwas Riskantes tun und braucht dein Okay.
+          Antworte einfach <em>ja</em> oder <em>nein</em>. Ohne dein Ja passiert nichts.</span></div></div>
+        <div><span class="mark">⚡</span><div><strong>Von selbst gemeldet</strong>
+          <span class="small">Der Operator meldet sich ungefragt, weil etwas passiert ist —
+          zum Beispiel eine neue E-Mail.</span></div></div>
+      </div>
+      <p class="small muted">Kein Zeichen heißt: ganz normale Antwort ohne Zweitprüfung.
+        Die Zweitprüfung schaltest du unter »System« ein und aus.</p>
+    </div>
     <div class="card"><div class="row-between"><h2>Letzte Aktionen</h2><span id="audit-integrity" class="pill"></span></div><div id="audit-list" class="mono small"></div></div>
   </section>
 
