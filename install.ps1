@@ -510,11 +510,58 @@ open(p, "w").write(json.dumps(data, indent=1))
     try { & $VenvPy $McpTmp $BotDir; Ok "Standard-MCPs m365 + n8n + learn registriert" }
     catch { Warn "Standard-MCPs konnten nicht registriert werden - im Dashboard unter System nachtragen" }
     finally { Remove-Item $McpTmp -ErrorAction SilentlyContinue }
-    Ok "Dashboard oeffnen mit:  $VenvPy $DashDir\open.py"
+    # Kurzbefehl 'operator' - auf macOS/Linux gab es ihn laengst, auf Windows fehlte er
+    # komplett (Michi, 30.07.: "operator : Die Benennung wurde nicht als Name eines Cmdlet
+    # erkannt"). Die Entsperr-Karte im Dashboard nennt ihn aber - also muss er da sein.
+    $BinDir = Join-Path $env:LOCALAPPDATA "Operator\bin"
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    $launcher = @"
+@echo off
+setlocal
+set BOT=%USERPROFILE%\.claude\matrix-bot
+set PY=%BOT%\dashboard\venv\Scripts\python.exe
+if not exist "%PY%" set PY=py
+if "%1"=="" goto dashboard
+if /i "%1"=="dashboard" goto dashboard
+if /i "%1"=="chat" goto chat
+if /i "%1"=="log" goto log
+if /i "%1"=="status" goto status
+if /i "%1"=="uninstall" goto uninstall
+echo Nutzung: operator [dashboard^|chat^|log^|status^|uninstall]
+goto :eof
+:dashboard
+"%PY%" "%BOT%\dashboard\open.py"
+goto :eof
+:chat
+"%PY%" "%BOT%\dock_fenster.py" %2
+goto :eof
+:log
+powershell -NoProfile -Command "Get-Content -Wait -Tail 40 '%BOT%\listener.log'"
+goto :eof
+:status
+powershell -NoProfile -Command "foreach (`$t in 'OperatorListener','OperatorDashboard','OperatorPseudonym') { `$s = (schtasks /query /tn `$t 2>`$null); if (`$LASTEXITCODE -eq 0) { Write-Host ('[ok] ' + `$t) } else { Write-Host ('[--] ' + `$t + ' nicht eingerichtet') } }"
+goto :eof
+:uninstall
+powershell -NoProfile -Command "irm $RepoRaw/install.ps1 -OutFile `$env:TEMP\op_uninstall.ps1; & `$env:TEMP\op_uninstall.ps1 -Uninstall"
+goto :eof
+"@
+    Set-Content -Path (Join-Path $BinDir "operator.cmd") -Value $launcher -Encoding ASCII
+    # Dauerhaft in den PATH des Nutzers (nicht des Systems - kein Admin noetig)
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ($userPath -notlike "*$BinDir*") {
+        [Environment]::SetEnvironmentVariable("Path", "$userPath;$BinDir", "User")
+        Ok "Kurzbefehl 'operator' eingerichtet (neues PowerShell-Fenster oeffnen, dann 'operator' tippen)"
+    } else {
+        Ok "Kurzbefehl 'operator' eingerichtet"
+    }
+    $env:Path = "$env:Path;$BinDir"
+    Ok "Dashboard oeffnen mit:  operator    (oder: $VenvPy $DashDir\open.py)"
 }
 
 # -------------------------------------------------------------- Phase 7: TEST
 Bold "Phase 7 - Funktionstest"
-try { & $Py (Join-Path $BotDir "send.py") "Operator einsatzbereit auf Windows! Schreib mir einfach."; Ok "Testnachricht im Raum - auf dem Handy pruefen!" }
+# send.py gibt die Matrix-Kennung der Nachricht aus (beginnt mit $). Die sah im Installer
+# wie ein durchgesickertes Geheimnis aus (Michi, 30.07.) - deshalb wegwerfen.
+try { & $Py (Join-Path $BotDir "send.py") "Operator einsatzbereit auf Windows! Schreib mir einfach." | Out-Null; Ok "Testnachricht im Raum - auf dem Handy pruefen!" }
 catch { Warn "Testnachricht fehlgeschlagen - Log pruefen: $BotDir\listener.log" }
 Bold "Fertig!  Deinstallation:  .\install.ps1 -Uninstall"

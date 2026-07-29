@@ -47,6 +47,21 @@ function toast(msg, isErr) {
 
 // Technik-Fehler → einfache Sprache mit nächstem Schritt (EINFACHHEIT.md). Rohe Codes wie
 // »HTTP 502« oder »M_FORBIDDEN« sieht der Nutzer nie; die Details bleiben in der Konsole/im Log.
+// Auf welchem Gerät sitzt der Betrachter? Die Entsperr-Karte hat lange »am Mac« gesagt —
+// auch auf einem Windows-Rechner (Michi, 30.07.). Sie erscheint, WEIL der Zugang fehlt,
+// kann also nichts vom Server erfragen; deshalb aus dem Browser selbst ableiten.
+function geraeteName() {
+  const p = (navigator.userAgent || "") + " " + (navigator.platform || "");
+  if (/Windows|Win32|Win64/i.test(p)) return "Windows-Rechner";
+  if (/Macintosh|Mac OS X/i.test(p)) return "Mac";
+  if (/Linux|X11/i.test(p)) return "Linux-Rechner";
+  return "Rechner";
+}
+function terminalName() {
+  return geraeteName() === "Windows-Rechner"
+    ? "in PowerShell" : "im Terminal";
+}
+
 function friendlyError(e) {
   const raw = (e && e.message ? String(e.message) : String(e || "")).trim();
   const low = raw.toLowerCase();
@@ -1703,7 +1718,7 @@ async function refresh() {
           "<p class='small' style='margin:8px 0 0;opacity:.8'>Der Link gilt 10 Minuten und wird beim ersten Klick verbraucht — sicher, auch wenn jemand später den Chat liest.</p>" +
         "</div>" +
         "<details><summary class='small' style='cursor:pointer;opacity:.85'>Lieber am Rechner? Terminal-Weg anzeigen</summary>" +
-          "<p class='small' style='margin:8px 0 4px'>Gib am Mac, auf dem der Operator läuft, im Terminal ein:</p>" +
+          `<p class='small' style='margin:8px 0 4px'>Gib auf dem ${geraeteName()}, auf dem der Operator läuft, ${terminalName()} ein:</p>` +
           "<pre class='mono' style='user-select:all;padding:12px'>operator</pre>" +
           "<p class='small' style='opacity:.8'>Öffnet dieses Dashboard automatisch mit Zugang. Falls »command not found«: der Operator ist auf diesem Rechner nicht installiert — nutz den Chat-Weg oben.</p>" +
         "</details></div></main>";

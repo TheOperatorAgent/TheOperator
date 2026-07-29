@@ -1,5 +1,5 @@
 {
- "version": "1.17.1",
+ "version": "1.17.2",
  "files": [
   {
    "src": "listener.py",
@@ -264,7 +264,7 @@
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "c26fe721d0a5e0eca65461aca3d85c6862d78dcff29938cb59042f1cc23f603d"
+   "sha256": "11694c59a5fea826965071d19657c2494bb5cf4711c0a808e1609a4bc71be35c"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "b1529c94047dde76b6f72d4c16618daae5a7b89be3b36604513c1ec4c5a24b8d"
+   "sha256": "d73a2a2f90b1aaa89c70ca352ce4821368f3e550729fceab64050ecd465425b4"
   }
  ]
 }

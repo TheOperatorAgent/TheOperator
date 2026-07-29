@@ -3668,3 +3668,37 @@ def test_windows_installer_ruft_pip_nie_als_exe():
     code = "\n".join(z for z in s.splitlines() if not z.strip().startswith("#"))
     assert "pip.exe" not in code, "pip.exe-Aufruf bricht beim Selbst-Upgrade ab"
     assert "-m pip install" in code, "pip wird nicht als Modul aufgerufen"
+
+
+def test_entsperrkarte_nennt_nicht_pauschal_mac():
+    """Realer Fehler (Michi, 30.07.): Die Entsperr-Karte sagte »Gib am Mac … ein« —
+    auf einem Windows-Rechner. Sie erscheint, WEIL der Zugang fehlt, kann also nichts
+    vom Server erfragen; deshalb wird das Gerät im Browser bestimmt."""
+    js = open(os.path.expanduser(
+        "~/.claude/matrix-bot/dashboard/static/app.js"), encoding="utf-8").read()
+    assert "Gib am Mac" not in js, "sagt Mac, egal auf welchem Gerät"
+    assert "function geraeteName()" in js and "function terminalName()" in js
+    teil = js.split("function geraeteName()")[1].split("\nfunction ")[0]
+    for wort in ("Windows-Rechner", "Mac", "Linux-Rechner"):
+        assert wort in teil, wort
+
+
+def test_windows_installer_richtet_kurzbefehl_operator_ein():
+    """Der Kurzbefehl »operator« existierte nur auf macOS/Linux — auf Windows kam
+    »Die Benennung 'operator' wurde nicht als Name eines Cmdlet … erkannt« (Michi,
+    30.07.), obwohl die Entsperr-Karte im Dashboard genau diesen Befehl nennt."""
+    s = _ps1()
+    assert "operator.cmd" in s, "kein Kurzbefehl angelegt"
+    for teilbefehl in ("dashboard", "chat", "log", "status", "uninstall"):
+        assert f'"{teilbefehl}"' in s, f"Unterbefehl {teilbefehl} fehlt"
+    assert 'SetEnvironmentVariable("Path"' in s, "landet nicht dauerhaft im PATH"
+    assert '"User"' in s, "darf nicht in den System-PATH schreiben (bräuchte Admin)"
+
+
+def test_windows_installer_zeigt_keine_matrix_kennung():
+    """send.py gibt die Matrix-Kennung der Nachricht aus (beginnt mit $). Im Installer
+    sah die wie ein durchgesickertes Geheimnis aus — das verunsichert zu Recht."""
+    s = _ps1()
+    zeile = [z for z in s.splitlines() if "send.py" in z and "einsatzbereit" in z]
+    assert zeile, "Funktionstest-Zeile nicht gefunden"
+    assert "Out-Null" in zeile[0], "Kennung wird noch ausgegeben"

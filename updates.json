@@ -1,7 +1,9 @@
 {
- "version": "1.17.1",
+ "version": "1.17.2",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Windows: Die Installation brach beim Einrichten des Dashboards ab (»To modify pip, please run the following command«). Ursache war ein Aufruf, den Windows nicht erlaubt, während er selbst läuft. Behoben — die Installation läuft jetzt durch."
+  "🪟 Windows: Der Kurzbefehl »operator« gibt es jetzt auch hier — er öffnet das Dashboard, zeigt das Protokoll oder den Status. Bisher gab es ihn nur auf Mac und Linux, obwohl das Dashboard ihn empfohlen hat.",
+  "🗣️ Das Dashboard sagt nicht mehr »gib am Mac ein«, wenn du an einem Windows- oder Linux-Rechner sitzt.",
+  "🔇 Der Installer zeigt am Ende keine kryptische Zeichenfolge mehr — das war nur die Kennung der Testnachricht, sah aber aus wie ein durchgesickertes Passwort."
  ]
 }
