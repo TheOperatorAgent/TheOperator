@@ -1,6 +1,6 @@
 # HANDOVER — The Operator · Projekt-Übergabe
 
-> **Stand: 2026-07-24 · Version 1.7.1 · verfasst für den nahtlosen Weiterbetrieb durch einen anderen Agenten.**
+> **Stand: 2026-07-29 · Version 1.7.3 · verfasst für den nahtlosen Weiterbetrieb durch einen anderen Agenten.**
 > Dieses Dokument ist die **Single Source of Truth** für den aktuellen Stand. Bei Widerspruch zwischen diesem Dokument und dem Code gilt der Code — dann dieses Dokument korrigieren.
 > Antwortsprache mit dem Nutzer (Michi Aschenbrenner): **immer Deutsch.**
 
@@ -15,7 +15,7 @@
 | 🟡 **P3** | Verbesserung/Backlog. |
 
 **Die drei wichtigsten Dinge, die ein neuer Agent wissen muss:**
-1. 🔴 **Offener aktiver Bug: Doppel-DM** → Issue **#81**. Der Hauptagent kann „stumm" wirken, obwohl er läuft. Root-Cause bewiesen, Fix vorgeschlagen, **noch nicht gebaut** (Michi wollte zuerst diese Übergabe). Siehe §4.
+1. ✅ **#81 (Doppel-DM) und #86 (Gedächtnis-Lücke) sind GELÖST** — ausgeliefert als 1.7.2/1.7.3, Issues geschlossen. §4 dokumentiert beide (Diagnose-Muster wiederverwendbar). Nächste offene P1: **#13 Release-Blocker** (braucht Michis saubere Maschine). Website-Launch operator.bayern: **30.07.2026, 22:30** (GitHub public + deploy-strato.command = Michi).
 2. 🔴 **Leitbild Einfachheit (Petra-Test)** ist verbindlich für JEDES Feature — `EINFACHHEIT.md`. Zielnutzer sind **Büromitarbeitende, keine Techniker**. Kein Terminal-Zwang, einfache Sprache, Fehler mit 👉-nächstem-Schritt, Geheimnisse maskiert.
 3. 🔴 **Jede Auslieferung = alle 3 Repos + Version-Disziplin.** Siehe §6. Nie ein Feature „nur lokal".
 
@@ -71,6 +71,8 @@ Hinweis: Der Listener baut sich bei Änderung an `bots.json` selbst neu auf; fü
 | 1.6.x | **🎭 Persona & Profil + Onboarding** — transparente Bindung (KEINE verdeckte Abhängigkeit; Michi-Wunsch bewusst umgelenkt). `persona.py` (stdlib), persona.json/profile.json, gitignore-geschützt | ✅ live |
 | 1.7.0 | **🌐 Browser-Agent (websurfer)** — Playwright headless, `open_page`/`click_link`, **nur Lesen/Navigieren**, kein Formular-Absenden (Test `test_browser_tools_are_readonly`). v2 (Formulare mit Bestätigung) = Issue **#80** | ✅ live |
 | **1.7.1** | **Identitäts-Ehrlichkeit** — Fremd-Modelle (Kimi) behaupteten fälschlich „Ich bin Claude". System-Prompt-Zusatz im foreign-Branch von `build()`: nie ein Produkt behaupten, wahrheitsgemäß „ein Sprachmodell im Operator" | ✅ **live, verifiziert** (websurfer sagt es jetzt korrekt) |
+| **1.7.2** | **#81 Auto-Join** — Operator folgt Owner-Einladungen automatisch (`discover_owner_dm_rooms` + `accept_owner_invites`; NUR Owner-DMs, nie Fremde/Gruppen/Agenten-Räume); mehrere Owner-Räume gleichzeitig; launchd-Service war gar nicht geladen → korrekt verankert | ✅ live, 113 Tests |
+| **1.7.3** | **#86 Gedächtnis-Lücke + Event-Dedup** — Direkt-Antworten via `record_direct` in den Verlauf (OTT-Token bewusst NICHT in DB; kind="chat"/model="direkt", weil `recent_dialog` hart auf kind='chat' filtert!); `seen_events`-Deque(200) in `run()` gegen Doppel-Antworten nach Netzfehlern | ✅ live, **116 Tests** |
 
 **Multi-LLM-Detail:** siehe Memory [[multi_llm_feature]]. **Wichtig:** Kein lokales Ollama-Modell auf dem MacBook (stürzt ab) — Kimi läuft über **Ollama-Cloud** (`ollama/kimi-k2.7-code:cloud`).
 
@@ -78,7 +80,7 @@ Tests: **111 pytest grün** vor 1.7.1 (persona, hints, browser-readonly, wants_d
 
 ---
 
-## 4. 🔴 AKTIVER OFFENER PUNKT — Doppel-DM (Issue #81)
+## 4. ✅ GELÖSTE P1-Fälle — #81 Doppel-DM (1.7.2) + #86 Gedächtnis-Lücke (1.7.3)
 
 **Symptom (heute 12:00 real):** Michi schrieb im „Operator"-Chat („…Webserver Agent… suchen?", „Und geht es?", „Hallo?") → **keine Antwort**, obwohl Agenten (coder/websurfer) normal antworteten.
 
@@ -91,7 +93,9 @@ Diagnose-Beleg (Matrix CS-API mit gültigem Owner-Token, `whoami` ok):
 
 **Vorgeschlagene Lösung (in #81 detailliert):** Listener soll **Owner-DM-Einladungen automatisch annehmen** und dem Owner in neue Räume **folgen** (mehrere Owner-Räume statt genau einer). Start-Scan nimmt bestehende 2-Personen-`@claude`↔OWNER-Räume auf → heilt den jetzigen Fall.
 **Sicherheits-Leitplanken:** NUR Einladungen von OWNER annehmen (nie Fremde → Anti-Injection); nur 2-Personen-DMs; nie Agenten-Räume doppeln.
-**Status:** Fix ist **vorgeschlagen, Michi um „ja" gebeten, noch NICHT gebaut.** → Nächster logischer Schritt, sobald Michi zustimmt.
+**Status #81:** ✅ GEBAUT, ausgeliefert 1.7.2, Issue geschlossen (Details dort).
+
+**#86 (1.7.3, ebenfalls gelöst):** Kurzbefehl-Antworten (dashboard-Link, Pseudonym-Ausfall) wurden nie in sessions.db aufgezeichnet → Modell fehlte Kontext bei Folgefragen; zusätzlich keine Event-Deduplizierung → Doppel-Antworten nach Netzfehlern. Fix: `record_direct()` + `seen_events`. Details in Issue #86.
 
 ---
 
@@ -99,7 +103,6 @@ Diagnose-Beleg (Matrix CS-API mit gültigem Owner-Token, `whoami` ok):
 
 | # | Titel | Prio | Notiz |
 |---|---|---|---|
-| **81** | Doppel-DM → Auto-Join Owner-Einladungen | 🔴 **P1** | **NEU, aktiver Bug.** Fix vorgeschlagen, wartet auf „ja". §4 |
 | 13 | Release-Blocker: Frisch-System-Test + Setup-App | 🔴 **P1** | Braucht **saubere Maschine**. Blockiert echten Release. |
 | 12 | E2E-Verschlüsselung des Bot-Raums | 🟠 P2 | pantalaimon-Ansatz teils da (Task #43). |
 | 14 | M365-Zugriff auf gewählten Benutzer begrenzen (Least-Privilege) | 🟠 P2 | Security-Härtung. |
@@ -172,4 +175,4 @@ Der Projektstand ist zusätzlich in `~/.claude/projects/…/memory/` verankert (
 ---
 
 ### Nächster empfohlener Schritt
-👉 Auf Michis „ja" zu **#81** warten (Auto-Join-Härtung bauen) — kleiner, gezielter `listener.py`-Change mit Test, dann Release-Bump 1.7.2 + Sync alle 3 Repos. Danach **#13** (Release-Blocker).
+👉 **#13** (Release-Blocker, braucht Michis saubere Maschine) bzw. P2-Reihe: #59 CLI-Login-Vorwarnung → #65 Permission-Gate → #14/#12 mit Michi. Außerdem Website-Launch 30.07. 22:30 (siehe §0).
