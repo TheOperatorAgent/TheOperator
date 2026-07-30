@@ -1,9 +1,7 @@
 {
- "version": "1.17.2",
+ "version": "1.17.3",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Windows: Der Kurzbefehl »operator« gibt es jetzt auch hier — er öffnet das Dashboard, zeigt das Protokoll oder den Status. Bisher gab es ihn nur auf Mac und Linux, obwohl das Dashboard ihn empfohlen hat.",
-  "🗣️ Das Dashboard sagt nicht mehr »gib am Mac ein«, wenn du an einem Windows- oder Linux-Rechner sitzt.",
-  "🔇 Der Installer zeigt am Ende keine kryptische Zeichenfolge mehr — das war nur die Kennung der Testnachricht, sah aber aus wie ein durchgesickertes Passwort."
+  "🪟 Windows: Die Installation konnte bei der Claude-Anmeldeprüfung stumm hängen bleiben, wenn Claude eine Rückfrage stellen wollte (z. B. nach abgelaufener Anmeldung). Jetzt gibt es ein Zeitlimit, eine ehrliche Wartemeldung — und wenn Claude nicht antwortet, führt dich der Installer durch die Anmeldung, statt einzufrieren."
  ]
 }

@@ -250,24 +250,43 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
 $ClaudeBin = (Get-Command claude -ErrorAction SilentlyContinue).Source
 if (-not $ClaudeBin) { Die "claude nicht im PATH - PowerShell neu oeffnen und erneut ausfuehren" }
 Ok "Claude CLI: $ClaudeBin"
-# Anmeldung wirklich PRUeFEN (wie install.sh) - sonst "gelingt" die Installation und der Bot schweigt
+# Anmeldung wirklich PRUeFEN (wie install.sh) - sonst "gelingt" die Installation und der Bot schweigt.
+# WICHTIG: mit Zeitlimit. Realer Haenger (Michis Windows, 30.07.): "claude -p" wollte
+# interaktiv etwas fragen (abgelaufene Anmeldung) und wartete endlos auf Eingabe -
+# der Installer stand ohne jede Meldung. Ein Installer darf NIE stumm haengen.
+function Claude-Probe([int]$TimeoutSec) {
+    $out = Join-Path $env:TEMP ("op_probe_" + [guid]::NewGuid().ToString("N") + ".txt")
+    $cmd = Join-Path $env:TEMP ("op_probe_" + [guid]::NewGuid().ToString("N") + ".ps1")
+    # Leerer stdin, damit ein fragendes claude nie auf Eingabe hoffen kann; eigener
+    # Prozess, damit wir nach Ablauf hart abbrechen koennen statt mitzuhaengen.
+    Set-Content -Path $cmd -Value "'' | claude -p 'Antworte nur mit: OK' 2>`$null | Set-Content -LiteralPath '$out'" -Encoding ASCII
+    $p = Start-Process powershell -ArgumentList @("-NoProfile","-ExecutionPolicy","Bypass","-File",$cmd) -WindowStyle Hidden -PassThru
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) { try { $p.Kill() } catch {} }
+    $r = ""
+    if (Test-Path $out) { $r = [string](Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue) }
+    Remove-Item $out, $cmd -ErrorAction SilentlyContinue
+    return $r
+}
 $ClaudeReady = $true
-$probe = & claude -p "Antworte nur mit: OK" 2>$null
+Write-Host "  Pruefe die Claude-Anmeldung - kann bis zu einer Minute dauern ..."
+$probe = Claude-Probe 75
 if ($probe -notmatch "OK") {
     Bold "  Anmeldung bei Claude"
-    Write-Host "  Gleich oeffnet sich dein Browser. Danach im Claude-Fenster /exit eingeben."
+    Write-Host "  Claude hat nicht geantwortet - vermutlich ist die Anmeldung abgelaufen."
+    Write-Host "  Gleich oeffnet sich die Anmeldung. Danach im Claude-Fenster /exit eingeben."
     $attempt = 0
     while ($true) {
-        $probe = & claude -p "Antworte nur mit: OK" 2>$null
-        if ($probe -match "OK") { break }
         $attempt++
         if ($attempt -gt 3) {
             $ClaudeReady = $false
             Warn "Claude-Anmeldung noch nicht bestaetigt - Installation laeuft trotzdem weiter."
-            Warn "Nachholen: 'claude /login' im Terminal, dann antwortet dein Operator."
+            Warn "Nachholen: 'claude' im Terminal starten, anmelden, /exit - dann antwortet dein Operator."
             break
         }
         & claude /login
+        Write-Host "  Pruefe erneut - kann bis zu einer Minute dauern ..."
+        $probe = Claude-Probe 75
+        if ($probe -match "OK") { break }
     }
 }
 if ($ClaudeReady) { Ok "Claude CLI angemeldet und antwortet" }

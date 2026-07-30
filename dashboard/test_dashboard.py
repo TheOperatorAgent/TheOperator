@@ -3702,3 +3702,21 @@ def test_windows_installer_zeigt_keine_matrix_kennung():
     zeile = [z for z in s.splitlines() if "send.py" in z and "einsatzbereit" in z]
     assert zeile, "Funktionstest-Zeile nicht gefunden"
     assert "Out-Null" in zeile[0], "Kennung wird noch ausgegeben"
+
+
+def test_windows_installer_haengt_nie_an_der_claude_pruefung():
+    """Realer Haenger (Michis Windows, 30.07., zweiter Lauf des Tages): »claude -p«
+    wollte interaktiv etwas fragen (abgelaufene Anmeldung) und wartete endlos —
+    der Installer stand nach Phase 2 ohne jede Meldung. Deshalb: die Probe läuft in
+    einem eigenen Prozess mit hartem Zeitlimit und leerem stdin; ein Installer darf
+    NIE stumm hängen."""
+    s = _ps1()
+    assert "function Claude-Probe" in s
+    teil = s.split("function Claude-Probe")[1].split("\nif ($ClaudeReady)")[0]
+    assert "WaitForExit" in teil, "kein Zeitlimit — genau der erlebte Haenger"
+    assert ".Kill()" in teil, "nach Ablauf wird der Prozess nicht beendet"
+    assert "''" in teil, "ohne leeren stdin kann claude auf Eingabe warten"
+    assert "kann bis zu einer Minute dauern" in s, \
+        "ohne Hinweis wirkt selbst die normale Wartezeit wie ein Haenger"
+    code = "\n".join(z for z in s.splitlines() if not z.strip().startswith("#"))
+    assert '$probe = & claude -p' not in code, "die ungeschuetzte Probe ist zurueck"

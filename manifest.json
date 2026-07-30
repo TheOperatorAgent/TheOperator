@@ -1,5 +1,5 @@
 {
- "version": "1.17.2",
+ "version": "1.17.3",
  "files": [
   {
    "src": "listener.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "d73a2a2f90b1aaa89c70ca352ce4821368f3e550729fceab64050ecd465425b4"
+   "sha256": "ed4dd3b60b045eae70d1d05fd4eee8efc29ea5424aae085342126356c7019526"
   }
  ]
 }
