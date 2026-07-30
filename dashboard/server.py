@@ -301,8 +301,14 @@ def api_status():
     c = creds()
     bots = load_bots()["bots"]
     # Health (A6): Disk, Synapse, DB-Größen
-    st = os.statvfs(BOT_DIR)
-    disk_free_gb = round(st.f_bavail * st.f_frsize / 1e9, 1)
+    # os.statvfs gibt es auf Windows NICHT — dort warf /api/status einen
+    # AttributeError, und damit war die GANZE Übersicht tot: rote Meldung »Server hat
+    # nicht rechtzeitig geantwortet«, leere Versionsanzeige, keine Kacheln
+    # (Michi, 30.07., im Diagnose-Bericht gefunden). shutil.disk_usage kann beides.
+    try:
+        disk_free_gb = round(shutil.disk_usage(BOT_DIR).free / 1e9, 1)
+    except OSError:
+        disk_free_gb = 0.0
     synapse_ok = False
     try:
         req = urllib.request.Request(c["homeserver"] + "/health")

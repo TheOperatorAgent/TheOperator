@@ -4183,3 +4183,65 @@ def test_kurzbefehle_kennen_pruefen_und_diagnose():
     if os.path.exists("/tmp/_diff_op/install.sh"):
         sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
         assert "diagnose)" in sh and "diagnose.py" in sh
+
+
+def test_status_api_laeuft_auch_auf_windows():
+    """Im Diagnose-Bericht gefunden (Michi, 30.07.):
+
+        server.py line 304, in api_status
+            st = os.statvfs(BOT_DIR)
+        AttributeError: module 'os' has no attribute 'statvfs'
+
+    os.statvfs existiert auf Windows NICHT. Damit war die GANZE Übersichts-Abfrage
+    tot: rote Meldung »Server hat nicht rechtzeitig geantwortet«, leere
+    Versionsanzeige (»v… · neo«), keine Kacheln. shutil.disk_usage kann beides."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py")).read()
+    code = "\n".join(z for z in src.splitlines() if not z.strip().startswith("#"))
+    assert "os.statvfs" not in code, "auf Windows ein sofortiger AttributeError"
+    assert "shutil.disk_usage" in code, "kein plattformübergreifender Ersatz"
+    # Und funktional: die Route muss auf DIESEM System eine Zahl liefern
+    import shutil as _sh
+    assert _sh.disk_usage(os.path.expanduser("~/.claude/matrix-bot")).free > 0
+
+
+# ------------------- #59 Login-Vorwarnung: früher warnen, Weg nennen ------------
+def test_login_vorwarnung_greift_bevor_der_nutzer_auflaeuft(monkeypatch, tmp_path):
+    """Realer Ärger (Michi, 30.07.): »⚠️ Mein Claude-CLI-Login ist abgelaufen« kam als
+    Antwort auf eine echte Frage — die Vorwarnung soll das aber VERHINDERN.
+
+    Ursache: needs_probe() fragte »kein echter Lauf seit 6 h?«. Wer regelmäßig
+    chattet, erneuert damit dauernd den Zeitstempel — aktiv geprüft wurde NIE. Die
+    Anmeldung läuft aber zeitgesteuert ab, unabhängig von der Nutzung. Jetzt zählt
+    last_ok (wann ging es zuletzt wirklich)."""
+    import claude_health as ch
+    import time as _t
+    monkeypatch.setattr(ch, "STATE_FILE", str(tmp_path / "h.json"))
+    jetzt = _t.time()
+    # Rege Nutzung, aber letzter Erfolg 8 h her → muss proben
+    ch._write({"state": "ok", "checked_at": int(jetzt), "last_ok": int(jetzt - 8 * 3600)})
+    assert ch.needs_probe(jetzt) is True, "prüft trotz alter Bestätigung nicht nach"
+    # Frisch bestätigt → nicht proben (sparsam bleiben)
+    ch._write({"state": "ok", "checked_at": int(jetzt), "last_ok": int(jetzt - 3600)})
+    assert ch.needs_probe(jetzt) is False
+    # Bekannt kaputt → nicht zusätzlich proben (der Nutzer weiß es schon)
+    ch._write({"state": "expired", "checked_at": int(jetzt), "last_ok": int(jetzt - 99999)})
+    assert ch.needs_probe(jetzt) is False
+
+
+def test_login_meldungen_nennen_die_dauerhafte_loesung():
+    """Eine Fehlermeldung ohne Ausweg ist eine Sackgasse (EINFACHHEIT.md). Sowohl die
+    Chat-Antwort als auch die Selbstprüfung müssen den API-Key als Reserve nennen —
+    das ist die Lösung, die den Fall künftig ganz verhindert."""
+    li = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    teil = li.split("Mein Claude-CLI-Login ist ")[1][:700]
+    assert "Modelle & Provider" in teil and "API-Key" in teil, \
+        "Chat-Meldung nennt nur /login, nicht die dauerhafte Lösung"
+    pr = open(os.path.expanduser("~/.claude/matrix-bot/pruefung.py")).read()
+    assert "claude_health.klartext()" in pr, "Selbstprüfung zeigt den Zustand nicht"
+    assert "Reserve hinterlegen" in pr
+    ch = open(os.path.expanduser("~/.claude/matrix-bot/claude_health.py")).read()
+    assert "def klartext(" in ch
+    # Auch die Probe muss den Windows-Weg nutzen (stdin) und nie auf Eingabe warten
+    probe = ch.split("def probe(")[1].split("\ndef ")[0]
+    assert 'input="ok"' in probe and '"-p", "--output-format"' in probe, \
+        "Probe schickt den Prompt noch als Argument"

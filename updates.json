@@ -1,7 +1,9 @@
 {
- "version": "1.21.1",
+ "version": "1.22.0",
  "date": "2026-07-30",
  "highlights": [
-  "🩺 Neu: »operator diagnose« — schreibt einen vollständigen Bericht (welche Fassung wirklich installiert ist, alle Protokolle, Dienste, ein echter Test des Sprachmodells inklusive Grenzfällen). Damit lässt sich ein Problem am Stück auswerten statt Frage für Frage. Passwörter und Zugangsschlüssel erscheinen darin nie."
+  "🔑 Abgelaufene Claude-Anmeldung: Dein Operator merkt das jetzt von selbst und meldet sich VORHER — statt dass du es an einer unbeantworteten Frage merkst. Und jede Meldung dazu nennt jetzt die dauerhafte Lösung: einen Claude-API-Key als Reserve hinterlegen, dann springt er automatisch darauf um.",
+  "🪟 Windows: Die Dashboard-Übersicht war komplett tot (rote Meldung, leere Versionsanzeige) — ein Speicherplatz-Befehl, den es dort nicht gibt. Behoben.",
+  "🩺 »operator pruefen« zeigt jetzt auch, wann Claude zuletzt nachweislich funktioniert hat."
  ]
 }

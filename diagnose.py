@@ -73,8 +73,32 @@ def teil1_fassung():
         sag(f"VERSION-Datei : {open(os.path.join(BOT_DIR, 'VERSION')).read().strip()}")
     except Exception as e:
         sag(f"VERSION-Datei : NICHT LESBAR ({e})")
+    # Das Manifest liegt bewusst NICHT auf der Platte (der Updater holt es live) —
+    # also hier genauso: aus der hinterlegten Update-Quelle. Sonst bleibt dieser Teil
+    # auf jedem Kundenrechner blind (Michis Bericht: »Manifest nicht auswertbar«).
+    m = None
     try:
         m = json.load(open(os.path.join(BOT_DIR, "manifest.json")))
+        sag("Manifest      : lokal gefunden")
+    except Exception:
+        quelle = ""
+        try:
+            quelle = open(os.path.join(BOT_DIR, "repo_raw.txt")).read().strip()
+        except OSError:
+            pass
+        sag(f"Update-Quelle : {quelle or '(keine hinterlegt)'}")
+        if quelle:
+            import urllib.request
+            try:
+                with urllib.request.urlopen(quelle.rstrip("/") + "/manifest.json",
+                                            timeout=20) as r:
+                    m = json.loads(r.read().decode("utf-8"))
+                sag("Manifest      : aus der Update-Quelle geladen")
+            except Exception as e:
+                sag(f"Manifest      : Quelle nicht erreichbar ({e})")
+    try:
+        if m is None:
+            raise ValueError("kein Manifest verfügbar")
         sag(f"Manifest sagt : {m.get('version')}  ({len(m.get('files', []))} Dateien)")
         abweichend, fehlend = [], []
         for e in m.get("files", []):

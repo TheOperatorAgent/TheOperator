@@ -83,6 +83,18 @@ def schritt3_claude():
               "Auf Windows braucht es claude.cmd/.exe — Installer erneut ausführen.")
         return
     sagen(OK, f"Claude CLI: {pfad}")
+    # Gemerkter Zustand — sagt auch, wann Claude ZULETZT nachweislich funktioniert hat.
+    # Ohne das sieht man nur »geht/geht nicht«, aber nicht »läuft bald ab«.
+    try:
+        import claude_health
+        zustand, text = claude_health.klartext()
+        sagen(OK if zustand == "ok" else FEHLER if zustand == "expired" else WARN,
+              f"Zustand: {text}",
+              "" if zustand == "ok" else
+              "»claude /login« ausführen — und im Dashboard unter »Modelle & Provider« "
+              "einen API-Key als Reserve hinterlegen, dann springt der Operator selbst ein.")
+    except Exception:
+        pass
     try:
         r = subprocess.run([pfad, "-p", "Antworte nur mit: OK"], capture_output=True,
                            text=True, timeout=90,

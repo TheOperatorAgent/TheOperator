@@ -1,10 +1,10 @@
 {
- "version": "1.21.1",
+ "version": "1.22.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "c09130e7a97e25846ca14a667508f34817b692c7518064a86fc4f29c7845aa79"
+   "sha256": "546b36cb8dcb27efaf21b8ebee4bd08acee372df2279c61d82062149570a48fa"
   },
   {
    "src": "matrix_room.py",
@@ -89,7 +89,7 @@
   {
    "src": "claude_health.py",
    "dst": "claude_health.py",
-   "sha256": "cb31d1b55f8600f9a0d349ae6006d7461edded754aa0993c7cdbb602fa32c89a"
+   "sha256": "9a799186ad50e4ed71c2974c39ffdf22ca687ce818c587a727eb9728771bcbdd"
   },
   {
    "src": "throttle.py",
@@ -224,7 +224,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "aa3d16bde37a27bdc8de7dae442d5e614c8ef5424a9ca09e411112650cb9ab26"
+   "sha256": "2b3401655e172af9565897f71434031b8f48eaa7876e7e5ee3017acfd360cb24"
   },
   {
    "src": "dashboard/tokens.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "d41ddd0252685d9b7797956399957e1a65ce1c124b4e14794430fb8275ef6618"
+   "sha256": "a482aec6f30758f5ba391b686d1f33d8ef1ab78ac649da44307ae41eb5ecad43"
   },
   {
    "src": "dienst_start.py",
@@ -294,12 +294,12 @@
   {
    "src": "pruefung.py",
    "dst": "pruefung.py",
-   "sha256": "ac9e8057a0ad6573b8a90aa5403992997d72ed467b258018d64e2e6e393cbfc6"
+   "sha256": "14492b62d7139d79cfdfb39e1d94223b56667d5651cf983c89ff6bcce8ce2c8e"
   },
   {
    "src": "diagnose.py",
    "dst": "diagnose.py",
-   "sha256": "4ee58c84d4a4cbf2ae5c481b126e08e6110c2f51c6387180b639175b68df8139"
+   "sha256": "471308d4e03b2320788d8a88ef6f56c3e7517b5a48d28e1acfb3f12bdb192b6c"
   }
  ]
 }

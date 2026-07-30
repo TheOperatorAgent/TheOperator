@@ -995,7 +995,11 @@ class BotSession(threading.Thread):
                     self.send_message(
                         "⚠️ Ich kann gerade nicht antworten: Mein Claude-CLI-Login ist "
                         f"abgelaufen. Bitte auf dem {GERAET} {TERMINAL} `claude /login` "
-                        "ausführen — danach beantworte ich deine Nachricht gern nochmal.")
+                        "ausführen — danach beantworte ich deine Nachricht gern nochmal.\n"
+                        "👉 Damit das nie wieder passiert: Hinterlege im Dashboard unter "
+                        "»Modelle & Provider« einen Claude-API-Key als Reserve. Dann "
+                        "springe ich in so einem Fall automatisch darauf um, statt dich "
+                        "warten zu lassen.")
                 elif any(k in out for k in ("limit", "429", "quota")):
                     self.send_message(
                         "⚠️ Mein Claude-Abo ist gerade am Limit. Du kannst im Dashboard unter "

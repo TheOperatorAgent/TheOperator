@@ -80,15 +80,31 @@ def record(rc, output=""):
 
 
 def needs_probe(now=None):
-    """Nur nachsehen, wenn länger kein echter Lauf Beweis geliefert hat."""
+    """Nachsehen, wenn der letzte BEWEIS zu alt ist.
+
+    Früher: »kein echter Lauf seit 6 h«. Das ging an der Wirklichkeit vorbei — wer
+    regelmäßig chattet, erneuert damit dauernd `checked_at`, und aktiv geprüft wurde
+    NIE. Die Anmeldung läuft aber zeitgesteuert ab, unabhängig von der Nutzung.
+    Ergebnis (Michi, 30.07.): Die erste Meldung über den abgelaufenen Zugang war eine
+    gescheiterte echte Anfrage — genau das, was diese Vorwarnung verhindern soll.
+
+    Jetzt zählt `last_ok` (wann hat Claude zuletzt wirklich funktioniert). Ist das
+    länger als PROBE_AFTER_H her, wird geprobt — auch wenn zwischendurch Läufe
+    stattfanden. Kosten: ein Minimal-Prompt alle paar Stunden."""
     now = now or time.time()
-    return (now - state().get("checked_at", 0)) > PROBE_AFTER_H * 3600
+    d = state()
+    if d.get("state") in ("expired", "limit"):
+        return False                     # bekannt kaputt — nicht zusätzlich proben
+    letzter_beweis = d.get("last_ok") or d.get("checked_at", 0)
+    return (now - letzter_beweis) > PROBE_AFTER_H * 3600
 
 
 def probe(claude_bin="claude", env=None):
     """Billiger Lebendtest. Gibt (zustand, ist_neu) zurück wie record()."""
     try:
-        r = subprocess.run([claude_bin, "-p", "ok", "--output-format", "json"],
+        # Prompt per stdin (Windows begrenzt Befehlszeilen) und leerer Eingabekanal,
+        # damit ein fragendes claude nie endlos wartet.
+        r = subprocess.run([claude_bin, "-p", "--output-format", "json"], input="ok",
                            capture_output=True, text=True, timeout=PROBE_TIMEOUT,
                            env=env or dict(os.environ))
         return record(r.returncode, r.stdout + r.stderr)
@@ -106,6 +122,23 @@ def should_warn():
     """Vorwarnung nur bei abgelaufenem Login und nur einmal je Ausfall."""
     d = state()
     return d.get("state") == "expired" and not d.get("warned_at")
+
+
+def klartext(now=None):
+    """Zustand in einem Satz — für »operator pruefen« und das Dashboard."""
+    now = now or time.time()
+    d = state()
+    z = d.get("state", "unknown")
+    alter = int((now - (d.get("last_ok") or 0)) / 3600) if d.get("last_ok") else None
+    if z == "ok":
+        return ("ok", f"Anmeldung gültig (zuletzt bestätigt vor {alter} h)"
+                if alter is not None else "Anmeldung gültig")
+    if z == "expired":
+        return ("expired", "Anmeldung ABGELAUFEN — »claude /login« ausführen; "
+                           "mit hinterlegtem API-Key würde der Operator selbst einspringen")
+    if z == "limit":
+        return ("limit", "Abo am Limit — mit hinterlegtem API-Key läuft es automatisch weiter")
+    return ("unknown", "Zustand unbekannt (noch kein Lauf verbucht)")
 
 
 WARN_TEXT = (
