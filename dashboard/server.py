@@ -1509,7 +1509,7 @@ WORKSPACE_DIR = platform_compat.workspace()   # #106
 def _claude_bin() -> str:
     # Windows-sicher (WinError 193): platform_compat bevorzugt claude.cmd/.exe
     try:
-        return creds().get("claude_bin") or platform_compat.claude_bin()
+        return platform_compat.claude_bin(creds().get("claude_bin") or "")
     except Exception:
         return platform_compat.claude_bin()
 

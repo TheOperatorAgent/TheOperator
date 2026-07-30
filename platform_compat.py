@@ -121,15 +121,31 @@ def ensure_std_streams(logdatei: str = "") -> None:
         sys.stderr = ziel
 
 
-def claude_bin() -> str:
+def claude_bin(gespeichert: str = "") -> str:
     """Pfad zum Claude CLI — Windows-sicher aufgelöst.
 
-    npm legt drei Dateien nebeneinander: »claude« (Shell-Skript), »claude.cmd«
-    und »claude.ps1«. shutil.which("claude") kann auf Windows eine NICHT startbare
-    Variante treffen — dann stirbt jeder Modell-Aufruf mit »WinError 193: %1 ist
-    keine zulässige Win32-Anwendung« (Michis Windows, 30.07., live im Log).
-    Deshalb: startbare Endungen zuerst, der Rest wie gehabt."""
+    npm legt drei Dateien nebeneinander: »claude« (Shell-Skript, für Unix),
+    »claude.cmd« und »claude.ps1«. Auf Windows ist nur die .cmd/.exe direkt
+    startbar; erwischt man eine andere, stirbt JEDER Modell-Aufruf mit
+    »WinError 193: %1 ist keine zulässige Win32-Anwendung« (Michis Windows, 30.07.).
+
+    `gespeichert` ist der Wert aus credentials.json. Der hat normalerweise Vorrang —
+    ABER: Ältere Installationen haben dort die **.ps1** eingetragen bekommen, und die
+    hebelt jede Reparatur aus. Deshalb wird ein auf Windows nicht startbarer
+    gespeicherter Pfad verworfen und neu gesucht (Selbstheilung ohne Neuinstallation)."""
     import shutil as _sh
+
+    def _startbar(p):
+        if not p:
+            return False
+        if os.name != "nt":
+            return True
+        # Auf Windows startet CreateProcess nur echte Programme/Batch — eine Datei
+        # OHNE Endung ist dort das Unix-Shell-Skript und genauso untauglich wie .ps1.
+        return os.path.splitext(p)[1].lower() in (".exe", ".cmd", ".bat", ".com")
+
+    if _startbar(gespeichert):
+        return gespeichert
     if os.name == "nt":
         for name in ("claude.cmd", "claude.exe", "claude.bat"):
             p = _sh.which(name)

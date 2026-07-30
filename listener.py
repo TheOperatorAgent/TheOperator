@@ -337,8 +337,9 @@ def reidentify(text, mapping):
     return text
 
 
-# Windows-sicher: which("claude") kann dort die .ps1/Shell-Variante treffen → WinError 193
-CLAUDE = CREDS.get("claude_bin") or _plat.claude_bin()
+# Windows-sicher: ein gespeicherter .ps1-Pfad (Alt-Installationen) wird verworfen —
+# er wäre nicht startbar (WinError 193). claude_bin() entscheidet, nicht das oder.
+CLAUDE = _plat.claude_bin(CREDS.get("claude_bin") or "")
 OWNER = CREDS.get("owner_id", "")
 # #90 Dock: Dashboard-Eingaben werden vom Bot-Konto mit diesem Inhalts-Schlüssel in den
 # Raum gespiegelt (matrix_room.senden_dashboard). Nur der Bot-Token kann so senden.

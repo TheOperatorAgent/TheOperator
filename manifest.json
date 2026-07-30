@@ -1,10 +1,10 @@
 {
- "version": "1.18.7",
+ "version": "1.18.8",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "fedbd0f1a7f3db2f6d802028e36d1ecef95e26ec01763d691c0aed693054b416"
+   "sha256": "8ff5bca17cf390814def0321fcde553bb45552c6a0ec35268d85058952dacfd6"
   },
   {
    "src": "matrix_room.py",
@@ -69,7 +69,7 @@
   {
    "src": "platform_compat.py",
    "dst": "platform_compat.py",
-   "sha256": "4be8fd45441d80096be63799fde1b71c33f2132deab9c8457cb37d1f526a1f22"
+   "sha256": "4b3f1d9eaf0d9da9fc17e11c965227293a7fa295ed45d872f443acbed3c51f1e"
   },
   {
    "src": "secretstore.py",
@@ -224,7 +224,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "4048493a1e1c284b361eae03512422467e31e831927f4dfdf4e942f41152fbe6"
+   "sha256": "99bc3f77924a5a8757b11a9593cdc11fcc35525998efb9c449d13496a59bce9b"
   },
   {
    "src": "dashboard/tokens.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "ac46e582d4bbe716d28eb98e9c555885a676220a7d1ee40b2d9ff9d704b5a108"
+   "sha256": "e46d9e03dd4a576b89cc42b6f7df2fe29773c3a42a422b1d818fd5ab858513cb"
   }
  ]
 }

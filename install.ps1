@@ -283,7 +283,17 @@ if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
     if (Get-Command npm -ErrorAction SilentlyContinue) { npm install -g @anthropic-ai/claude-code }
     else { try { irm https://claude.ai/install.ps1 | iex } catch { Die "Claude-CLI-Installation fehlgeschlagen - npm oder Installer noetig" } }
 }
-$ClaudeBin = (Get-Command claude -ErrorAction SilentlyContinue).Source
+# STARTBARE Variante bevorzugen. npm legt claude (Shell-Skript, fuer Unix),
+# claude.cmd und claude.ps1 nebeneinander. Get-Command liefert auf Windows gern die
+# .ps1 - die landete in credentials.json (claude_bin) und JEDER Modell-Aufruf starb
+# mit "WinError 193: %1 ist keine zulaessige Win32-Anwendung" (Michi, 30.07.).
+# Der Fix in platform_compat.claude_bin() greift NICHT, weil credentials.json Vorrang hat.
+$ClaudeBin = $null
+foreach ($n in @("claude.cmd", "claude.exe", "claude.bat")) {
+    $c = Get-Command $n -ErrorAction SilentlyContinue
+    if ($c) { $ClaudeBin = $c.Source; break }
+}
+if (-not $ClaudeBin) { $ClaudeBin = (Get-Command claude -ErrorAction SilentlyContinue).Source }
 if (-not $ClaudeBin) { Die "claude nicht im PATH - PowerShell neu oeffnen und erneut ausfuehren" }
 Ok "Claude CLI: $ClaudeBin"
 # Anmeldung wirklich PRUeFEN (wie install.sh) - sonst "gelingt" die Installation und der Bot schweigt.

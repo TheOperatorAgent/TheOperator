@@ -1,7 +1,7 @@
 {
- "version": "1.18.7",
+ "version": "1.18.8",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Windows: Nachtrag zum fensterlosen Start — ohne Konsole hatten die Dienste keinen Ort für ihre Ausgaben und das Dashboard startete gar nicht mehr. Ausgaben laufen jetzt in die Log-Dateien, alle Dienste starten unsichtbar und zuverlässig."
+  "🪟 Windows: Der Modell-Aufruf schlug weiter fehl (»WinError 193«), weil in der Konfiguration noch ein untauglicher Claude-Pfad stand. Der Operator erkennt und ersetzt das jetzt selbst — ohne Neuinstallation."
  ]
 }

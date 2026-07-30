@@ -3924,15 +3924,35 @@ def test_claude_aufruf_ist_windows_sicher():
     import shutil as _sh
     # Funktional auf macOS: liefert dasselbe wie which (kein Verhalten verschlechtert)
     assert platform_compat.claude_bin() == (_sh.which("claude") or "claude")
+    assert platform_compat.claude_bin("/opt/x/claude") == "/opt/x/claude"
+    # Zweiter Anlauf (30.07.): credentials.json hatte Vorrang und enthielt die .ps1 —
+    # dadurch war der Fix wirkungslos. Ein auf Windows nicht startbarer gespeicherter
+    # Pfad muss verworfen werden (Selbstheilung ohne Neuinstallation).
+    echt = os.name
+    try:
+        os.name = "nt"
+        assert platform_compat.claude_bin("C:/npm/claude.ps1") != "C:/npm/claude.ps1"
+        assert platform_compat.claude_bin("C:/npm/claude") != "C:/npm/claude", \
+            "Datei ohne Endung ist auf Windows das Unix-Shell-Skript — auch untauglich"
+        assert platform_compat.claude_bin("C:/npm/claude.cmd") == "C:/npm/claude.cmd"
+        assert platform_compat.claude_bin("C:/x/claude.exe") == "C:/x/claude.exe"
+    finally:
+        os.name = echt
+    # Und der Installer darf gar keinen untauglichen Pfad mehr hineinschreiben
+    ps = _ps1()
+    assert 'foreach ($n in @("claude.cmd", "claude.exe", "claude.bat"))' in ps, \
+        "install.ps1 schreibt wieder blind Get-Command claude in credentials.json"
     # Windows-Zweig strukturell: .cmd/.exe zuerst
     src = open(os.path.expanduser("~/.claude/matrix-bot/platform_compat.py")).read()
-    teil = src.split("def claude_bin()")[1].split("\ndef ")[0]
+    teil = src.split("def claude_bin(")[1].split("\ndef ")[0]
     assert '"claude.cmd"' in teil and teil.index("claude.cmd") < teil.index('which("claude")')
     # Keine Aufrufstelle umgeht die sichere Auflösung
     li = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
     srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py")).read()
     assert 'shutil.which("claude")' not in li, "listener nutzt wieder das rohe which"
     assert 'shutil.which("claude")' not in srv, "server nutzt wieder das rohe which"
+    assert 'CREDS.get("claude_bin") or _plat.claude_bin()' not in li, \
+        "credentials.json haette wieder Vorrang — genau der zweite Fehlschlag"
 
 
 def test_dienste_ueberleben_fehlende_ausgabekanaele():
