@@ -3911,3 +3911,25 @@ def test_windows_dienste_starten_ohne_konsolenfenster():
     assert '($exeName + "w.exe")' in teil, "Dienste starten wieder mit sichtbarer Konsole"
     assert "Test-Path $leise" in teil, "pythonw wird nicht geprüft, nur geraten"
     assert "-X utf8" in teil, "UTF-8-Modus (1.18.3) darf dabei nicht verloren gehen"
+
+
+def test_claude_aufruf_ist_windows_sicher():
+    """Realer Absturz (Michi, 30.07., live im Log): »WinError 193: %1 ist keine
+    zulässige Win32-Anwendung«. npm legt claude (Shell-Skript), claude.cmd und
+    claude.ps1 nebeneinander — shutil.which("claude") kann auf Windows die nicht
+    startbare Variante treffen, und dann stirbt JEDER Modell-Aufruf. Deshalb löst
+    platform_compat.claude_bin() startbare Endungen zuerst auf, und alle
+    Aufrufstellen nutzen sie (kein rohes which("claude") mehr)."""
+    import platform_compat
+    import shutil as _sh
+    # Funktional auf macOS: liefert dasselbe wie which (kein Verhalten verschlechtert)
+    assert platform_compat.claude_bin() == (_sh.which("claude") or "claude")
+    # Windows-Zweig strukturell: .cmd/.exe zuerst
+    src = open(os.path.expanduser("~/.claude/matrix-bot/platform_compat.py")).read()
+    teil = src.split("def claude_bin()")[1].split("\ndef ")[0]
+    assert '"claude.cmd"' in teil and teil.index("claude.cmd") < teil.index('which("claude")')
+    # Keine Aufrufstelle umgeht die sichere Auflösung
+    li = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py")).read()
+    assert 'shutil.which("claude")' not in li, "listener nutzt wieder das rohe which"
+    assert 'shutil.which("claude")' not in srv, "server nutzt wieder das rohe which"

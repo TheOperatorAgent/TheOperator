@@ -1502,10 +1502,11 @@ WORKSPACE_DIR = platform_compat.workspace()   # #106
 
 
 def _claude_bin() -> str:
+    # Windows-sicher (WinError 193): platform_compat bevorzugt claude.cmd/.exe
     try:
-        return creds().get("claude_bin") or shutil.which("claude") or "claude"
+        return creds().get("claude_bin") or platform_compat.claude_bin()
     except Exception:
-        return shutil.which("claude") or "claude"
+        return platform_compat.claude_bin()
 
 
 def _assistant_snapshot() -> dict:

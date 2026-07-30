@@ -91,6 +91,23 @@ def venv_python(botdir: str) -> str:
 
 
 # ---------------------------------------------------------------- Browser --
+def claude_bin() -> str:
+    """Pfad zum Claude CLI — Windows-sicher aufgelöst.
+
+    npm legt drei Dateien nebeneinander: »claude« (Shell-Skript), »claude.cmd«
+    und »claude.ps1«. shutil.which("claude") kann auf Windows eine NICHT startbare
+    Variante treffen — dann stirbt jeder Modell-Aufruf mit »WinError 193: %1 ist
+    keine zulässige Win32-Anwendung« (Michis Windows, 30.07., live im Log).
+    Deshalb: startbare Endungen zuerst, der Rest wie gehabt."""
+    import shutil as _sh
+    if os.name == "nt":
+        for name in ("claude.cmd", "claude.exe", "claude.bat"):
+            p = _sh.which(name)
+            if p:
+                return p
+    return _sh.which("claude") or "claude"
+
+
 def open_url(url: str) -> bool:
     """URL im Standardbrowser öffnen — plattformübergreifend (macOS/Linux/Windows).
 

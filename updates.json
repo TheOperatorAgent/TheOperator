@@ -1,7 +1,7 @@
 {
- "version": "1.18.5",
+ "version": "1.18.6",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Windows: Die Operator-Dienste laufen jetzt unsichtbar im Hintergrund — vorher öffnete jeder Dienst ein schwarzes Konsolenfenster, das wie ein Versehen aussah. Wer es schloss, beendete damit unwissentlich seinen Operator. Jetzt gibt es kein Fenster mehr, das man schließen könnte."
+  "🪟 Windows: Der Aufruf des Sprachmodells schlug fehl (»WinError 193«), weil Windows die falsche der drei Claude-Startdateien erwischte. Jetzt wird immer die startbare Variante gewählt — dein Operator antwortet."
  ]
 }
