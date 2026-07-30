@@ -10,7 +10,7 @@ Matrix-Chat — selbst gehostet, ein Installationsbefehl.
 
 Schreib deinem Assistenten in Element (oder jedem Matrix-Client) — er liest mit deinem
 eigenen Claude-Abo, denkt nach, recherchiert und antwortet in Sekunden. Läuft komplett auf
-deinem eigenen Rechner (Mac, Linux-PC oder Windows): kein fremder Server, keine API-Keys,
+deinem eigenen Rechner (Mac oder Linux-PC; Windows folgt): kein fremder Server, keine API-Keys,
 keine Zusatzkosten außer deinem bestehenden Claude-Abo.
 
 ```
@@ -19,7 +19,7 @@ Du (Element, Handy) ──▶ dein Matrix-Server ──▶ Listener (dein Rechne
 
 ## Voraussetzungen
 
-- **macOS, Linux oder Windows** (läuft auf allen drei — ein einziger Installationsbefehl je OS)
+- **macOS oder Linux** (ein einziger Installationsbefehl) — *Windows folgt, siehe unten*
 - **Claude-Abo** (Pro/Max) — der Assistent nutzt deinen persönlichen Claude-Login
 - **Zwei Matrix-Accounts**: dein eigener + ein separater für den Bot
   (z. B. kostenlos auf [matrix.org](https://matrix.org) registrieren — oder auf deinem eigenen Homeserver)
@@ -33,10 +33,16 @@ Ein Befehl — passend zu deinem Betriebssystem:
 curl -fsSL https://operator.bayern/install.sh | bash
 ```
 
-**Windows** (PowerShell):
-```powershell
-irm https://operator.bayern/install.ps1 | iex
-```
+**Windows** — *folgt in Kürze.*
+
+Operator läuft auf Windows technisch bereits, ist dort aber noch **nicht freigegeben**.
+Bei realen Testläufen am 30.07.2026 sind neun plattformspezifische Fehler nacheinander
+aufgetreten (Zeichensatz, Prozessstart, Befehlszeilen-Grenze u. a.); acht davon sind
+behoben, einer ist noch offen. Wir geben Windows erst frei, wenn es dort genauso
+zuverlässig läuft wie auf macOS und Linux.
+
+Die Fehleranalyse ist vollständig öffentlich dokumentiert — jeder Befund mit Symptom,
+Ursache, Fix und Wächter-Test. Wer mitlesen oder helfen will, ist willkommen.
 
 Der Wizard führt durch alles:
 
@@ -212,7 +218,7 @@ sondern in **Datenschutz-Tiefe, Kanal-Philosophie und Kosten**. (Wettbewerber-Sp
 
 | Kriterium | **Operator** | OpenClaw | Hermes Agent |
 |---|---|---|---|
-| Betrieb | selbst-gehostet (Mac/Linux/Windows) | selbst-gehostet | selbst-gehostet |
+| Betrieb | selbst-gehostet (Mac/Linux; Windows folgt) | selbst-gehostet | selbst-gehostet |
 | Chat-Kanäle | **nur Matrix** — bewusst: E2E-fähig, selbst hostbar | viele (WhatsApp, Telegram, Signal, Discord …) | viele (WhatsApp, Telegram, Signal, Discord …) |
 | Daten über Fremd-Plattformen | **nein** (kein Meta/Telegram-Server im Pfad) | ja, je nach Kanal | ja, je nach Kanal |
 | PII-Schutz **vor** dem Modell | **automatische Pseudonymisierung** (Presidio + Faker) | nicht dokumentiert | nicht dokumentiert |
