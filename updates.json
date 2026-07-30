@@ -1,8 +1,8 @@
 {
- "version": "1.19.0",
+ "version": "1.20.0",
  "date": "2026-07-30",
  "highlights": [
-  "🔍 Dein Operator schreibt sein Protokoll jetzt selbst — auf Windows gab es die Log-Datei bisher überhaupt nicht, »operator log« zeigte ins Leere und bei einem Fehler stand man ohne Diagnose da. Zusätzlich landet die genaue Fehlerursache im Protokoll statt nur »Fehler«.",
-  "🗣️ Meldungen im Chat sagen nicht mehr »am Mac«, wenn dein Operator auf Windows oder Linux läuft."
+  "🔎 Neu: »operator pruefen« — geht die ganze Kette durch (Python, Dateien, Claude, Dienste, Matrix, Dashboard) und sagt bei jedem Problem, was zu tun ist. Kein Rätselraten mehr, wenn etwas nicht antwortet.",
+  "🛟 Startet ein Dienst nicht, steht der Grund jetzt immer in einer Datei — vorher konnte ein Dienst auf Windows völlig spurlos scheitern. Auch Fehler, die noch vor der ersten Programmzeile auftreten, werden festgehalten."
  ]
 }

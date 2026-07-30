@@ -4025,3 +4025,69 @@ def test_listener_schreibt_sein_log_selbst(tmp_path, monkeypatch):
     src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
     assert "Claude-Lauf rc=" in src, \
         "Log sagte nur »Fehler« ohne Grund — damit ist keine Diagnose möglich"
+
+
+# ------------------------- Systematik statt Symptom-Flicken (30.07.) --------------
+def test_start_mantel_protokolliert_jeden_fehlstart(tmp_path):
+    """Die systematische Lehre aus neun Windows-Fehlern (Michi: »gehe an das System
+    systematischer ran«): Ein Dienst, der beim START stirbt, hinterließ auf Windows
+    KEINE Spur — kein Fenster (pythonw), keine Log-Datei (die schreibt erst der
+    laufende Dienst), kein Journal (nur systemd). Jede Suche begann bei null.
+
+    Der Mantel muss deshalb ausnahmslos jeden Abbruch festhalten — auch Import- und
+    Syntaxfehler, die VOR jeder Zeile Programmlogik auftreten. Und im gesunden Fall
+    darf er nicht lärmen."""
+    import shutil as _sh
+    import subprocess
+    mantel = tmp_path / "dienst_start.py"
+    _sh.copy(os.path.expanduser("~/.claude/matrix-bot/dienst_start.py"), mantel)
+    faelle = {
+        "a_import.py": ("import gibtesnichtxyz\n", "gibtesnichtxyz"),
+        "b_syntax.py": ("def kaputt(\n", "SyntaxError"),
+        "c_laufzeit.py": ('raise RuntimeError("absichtlich")\n', "absichtlich"),
+    }
+    for name, (inhalt, marke) in faelle.items():
+        (tmp_path / name).write_text(inhalt, encoding="utf-8")
+        subprocess.run([sys.executable, str(mantel), name], cwd=tmp_path,
+                       capture_output=True, timeout=60)
+        prot = tmp_path / (name[:-3] + "-start.log")
+        assert prot.exists(), f"{name}: kein Startprotokoll — spurloser Fehlstart"
+        text = prot.read_text(encoding="utf-8")
+        assert "ABBRUCH" in text and marke in text, f"{name}: Grund fehlt im Protokoll"
+        assert "Python   :" in text and "Zeichensatz:" in text, \
+            "Umgebungsangaben fehlen — genau die haben bei der Windows-Suche gefehlt"
+    # Gesunder Fall: Startzeile ja, ABBRUCH nein
+    (tmp_path / "d_ok.py").write_text('print("laeuft")\n', encoding="utf-8")
+    subprocess.run([sys.executable, str(mantel), "d_ok.py"], cwd=tmp_path,
+                   capture_output=True, timeout=60)
+    ok_text = (tmp_path / "d_ok-start.log").read_text(encoding="utf-8")
+    assert "ABBRUCH" not in ok_text
+
+
+def test_installer_starten_dienste_ueber_den_mantel_und_liefern_pruefung_mit():
+    """Ohne Verdrahtung hilft der Mantel niemandem — und die Selbstprüfung muss auf
+    dem Rechner liegen, wo sie gebraucht wird."""
+    ps = _ps1()
+    assert "dienst_start.py" in ps and 'Join-Path $BotDir "dienst_start.py"' in ps
+    assert '"pruefung.py"' in ps, "Selbstprüfung wird auf Windows nicht mitgeliefert"
+    assert 'if /i "%1"=="pruefen"' in ps, "Kurzbefehl »operator pruefen« fehlt"
+    if os.path.exists("/tmp/_diff_op/install.sh"):
+        sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+        assert "dienst_start.py pruefung.py" in sh, "sh liefert die neuen Dateien nicht"
+        assert "pruefen|check" in sh, "sh kennt »operator pruefen« nicht"
+
+
+def test_selbstpruefung_deckt_die_ganze_kette_ab():
+    """Die Prüfung muss die Kette in der Reihenfolge abgehen, in der sie reißen kann —
+    sonst ist sie nur eine weitere Anzeige. Jeder der neun Fehler von heute hat hier
+    seinen Prüfschritt."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pruefung.py")).read()
+    for schritt in ("schritt1_python", "schritt2_dateien", "schritt3_claude",
+                    "schritt4_dienste", "schritt5_matrix", "schritt6_dashboard"):
+        assert f"def {schritt}" in src, f"{schritt} fehlt"
+    # Die konkreten Fallen von heute müssen geprüft werden
+    assert "-X utf8" in src, "cp1252-Falle wird nicht geprüft"
+    assert '".exe", ".cmd"' in src, "nicht startbarer Claude-Pfad wird nicht geprüft"
+    assert "start.log" in src, "Startprotokolle werden nicht ausgewertet"
+    assert "VERHALTEN.md" in src, "die Datei, an der der Listener starb, fehlt"
+    assert "👉" in src, "ohne nächsten Schritt ist ein Befund keine Hilfe (Petra-Test)"
