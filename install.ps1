@@ -548,7 +548,7 @@ if ($dashOptin -eq "ja") {
     Step 85 "Dashboard-Dateien einrichten ..."
     foreach ($f in @("server.py","tokens.py","agents_store.py","m365_setup.py","google_auth.py","open.py","mcp_catalog.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
     foreach ($f in @("index.html","app.js","style.css")) { Fetch-File "dashboard\static\$f" (Join-Path $DashDir "static\$f") }
-    foreach ($f in @("dienst_start.py","pruefung.py","m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
+    foreach ($f in @("dienst_start.py","pruefung.py","diagnose.py","m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
     if (-not (Secret-Has "token-key")) { Secret-Set "token-key" (Rand-Hex) }
     if (-not (Test-Path (Join-Path $BotDir "dashboard.json"))) {
         $dtok = Rand-Hex; Secret-Set "dashboard-token" $dtok
@@ -611,9 +611,10 @@ if /i "%1"=="chat" goto chat
 if /i "%1"=="log" goto log
 if /i "%1"=="status" goto status
 if /i "%1"=="pruefen" goto pruefen
+if /i "%1"=="diagnose" goto diagnose
 if /i "%1"=="check" goto pruefen
 if /i "%1"=="uninstall" goto uninstall
-echo Nutzung: operator [dashboard^|chat^|log^|pruefen^|status^|uninstall]
+echo Nutzung: operator [dashboard^|chat^|log^|pruefen^|diagnose^|status^|uninstall]
 goto :eof
 :dashboard
 "%PY%" "%BOT%\dashboard\open.py"
@@ -626,6 +627,9 @@ powershell -NoProfile -Command "Get-Content -Wait -Tail 40 '%BOT%\listener.log'"
 goto :eof
 :pruefen
 "%PY%" "%BOT%\pruefung.py"
+goto :eof
+:diagnose
+"%PY%" "%BOT%\diagnose.py"
 goto :eof
 :status
 powershell -NoProfile -Command "foreach (`$t in 'OperatorListener','OperatorDashboard','OperatorPseudonym') { `$s = (schtasks /query /tn `$t 2>`$null); if (`$LASTEXITCODE -eq 0) { Write-Host ('[ok] ' + `$t) } else { Write-Host ('[--] ' + `$t + ' nicht eingerichtet') } }"

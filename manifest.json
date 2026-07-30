@@ -1,5 +1,5 @@
 {
- "version": "1.21.0",
+ "version": "1.21.1",
  "files": [
   {
    "src": "listener.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "65a6bd97a4a6b72911ae6c3d45991f4326c95f792e196f8bf74857a557b27585"
+   "sha256": "d41ddd0252685d9b7797956399957e1a65ce1c124b4e14794430fb8275ef6618"
   },
   {
    "src": "dienst_start.py",
@@ -295,6 +295,11 @@
    "src": "pruefung.py",
    "dst": "pruefung.py",
    "sha256": "ac9e8057a0ad6573b8a90aa5403992997d72ed467b258018d64e2e6e393cbfc6"
+  },
+  {
+   "src": "diagnose.py",
+   "dst": "diagnose.py",
+   "sha256": "4ee58c84d4a4cbf2ae5c481b126e08e6110c2f51c6387180b639175b68df8139"
   }
  ]
 }

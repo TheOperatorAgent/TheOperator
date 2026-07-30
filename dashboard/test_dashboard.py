@@ -4147,3 +4147,39 @@ def test_prompt_geht_nie_ueber_die_befehlszeile():
         "Prompt wird nicht per Standardeingabe übergeben"
     srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py")).read()
     assert "input=prompt" in srv, "Assistent im Dashboard hat dieselbe Falle"
+
+
+def test_diagnose_sammelt_alles_und_schuetzt_geheimnisse():
+    """Michi (30.07.): »du musst etwas implementieren, damit du jeden Scheiß loggen
+    kannst, damit man eine saubere Auswertung machen kann«. Ein Bericht muss die
+    Fragen des Tages ALLE auf einmal beantworten — und darf dabei keine Geheimnisse
+    verschicken, denn er wird ja weitergegeben."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/diagnose.py")).read()
+    for teil in ("teil1_fassung", "teil2_umgebung", "teil3_protokolle",
+                 "teil4_dienste", "teil5_claude", "teil6_grenze"):
+        assert f"def {teil}" in src, f"{teil} fehlt"
+    # Die Fragen, die heute jede Runde gekostet haben
+    assert "sha256" in src, "keine Prüfsummen — halb aktualisierte Installation unerkannt"
+    assert "8191" in src, "die entscheidende Grenze wird nicht geprüft"
+    assert "schtasks" in src, "Windows-Dienstdetails fehlen"
+    assert "start.log" in src, "Startprotokolle werden nicht eingesammelt"
+    assert "input=" in src, "der stdin-Weg wird nicht gegengetestet"
+    # Geheimnisschutz: funktional prüfen, nicht nur strukturell
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "op_diag", os.path.expanduser("~/.claude/matrix-bot/diagnose.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    for geheim in ("syt_abcdefgh12345678", "sk-" + "x" * 30, "a" * 48,
+                   '"access_token": "geheim123"'):
+        assert geheim not in mod._sauber(f"Wert: {geheim} Ende"), \
+            f"Geheimnis landet im Bericht: {geheim[:12]}…"
+    assert "OK" in mod._sauber("rc=0 OK"), "kürzt harmlosen Text weg"
+
+
+def test_kurzbefehle_kennen_pruefen_und_diagnose():
+    ps = _ps1()
+    assert 'if /i "%1"=="diagnose"' in ps and '"diagnose.py"' in ps
+    if os.path.exists("/tmp/_diff_op/install.sh"):
+        sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+        assert "diagnose)" in sh and "diagnose.py" in sh

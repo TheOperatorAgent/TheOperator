@@ -1,7 +1,7 @@
 {
- "version": "1.21.0",
+ "version": "1.21.1",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Windows: DER Fehler ist gefunden und behoben. Windows begrenzt Befehlszeilen auf 8191 Zeichen — dein Operator übergab seinen Auftrag genau so, und der ist mit Verhalten, Persona und Gedächtnis größer. Jede Antwort scheiterte nach 67 Millisekunden, ohne dass ein Zeichen beim Sprachmodell ankam. Der Auftrag geht jetzt über die Standardeingabe: unbegrenzt lang, auf allen Systemen gleich. Dein Operator antwortet."
+  "🩺 Neu: »operator diagnose« — schreibt einen vollständigen Bericht (welche Fassung wirklich installiert ist, alle Protokolle, Dienste, ein echter Test des Sprachmodells inklusive Grenzfällen). Damit lässt sich ein Problem am Stück auswerten statt Frage für Frage. Passwörter und Zugangsschlüssel erscheinen darin nie."
  ]
 }
