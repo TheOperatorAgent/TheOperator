@@ -146,9 +146,14 @@ def schritt5_matrix():
         sagen(FEHLER, f"Homeserver nicht erreichbar: {e}",
               "Internetverbindung bzw. Adresse prüfen.")
     if tok in ("", "keychain"):
+        # Der Installer legt ihn unter »matrix-owner« ab (30.07. falsch geraten:
+        # ich habe nach »matrix-token« gesucht und einen Fehlalarm erzeugt).
         try:
             import secretstore
-            tok = secretstore.get("matrix-token") or ""
+            for name in ("matrix-owner", "matrix-token"):
+                tok = secretstore.get(name) or ""
+                if tok:
+                    break
         except Exception:
             tok = ""
     if not tok:

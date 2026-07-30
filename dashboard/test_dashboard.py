@@ -4091,3 +4091,33 @@ def test_selbstpruefung_deckt_die_ganze_kette_ab():
     assert "start.log" in src, "Startprotokolle werden nicht ausgewertet"
     assert "VERHALTEN.md" in src, "die Datei, an der der Listener starb, fehlt"
     assert "👉" in src, "ohne nächsten Schritt ist ein Befund keine Hilfe (Petra-Test)"
+
+
+def test_dienststatus_ist_nicht_von_der_windows_sprache_abhaengig():
+    """Fehlalarm bei Michi (30.07.): »listener: läuft nicht« für Dienste, die
+    nachweislich liefen (das Dashboard antwortete gleichzeitig auf seinem Port).
+    Ursache: schtasks ist LOKALISIERT — auf deutschem Windows steht »Wird
+    ausgeführt«, nicht »Running«. Eine Statusprüfung darf nicht an der
+    Systemsprache hängen; sprachfrei ist nur die Prozess-ID."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/servicemgr.py")).read()
+    teil = src.split("def status(")[1].split("\ndef ")[0]
+    assert 'return r.returncode == 0 and "Running" in r.stdout' not in teil, \
+        "prüft wieder auf ein englisches Wort"
+    assert "isdigit()" in teil, "keine sprachfreie Prüfung über die Prozess-ID"
+    assert "wird ausgeführt" in teil.lower(), "kein Fallback für deutsche Ausgabe"
+
+
+def test_selbstpruefung_findet_den_matrix_token_unter_dem_echten_namen():
+    """Zweiter Fehlalarm derselben Prüfung: Ich habe nach »matrix-token« gesucht,
+    der Installer legt ihn aber als »matrix-owner« ab — Ergebnis war ein Hinweis
+    »Installer erneut ausführen«, obwohl alles stimmte. Ein Diagnosewerkzeug, das
+    falsch alarmiert, ist schlimmer als keins."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pruefung.py")).read()
+    assert '"matrix-owner"' in src, "sucht den Token unter dem falschen Namen"
+    assert src.index('"matrix-owner"') < src.index('"matrix-token"'), \
+        "der echte Name muss zuerst versucht werden"
+    for datei in ("install.ps1", "install.sh"):
+        p = f"/tmp/_diff_op/{datei}"
+        if os.path.exists(p):
+            assert "matrix-owner" in open(p, encoding="utf-8").read(), \
+                f"{datei} benennt den Token anders — Prüfung würde wieder falsch alarmieren"

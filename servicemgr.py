@@ -38,9 +38,27 @@ def status(logical: str) -> bool:
                                capture_output=True, text=True)
             return r.stdout.strip() == "active"
         if _plat.IS_WIN:
-            r = subprocess.run(["schtasks", "/query", "/tn", _WIN[logical], "/fo", "list"],
+            # NICHT auf das Wort "Running" prüfen: schtasks ist lokalisiert und meldet
+            # auf einem deutschen Windows "Wird ausgeführt" (Michi, 30.07. — dadurch
+            # stand im Dashboard "läuft nicht", obwohl der Dienst nachweislich lief).
+            # /fo csv liefert eine stabile Spalte, aber ebenfalls lokalisierte Werte;
+            # eindeutig sprachfrei ist nur: läuft = hat eine Prozess-ID != 0.
+            r = subprocess.run(["schtasks", "/query", "/tn", _WIN[logical], "/v",
+                                "/fo", "csv", "/nh"],
                                capture_output=True, text=True)
-            return r.returncode == 0 and "Running" in r.stdout
+            if r.returncode != 0:
+                return False                     # Aufgabe existiert nicht
+            import csv as _csv
+            import io as _io
+            for reihe in _csv.reader(_io.StringIO(r.stdout)):
+                for feld in reihe:
+                    f = feld.strip()
+                    if f.isdigit() and f != "0":     # Spalte "Prozess-ID"
+                        return True
+            # Fallback: bekannte Zustandswörter mehrerer Sprachen
+            low = r.stdout.lower()
+            return any(w in low for w in ("running", "wird ausgeführt", "wird ausgefuehrt",
+                                          "en cours", "in esecuzione"))
     except Exception:
         return False
     return False

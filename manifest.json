@@ -1,5 +1,5 @@
 {
- "version": "1.20.0",
+ "version": "1.20.1",
  "files": [
   {
    "src": "listener.py",
@@ -79,7 +79,7 @@
   {
    "src": "servicemgr.py",
    "dst": "servicemgr.py",
-   "sha256": "b567f8a40ece1178fbb5412eee215e5c00236d2d87818341d81f07d9e4f2feec"
+   "sha256": "38db647bee50ccef9550b276b3bf34d65280a3cbc193904a703eabc7ed9f779c"
   },
   {
    "src": "providers.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "26ac7beccb7951efb69255974ffc70a13bb2e68ae84dcb5456c3fb46294bdba8"
+   "sha256": "e1c7e65a18da18a6d1673796e2f01affdf337744a3bd040a004a1df69683671b"
   },
   {
    "src": "dienst_start.py",
@@ -294,7 +294,7 @@
   {
    "src": "pruefung.py",
    "dst": "pruefung.py",
-   "sha256": "c53d813b084884b17a48439d61b409a93085001d1efb94e886cb441a33d1cce4"
+   "sha256": "ac9e8057a0ad6573b8a90aa5403992997d72ed467b258018d64e2e6e393cbfc6"
   }
  ]
 }
