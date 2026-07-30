@@ -1,7 +1,7 @@
 {
- "version": "1.17.3",
+ "version": "1.17.4",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Windows: Die Installation konnte bei der Claude-Anmeldeprüfung stumm hängen bleiben, wenn Claude eine Rückfrage stellen wollte (z. B. nach abgelaufener Anmeldung). Jetzt gibt es ein Zeitlimit, eine ehrliche Wartemeldung — und wenn Claude nicht antwortet, führt dich der Installer durch die Anmeldung, statt einzufrieren."
+  "🔎 Neue Selbstprüfung: Die mitgelieferten Tests vergleichen jetzt live, ob operator.bayern denselben Installer ausliefert wie das öffentliche Repo. Eine veraltete Website fällt damit sofort auf — nicht erst, wenn eine Installation schiefgeht."
  ]
 }

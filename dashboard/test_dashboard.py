@@ -3720,3 +3720,31 @@ def test_windows_installer_haengt_nie_an_der_claude_pruefung():
         "ohne Hinweis wirkt selbst die normale Wartezeit wie ein Haenger"
     code = "\n".join(z for z in s.splitlines() if not z.strip().startswith("#"))
     assert '$probe = & claude -p' not in code, "die ungeschuetzte Probe ist zurueck"
+
+
+def test_website_liefert_dieselben_installer_wie_das_repo():
+    """Wächter gegen die Falle vom 30.07.: operator.bayern lieferte tagelang einen
+    Uralt-Installer aus (Mojibake, Phase-5-Absturz, stummer Claude-Hänger), weil der
+    Strato-Upload Handarbeit ist und liegen blieb. Der beworbene Kundenweg ist aber
+    die Website — deshalb wird sie hier LIVE gegen den öffentlichen Spiegel geprüft.
+
+    Offline oder Website nicht erreichbar → skip (kein Fehlalarm unterwegs).
+    Erreichbar und abweichend → Fehler, denn dann installieren Kunden alten Code."""
+    import urllib.request
+    import pytest
+
+    def hole(url):
+        try:
+            with urllib.request.urlopen(url, timeout=15) as r:
+                return r.read()
+        except Exception as e:
+            pytest.skip(f"{url} nicht erreichbar ({e}) — Drift-Prüfung offline übersprungen")
+
+    for datei in ("install.sh", "install.ps1"):
+        website = hole(f"https://operator.bayern/{datei}")
+        spiegel = hole("https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/"
+                       f"main/{datei}")
+        assert website == spiegel, (
+            f"operator.bayern/{datei} weicht vom öffentlichen Repo ab — "
+            "die Website liefert alten Code an Kunden aus. "
+            "👉 cd operator-site && ./deploy-strato.command")
