@@ -3856,3 +3856,21 @@ def test_eingeschraenkt_nennt_immer_die_stoerung():
     status = mcp.split("def m365_status(")[1].split("\n@mcp.tool()")[0]
     assert "isResolved eq false" in status and "↳" in status, \
         "im Chat bliebe »eingeschränkt« weiter ohne Begründung"
+
+
+def test_dashboard_installation_zeigt_fortschritt_in_prozent():
+    """Michi (30.07.): Nach dem »ja« zur Dashboard-Installation liefen pip und das
+    Sprachmodell minutenlang ohne jede Ausgabe — »sonst weiß der User nicht, was
+    los ist«. Beide Installer zeigen jetzt dieselben Prozent-Marken; der längste
+    Schritt kündigt seine Dauer ehrlich an."""
+    import re
+    ps = _ps1()
+    ps_marken = [int(m) for m in re.findall(r'Step (\d+) "', ps)]
+    assert ps_marken == sorted(ps_marken) and ps_marken[-1] == 100, ps_marken
+    assert len(ps_marken) >= 6, "zu wenige Marken — lange Lücken bleiben stumm"
+    assert "mehrere Minuten" in ps, "der längste Schritt verschweigt seine Dauer"
+    if os.path.exists("/tmp/_diff_op/install.sh"):
+        sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+        sh_marken = [int(m) for m in re.findall(r'step (\d+) "', sh)]
+        assert sh_marken == ps_marken, \
+            f"Prozent-Marken driften: sh={sh_marken} ps1={ps_marken}"

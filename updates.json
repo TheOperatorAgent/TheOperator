@@ -1,7 +1,7 @@
 {
- "version": "1.18.1",
+ "version": "1.18.2",
  "date": "2026-07-30",
  "highlights": [
-  "🚦 »Eingeschränkt« sagt jetzt auch, WAS eingeschränkt ist: Unter jeder roten Zeile stehen die offenen Störungen — Titel, Microsoft-Kennung, seit wann. In der Dashboard-Kachel und im Chat gleichermaßen."
+  "📊 Die Dashboard-Installation zeigt jetzt Fortschritt in Prozent — inklusive ehrlicher Ansage, welcher Schritt mehrere Minuten dauert. Kein stummes Fenster mehr, in dem man nicht weiß, ob noch etwas passiert."
  ]
 }

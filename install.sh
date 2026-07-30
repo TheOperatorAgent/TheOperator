@@ -724,6 +724,9 @@ phase8_dashboard() {
   DASH_DIR="$BOT_DIR/dashboard"
   mkdir -p "$DASH_DIR/static" "$BOT_DIR/connections" "$BOT_DIR/secrets"
   chmod 700 "$BOT_DIR/secrets"
+  # Fortschritt in Prozent — dieselben Marken wie in install.ps1 (Wächter-Test).
+  step() { printf '  [%3d%%] %s\n' "$1" "$2"; }
+  step 5 "Python-Umgebung anlegen ..."
   local VENV_PY="$DASH_DIR/venv/bin/python3" DASH_OK=1 F
   # Selbstheilung: eine venv vom letzten Versuch wird neu gebaut, wenn sie unvollständig
   # ist (kein pip) ODER mit einem zu alten Python (<3.10) erstellt wurde — sonst schlagen
@@ -744,16 +747,21 @@ phase8_dashboard() {
     fi
   fi
   if [ "$DASH_OK" = "1" ]; then
+    step 12 "Paketwerkzeug aktualisieren ..."
     "$DASH_DIR/venv/bin/pip" install -q --upgrade pip 2>/dev/null
+    step 18 "Bausteine laden — der längste Schritt, je nach Netz mehrere Minuten ..."
     "$DASH_DIR/venv/bin/pip" install -q "fastapi==0.116.*" "uvicorn==0.35.*" \
       "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" "mcp==1.*" "starlette<0.49" \
       "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" || DASH_OK=0
+    step 55 "Deutsches Sprachmodell für den Datenschutz-Filter laden (ca. 500 MB) ..."
     "$DASH_DIR/venv/bin/pip" install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" \
       || warn "Deutsches Sprachmodell konnte nicht geladen werden — Pseudonymisierung meldet sich beim ersten Einsatz"
+    step 75 "Browser für den Agenten einrichten ..."
     install_agent_browser
     "$VENV_PY" "$BOT_DIR/migrate_sessions.py" 2>/dev/null || true
   fi
   if [ "$DASH_OK" = "1" ]; then
+    step 85 "Dashboard-Dateien einrichten ..."
     for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py mcp_catalog.py; do
       if [ -f "$SCRIPT_DIR/dashboard/$F" ]; then cp "$SCRIPT_DIR/dashboard/$F" "$DASH_DIR/$F"
       else curl -fsSL "$REPO_RAW/dashboard/$F" -o "$DASH_DIR/$F" || DASH_OK=0; fi
@@ -779,6 +787,7 @@ open(os.path.join(bot, "dashboard.json"), "w").write(json.dumps(
 os.chmod(os.path.join(bot, "dashboard.json"), 0o600)
 PY
     fi
+    step 92 "Dienste registrieren ..."
     install_service dashboard "$VENV_PY" "$DASH_DIR/server.py" \
       && { DASH_RUNNING=1; ok "Dashboard läuft"; } \
       || warn "Dashboard-Start fehlgeschlagen — Bot läuft trotzdem (Log: $BOT_DIR/dashboard.log)"
@@ -849,6 +858,7 @@ json.dump(d, open(p, 'w'), indent=1)" 2>/dev/null || true
   else
     warn "Dashboard-Installation unvollständig — der Chat-Bot läuft davon unabhängig weiter"
   fi
+  step 100 "Fertig."
 }
 
 # Kurzbefehl »operator« für den Alltag: Dashboard öffnen, Log, Status, Deinstallation —

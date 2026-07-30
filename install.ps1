@@ -454,6 +454,11 @@ Ok "Listener-Aufgabe registriert und gestartet (Task Scheduler: $($Tasks.listene
 Bold "Phase 8 - Web-Dashboard (optional)"
 $dashOptin = Ask-YesNo "Web-Dashboard installieren (Agenten-GUI, Tresor, Google/M365)?" "ja"
 if ($dashOptin -eq "ja") {
+    # Fortschritt in Prozent (Michi, 30.07.): nach dem "ja" liefen pip und das
+    # Sprachmodell minutenlang OHNE jede Ausgabe - der Nutzer weiss nicht, was los
+    # ist. Prozent = abgeschlossene Schritte, ehrlich mit Dauer-Hinweis beim langen.
+    function Step($pct, $msg) { Write-Host ("  [{0,3}%] {1}" -f $pct, $msg) -ForegroundColor DarkCyan }
+    Step 5 "Python-Umgebung anlegen ..."
     New-Item -ItemType Directory -Force -Path "$DashDir\static" | Out-Null
     $VenvPy = Join-Path $DashDir "venv\Scripts\python.exe"
     if (-not (Test-Path $VenvPy)) { & $Py -m venv (Join-Path $DashDir "venv") }
@@ -471,14 +476,18 @@ if ($dashOptin -eq "ja") {
     # "ERROR: To modify pip, please run the following command: ...python.exe -m pip install
     # --upgrade pip" ab - Windows kann die laufende pip.exe nicht ersetzen. Damit stand die
     # Installation in Phase 8 und der Kunde hatte kein Dashboard.
+    Step 12 "Paketwerkzeug aktualisieren ..."
     & $VenvPy -m pip install -q --upgrade pip
+    Step 18 "Bausteine laden - der laengste Schritt, je nach Netz mehrere Minuten ..."
     & $VenvPy -m pip install -q "fastapi==0.116.*" "uvicorn==0.35.*" "msal==1.33.*" "cryptography==45.*" `
         "requests==2.32.*" "mcp==1.*" "starlette<0.49" "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker"
+    Step 55 "Deutsches Sprachmodell fuer den Datenschutz-Filter laden (ca. 500 MB) ..."
     try { & $VenvPy -m pip install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
     catch { Warn "Deutsches Sprachmodell nicht geladen - Pseudonymisierung meldet sich beim ersten Einsatz" }
     # Browser fuer den Agenten (nur zum Surfen - das Dashboard oeffnest du weiter mit deinem
     # normalen Standardbrowser). Schlaegt der Download fehl, nutzen wir ein vorhandenes
     # Chrome/Chromium/Edge und merken uns den Pfad in browser_path.txt.
+    Step 75 "Browser fuer den Agenten einrichten ..."
     $pwexe = Join-Path $DashDir "venv\Scripts\playwright.exe"
     $browserOk = $false
     if (Test-Path $pwexe) {
@@ -501,6 +510,7 @@ if ($dashOptin -eq "ja") {
             Warn "Alles andere - Chat, Dashboard, Aufgaben - funktioniert davon unabhaengig."
         }
     }
+    Step 85 "Dashboard-Dateien einrichten ..."
     foreach ($f in @("server.py","tokens.py","agents_store.py","m365_setup.py","google_auth.py","open.py","mcp_catalog.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
     foreach ($f in @("index.html","app.js","style.css")) { Fetch-File "dashboard\static\$f" (Join-Path $DashDir "static\$f") }
     foreach ($f in @("m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
@@ -511,6 +521,7 @@ if ($dashOptin -eq "ja") {
         & $Py -c "import hashlib,json,os;open(r'$BotDir\dashboard.json','w').write(json.dumps({'port':8737,'token_sha256':hashlib.sha256(os.environ['OP_DTOK'].encode()).hexdigest(),'version':1},indent=1))"
         Remove-Item Env:OP_DTOK -ErrorAction SilentlyContinue
     }
+    Step 92 "Dienste registrieren ..."
     Install-Service "dashboard" $VenvPy (Join-Path $DashDir "server.py"); Ok "Dashboard-Aufgabe registriert"
     # Datenschutz-Filter (#116): startet AUS. Bewusst so - er braucht ein grosses
     # Sprachmodell und System-Bibliotheken, die nicht auf jedem Rechner da sind
@@ -597,6 +608,7 @@ goto :eof
     # #124: Die Installation endet mit einem OFFENEN, entsperrten Dashboard - kein
     # Befehl zum Abtippen, keine Entsperr-Karte (open.py haengt den Dauer-Token an).
     # Fehler hier sind NIE fatal: die Installation ist trotzdem gelungen.
+    Step 100 "Fertig."
     Write-Host "  Dein Dashboard oeffnet sich gleich im Browser ..."
     Start-Sleep -Seconds 4
     try { & $VenvPy (Join-Path $DashDir "open.py") | Out-Null } catch {}
