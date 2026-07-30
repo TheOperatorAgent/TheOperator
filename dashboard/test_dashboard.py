@@ -3985,3 +3985,17 @@ def test_dienste_ueberleben_fehlende_ausgabekanaele():
                          ("dashboard/server.py", "platform_compat.ensure_std_streams")):
         src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
         assert marke in src, f"{datei} sichert seine Ausgabekanäle nicht"
+
+
+def test_chat_meldungen_nennen_das_richtige_geraet():
+    """Michi (30.07.): »ich bin doch auf dem Windows-Rechner und bekomme so eine
+    Meldung« — die Fehlertexte sagten hartcodiert »am Mac«. Dritter Fund derselben
+    Sorte (nach Entsperr-Karte und Terminal-Hinweis): Plattform-Annahmen im Text.
+    Und: Die Fehlermeldung muss sagen, WIE man an die Details kommt (»operator log«),
+    nicht nur, dass es sie irgendwo gibt."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    code = "\n".join(z for z in src.splitlines() if not z.strip().startswith("#"))
+    assert "am Mac" not in code, "wieder eine Plattform-Annahme im Nutzertext"
+    assert "GERAET = " in code and "Windows-Rechner" in code and "Linux-Rechner" in code
+    assert "TERMINAL = " in code and "in PowerShell" in code
+    assert "operator log" in code, "Fehlermeldung nennt keinen Weg zu den Details"

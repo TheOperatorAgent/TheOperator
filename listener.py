@@ -340,6 +340,11 @@ def reidentify(text, mapping):
 # Windows-sicher: ein gespeicherter .ps1-Pfad (Alt-Installationen) wird verworfen —
 # er wäre nicht startbar (WinError 193). claude_bin() entscheidet, nicht das oder.
 CLAUDE = _plat.claude_bin(CREDS.get("claude_bin") or "")
+# Nie »am Mac« schreiben, wenn der Operator auf Windows/Linux läuft (Michi, 30.07.:
+# »ich bin doch auf dem Windows-Rechner und bekomme so eine Meldung«).
+GERAET = ("Windows-Rechner" if os.name == "nt"
+          else "Mac" if sys.platform == "darwin" else "Linux-Rechner")
+TERMINAL = "in PowerShell" if os.name == "nt" else "im Terminal"
 OWNER = CREDS.get("owner_id", "")
 # #90 Dock: Dashboard-Eingaben werden vom Bot-Konto mit diesem Inhalts-Schlüssel in den
 # Raum gespiegelt (matrix_room.senden_dashboard). Nur der Bot-Token kann so senden.
@@ -936,8 +941,8 @@ class BotSession(threading.Thread):
                 if "401" in out or "authenticate" in out or "oauth" in out:
                     self.send_message(
                         "⚠️ Ich kann gerade nicht antworten: Mein Claude-CLI-Login ist "
-                        "abgelaufen. Bitte am Mac im Terminal `claude /login` ausführen — "
-                        "danach beantworte ich deine Nachricht gern nochmal.")
+                        f"abgelaufen. Bitte auf dem {GERAET} {TERMINAL} `claude /login` "
+                        "ausführen — danach beantworte ich deine Nachricht gern nochmal.")
                 elif any(k in out for k in ("limit", "429", "quota")):
                     self.send_message(
                         "⚠️ Mein Claude-Abo ist gerade am Limit. Du kannst im Dashboard unter "
@@ -945,8 +950,9 @@ class BotSession(threading.Thread):
                         "dann springe ich automatisch darauf um.")
                 else:
                     self.send_message(
-                        "⚠️ Beim Bearbeiten ist ein Fehler aufgetreten (Details im "
-                        "listener.log am Mac). Probier's gleich nochmal.")
+                        "⚠️ Beim Bearbeiten ist ein Fehler aufgetreten. Was genau, steht "
+                        f"im Protokoll auf dem {GERAET} — dort »operator log« eingeben. "
+                        "Probier's gleich nochmal.")
             elif verify and verify_loop:
                 # A1 (#46): der Worker hat NICHT selbst gesendet — Antwort prüfen und ausliefern.
                 self._verify_and_send(verify, messages_label, result, mapping, used_fallback)
@@ -966,7 +972,8 @@ class BotSession(threading.Thread):
                 except Exception:
                     pass
             self.send_message("⚠️ Die Aufgabe hat länger als 10 Minuten gedauert — abgebrochen. "
-                              "Für so große Sachen besser eine Claude-Code-Session am Mac nutzen.")
+                              "Für so große Sachen besser eine Claude-Code-Session "
+                              f"auf dem {GERAET} nutzen.")
         finally:
             done.set()
             t.join(timeout=5)

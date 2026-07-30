@@ -1,7 +1,7 @@
 {
- "version": "1.18.8",
+ "version": "1.18.9",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Windows: Der Modell-Aufruf schlug weiter fehl (»WinError 193«), weil in der Konfiguration noch ein untauglicher Claude-Pfad stand. Der Operator erkennt und ersetzt das jetzt selbst — ohne Neuinstallation."
+  "🗣️ Die Meldungen im Chat sagen nicht mehr »am Mac«, wenn dein Operator auf Windows oder Linux läuft — und eine Fehlermeldung nennt jetzt gleich den Weg zu den Details (»operator log«)."
  ]
 }
