@@ -1,10 +1,10 @@
 {
- "version": "1.20.1",
+ "version": "1.21.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "2a59318046eae94568e2e68a41ed48061f2c351aa67b1728066f7e43875edd56"
+   "sha256": "c09130e7a97e25846ca14a667508f34817b692c7518064a86fc4f29c7845aa79"
   },
   {
    "src": "matrix_room.py",
@@ -224,7 +224,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "99bc3f77924a5a8757b11a9593cdc11fcc35525998efb9c449d13496a59bce9b"
+   "sha256": "aa3d16bde37a27bdc8de7dae442d5e614c8ef5424a9ca09e411112650cb9ab26"
   },
   {
    "src": "dashboard/tokens.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "e1c7e65a18da18a6d1673796e2f01affdf337744a3bd040a004a1df69683671b"
+   "sha256": "65a6bd97a4a6b72911ae6c3d45991f4326c95f792e196f8bf74857a557b27585"
   },
   {
    "src": "dienst_start.py",

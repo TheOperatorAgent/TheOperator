@@ -1,8 +1,7 @@
 {
- "version": "1.20.1",
+ "version": "1.21.0",
  "date": "2026-07-30",
  "highlights": [
-  "🇩🇪 Windows: Das Dashboard zeigte »läuft nicht« für Dienste, die einwandfrei liefen — die Prüfung hing an der englischen Systemsprache. Jetzt sprachunabhängig.",
-  "✅ Die Selbstprüfung meldete fälschlich einen fehlenden Matrix-Zugang. Behoben — sie sucht jetzt unter dem richtigen Namen."
+  "🪟 Windows: DER Fehler ist gefunden und behoben. Windows begrenzt Befehlszeilen auf 8191 Zeichen — dein Operator übergab seinen Auftrag genau so, und der ist mit Verhalten, Persona und Gedächtnis größer. Jede Antwort scheiterte nach 67 Millisekunden, ohne dass ein Zeichen beim Sprachmodell ankam. Der Auftrag geht jetzt über die Standardeingabe: unbegrenzt lang, auf allen Systemen gleich. Dein Operator antwortet."
  ]
 }

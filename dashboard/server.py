@@ -1583,8 +1583,10 @@ async def api_assistant(request: Request):
         return err("validate", "Keine Nachrichten übergeben")
     prompt = _assistant_prompt(messages)
     try:
-        cmd = [_claude_bin(), "-p", prompt, "--output-format", "json"]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
+        # Prompt via Standardeingabe: Windows begrenzt Befehlszeilen auf 8191 Zeichen
+        # (»Die Befehlszeile ist zu lang.«) — daran scheiterte auch der Assistent.
+        cmd = [_claude_bin(), "-p", "--output-format", "json"]
+        r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=180,
                            cwd=WORKSPACE_DIR if os.path.isdir(WORKSPACE_DIR) else BOT_DIR,
                            env=os.environ)
     except subprocess.TimeoutExpired:

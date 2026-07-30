@@ -4121,3 +4121,29 @@ def test_selbstpruefung_findet_den_matrix_token_unter_dem_echten_namen():
         if os.path.exists(p):
             assert "matrix-owner" in open(p, encoding="utf-8").read(), \
                 f"{datei} benennt den Token anders — Prüfung würde wieder falsch alarmieren"
+
+
+def test_prompt_geht_nie_ueber_die_befehlszeile():
+    """DER Fehler, der Windows den ganzen 30.07. gekostet hat. Michis Log:
+
+        [owner] Claude fertig (rc=1, 67ms, 0 out-tok, 0 Zeichen Antwort)
+        [owner] Claude-Lauf rc=1: Die Befehlszeile ist zu lang.
+
+    Windows begrenzt Befehlszeilen auf 8191 Zeichen (claude.cmd läuft durch cmd.exe).
+    Unser Prompt ist mit VERHALTEN.md + Persona + Gedächtnis regelmäßig größer —
+    also schlug JEDE Antwort fehl, nach 67 ms, ohne dass ein Zeichen beim Modell
+    ankam. macOS/Linux erlauben ~256 KB, deshalb war es dort unsichtbar.
+
+    Der Prompt muss über die Standardeingabe gehen. Live geprüft: 14.430 Zeichen
+    per stdin → rc=0."""
+    for datei in ("listener.py", "dashboard/server.py"):
+        src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
+        code = "\n".join(z for z in src.splitlines() if not z.strip().startswith("#"))
+        assert '"-p", prompt' not in code, \
+            f"{datei}: Prompt wieder als Argument — auf Windows tot ab 8191 Zeichen"
+        assert '"-p", f"' not in code, f"{datei}: zusammengesetzter Prompt als Argument"
+    li = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    assert li.count("input=prompt") >= 1 and 'input=f"{system}' in li, \
+        "Prompt wird nicht per Standardeingabe übergeben"
+    srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py")).read()
+    assert "input=prompt" in srv, "Assistent im Dashboard hat dieselbe Falle"

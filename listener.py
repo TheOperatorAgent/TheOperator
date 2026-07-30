@@ -891,7 +891,13 @@ class BotSession(threading.Thread):
                                   tools=tools)
                 return
             # ---------- Claude (voller Werkzeugkasten) ----------
-            cmd = [CLAUDE, "-p", prompt, "--output-format", "json", "--allowedTools", *tools]
+            # Der Prompt geht über die STANDARDEINGABE, nicht als Argument. Windows
+            # begrenzt Befehlszeilen auf 8191 Zeichen (claude.cmd läuft durch cmd.exe);
+            # unser Prompt ist mit VERHALTEN.md, Persona und Gedächtnis regelmäßig
+            # größer. Ergebnis war »Die Befehlszeile ist zu lang.« und rc=1 nach 67 ms —
+            # der Operator hat auf Windows NIE geantwortet (Michi, 30.07., live im Log).
+            # macOS/Linux erlauben ~256 KB, deshalb fiel es dort nie auf.
+            cmd = [CLAUDE, "-p", "--output-format", "json", "--allowedTools", *tools]
             if plan.get("model"):
                 cmd += ["--model", plan["model"]]
             mcp_file = f"{WORKSPACE}/.mcp.json"     # vom Nutzer konfigurierte MCP-Server laden
@@ -922,8 +928,8 @@ class BotSession(threading.Thread):
                 # Broker bleibt), und das Dashboard weist das ehrlich aus.
                 argv = sandbox.wrap(cmd) if sandbox else cmd
                 with CLAUDE_SLOTS:
-                    rr = subprocess.run(argv, capture_output=True, text=True,
-                                        timeout=600, cwd=WORKSPACE, env=env)
+                    rr = subprocess.run(argv, input=prompt, capture_output=True,
+                                        text=True, timeout=600, cwd=WORKSPACE, env=env)
                 res, ti, to, du = "", 0, 0, int((time.time() - start) * 1000)
                 try:
                     d = json.loads(rr.stdout)
@@ -1115,12 +1121,14 @@ class BotSession(threading.Thread):
                                    env=dict(os.environ))
                 return json.loads(r.stdout).get("text")
             # Claude als Prüfer: headless, keine Werkzeuge
-            cmd = [CLAUDE, "-p", f"{system}\n\n{user}", "--output-format", "json"]
+            cmd = [CLAUDE, "-p", "--output-format", "json"]
             if plan.get("model"):
                 cmd += ["--model", plan["model"]]
             with CLAUDE_SLOTS:
-                r = subprocess.run(cmd, capture_output=True, text=True, timeout=180,
-                                   cwd=WORKSPACE, env=dict(os.environ))
+                # Prompt via Standardeingabe — auf Windows sonst »Befehlszeile zu lang«
+                r = subprocess.run(cmd, input=f"{system}\n\n{user}", capture_output=True,
+                                   text=True, timeout=180, cwd=WORKSPACE,
+                                   env=dict(os.environ))
             return str(json.loads(r.stdout).get("result", "")) or None
         except Exception as e:
             log(f"[{self.bot_name}] Verifier-Aufruf fehlgeschlagen (fail-open): {e}")
