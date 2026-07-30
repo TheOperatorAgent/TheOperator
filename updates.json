@@ -1,9 +1,9 @@
 {
- "version": "1.22.0",
+ "version": "1.22.1",
  "date": "2026-07-30",
  "highlights": [
-  "🔑 Abgelaufene Claude-Anmeldung: Dein Operator merkt das jetzt von selbst und meldet sich VORHER — statt dass du es an einer unbeantworteten Frage merkst. Und jede Meldung dazu nennt jetzt die dauerhafte Lösung: einen Claude-API-Key als Reserve hinterlegen, dann springt er automatisch darauf um.",
-  "🪟 Windows: Die Dashboard-Übersicht war komplett tot (rote Meldung, leere Versionsanzeige) — ein Speicherplatz-Befehl, den es dort nicht gibt. Behoben.",
-  "🩺 »operator pruefen« zeigt jetzt auch, wann Claude zuletzt nachweislich funktioniert hat."
+  "⏱️ Wartezeit auf deine Freigabe zählt nicht mehr als Arbeitszeit. Bisher lief die 10-Minuten-Uhr weiter, während der Operator auf dein »ja« wartete — zwei Rückfragen und die Aufgabe wurde »wegen Überlänge« abgebrochen, obwohl sie fast fertig war.",
+  "🙋 Deutlich weniger Rückfragen: Ein Argument wie »--id« galt fälschlich als Schreibzugriff auf den Programmordner. Dadurch kamen zwei Fragen für eine einzige Aufgabe — das wirkte, als würde dein »Ja« nicht erkannt.",
+  "🧭 Bricht etwas doch ab, sagt der Operator jetzt, wie es weitergeht (»schreib weiter«), statt dich auf ein anderes Werkzeug zu verweisen."
  ]
 }

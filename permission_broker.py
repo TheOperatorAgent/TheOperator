@@ -228,6 +228,49 @@ _SCHREIB_CMD = {"tee", "cp", "mv", "ln", "dd", "install", "rsync", "truncate",
                 "mkdir", "python", "python3", "perl", "ruby", "awk"}
 
 
+WARTE_DATEI = os.path.join(BOT_DIR, "run", "wartezeit.json")
+
+
+def wartezeit_gesamt():
+    """Sekunden, die der Broker insgesamt auf MENSCHLICHE Antworten gewartet hat.
+
+    Der Listener zieht das von seiner Laufzeit ab: Wartezeit auf dich ist keine
+    Rechenzeit. Vorher lief die 10-Minuten-Uhr mit, während der Operator auf ein »ja«
+    wartete — zwei Rückfragen à 3 Minuten fraßen 6 der 10 Minuten, und die Aufgabe
+    wurde »wegen Überlänge« abgebrochen, obwohl sie fast fertig war (Michi, 30.07.)."""
+    try:
+        with open(WARTE_DATEI) as f:
+            return float(json.load(f).get("sek", 0))
+    except (OSError, ValueError, TypeError):
+        return 0.0
+
+
+def _warten_verbuchen(sekunden):
+    """Additiv und prozessübergreifend — der Hook läuft in einem eigenen Prozess."""
+    try:
+        os.makedirs(os.path.dirname(WARTE_DATEI), exist_ok=True)
+        gesamt = wartezeit_gesamt() + max(0.0, float(sekunden))
+        tmp = WARTE_DATEI + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump({"sek": round(gesamt, 1)}, f)
+        os.replace(tmp, WARTE_DATEI)
+    except OSError:
+        pass
+
+
+def _hat_inplace_schalter(segment):
+    """Wird an Ort und Stelle geschrieben (sed -i, perl -i.bak, python -i)?
+
+    Als eigenes Wort prüfen, NICHT als Teilstring: »--id«, »--include«, »--info«
+    enthalten alle »-i«, schreiben aber nichts. Genau daran scheiterte
+    »m365.py mail send --id 5« mit einer sinnlosen Rückfrage (Michi, 30.07.).
+    Ein echter In-Place-Schalter beginnt mit EINEM Bindestrich."""
+    for w in segment.split():
+        if len(w) > 1 and w[0] == "-" and w[1] != "-" and "i" in w.split("=")[0]:
+            return True
+    return False
+
+
 def _schreibt_in_botdir(cmd):
     """#104-B / Security-Review Teil 2: Erkennt Shell-Schreibzugriffe in den
     Operator-Ordner selbst — egal über welchen Umweg. Das ist die Kern-Lücke:
@@ -259,12 +302,18 @@ def _schreibt_in_botdir(cmd):
             return True
     # Schreibendes Kommando, dessen Ziel im Bot-Ordner (außerhalb workspace) liegt?
     for seg in _segmente(cmd):
+        if _eigenes_werkzeug(seg):
+            continue          # eigene, geprüfte Werkzeuge (Umleitungen prüft der Block oben)
         wort = _befehlswort(seg)
         if wort not in _SCHREIB_CMD:
             continue
-        # cat/sed/python nur, wenn sie wirklich schreiben (Redirect, -i)
+        # cat/sed/python nur, wenn sie wirklich schreiben (Umleitung oder -i).
+        # WICHTIG: »-i« als eigenes Wort prüfen, nicht als Teilstring — sonst gilt
+        # jedes »--id«, »--include«, »--info« als Schreibzugriff. Real passiert
+        # (Michi, 30.07.): »m365.py mail send --id 5« löste eine Rückfrage aus,
+        # die nichts mit Schreiben im Bot-Ordner zu tun hatte.
         if wort in ("cat", "python", "python3", "perl", "ruby", "awk") \
-                and ">" not in seg and "-i" not in seg:
+                and ">" not in seg and not _hat_inplace_schalter(seg):
             continue
         for w in seg.split():
             if not any(m in w for m in marker):
@@ -485,6 +534,8 @@ def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None, merken=N
         return False
     ab = time.time()
     ende = ab + wait
+    global _WARTE_START
+    _WARTE_START = time.time()
     while time.time() < ende:
         time.sleep(POLL_SECONDS)
         try:
@@ -526,6 +577,7 @@ def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None, merken=N
                     # soll sie nicht zusätzlich als normalen Chat beantworten.
                     mark_reply_used(e.get("event_id"))
                     return _entscheidung(a, fp, log)
+    _verbuche_wartezeit()
     log("Permission-Broker: keine Antwort in der Wartezeit → abgelehnt (fail-closed)")
     try:
         _api(hs, tok, f"/_matrix/client/v3/rooms/{raum_q}/send/m.room.message/{time.time_ns()}",
@@ -537,7 +589,20 @@ def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None, merken=N
     return False
 
 
+_WARTE_START = None
+
+
+def _verbuche_wartezeit():
+    """Die Zeit, die wir auf den Menschen gewartet haben, aufs Konto legen.
+    Der Listener zieht sie von seiner Laufzeit ab — Warten ist keine Rechenzeit."""
+    global _WARTE_START
+    if _WARTE_START:
+        _warten_verbuchen(time.time() - _WARTE_START)
+        _WARTE_START = None
+
+
 def _entscheidung(ja, fp, log):
+    _verbuche_wartezeit()
     if not ja:
         log("Permission-Broker: vom Owner abgelehnt")
         return False

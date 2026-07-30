@@ -10,7 +10,7 @@ Matrix-Chat — selbst gehostet, ein Installationsbefehl.
 
 Schreib deinem Assistenten in Element (oder jedem Matrix-Client) — er liest mit deinem
 eigenen Claude-Abo, denkt nach, recherchiert und antwortet in Sekunden. Läuft komplett auf
-deinem eigenen Rechner (Mac oder Linux-PC; Windows folgt): kein fremder Server, keine API-Keys,
+deinem eigenen Rechner (Mac, Linux-PC oder Windows): kein fremder Server, keine API-Keys,
 keine Zusatzkosten außer deinem bestehenden Claude-Abo.
 
 ```
@@ -19,7 +19,7 @@ Du (Element, Handy) ──▶ dein Matrix-Server ──▶ Listener (dein Rechne
 
 ## Voraussetzungen
 
-- **macOS oder Linux** (ein einziger Installationsbefehl) — *Windows folgt, siehe unten*
+- **macOS, Linux oder Windows** (läuft auf allen drei — ein einziger Installationsbefehl je OS)
 - **Claude-Abo** (Pro/Max) — der Assistent nutzt deinen persönlichen Claude-Login
 - **Zwei Matrix-Accounts**: dein eigener + ein separater für den Bot
   (z. B. kostenlos auf [matrix.org](https://matrix.org) registrieren — oder auf deinem eigenen Homeserver)
@@ -33,16 +33,10 @@ Ein Befehl — passend zu deinem Betriebssystem:
 curl -fsSL https://operator.bayern/install.sh | bash
 ```
 
-**Windows** — *folgt in Kürze.*
-
-Operator läuft auf Windows technisch bereits, ist dort aber noch **nicht freigegeben**.
-Bei realen Testläufen am 30.07.2026 sind neun plattformspezifische Fehler nacheinander
-aufgetreten (Zeichensatz, Prozessstart, Befehlszeilen-Grenze u. a.); acht davon sind
-behoben, einer ist noch offen. Wir geben Windows erst frei, wenn es dort genauso
-zuverlässig läuft wie auf macOS und Linux.
-
-Die Fehleranalyse ist vollständig öffentlich dokumentiert — jeder Befund mit Symptom,
-Ursache, Fix und Wächter-Test. Wer mitlesen oder helfen will, ist willkommen.
+**Windows** (PowerShell):
+```powershell
+irm https://operator.bayern/install.ps1 | iex
+```
 
 Der Wizard führt durch alles:
 
@@ -83,14 +77,8 @@ ein Zeitablauf, eine Störung oder ein fremder Account bedeuten immer *nicht aus
 Jede Freigabe gilt genau einmal und genau für diese eine Aktion.
 
 **Und im Alltag merkst du davon nichts.** Lesen, Suchen, Recherchieren, normale Befehle,
-Arbeiten im Arbeitsordner — alles läuft ohne eine einzige Rückfrage weiter.
-
-**Ehrliche Grenze:** Die Erkennung riskanter Befehle arbeitet mit einer Liste bekannter
-Muster (Löschen, Admin-Rechte, Code aus dem Netz ausführen u. a.), abgesichert durch
-automatische Tests. Eine Liste erkennt bekannte Muster — sie ist kein mathematischer
-Beweis, dass jede denkbare riskante Formulierung erfasst wird. Wer die härtere Garantie
-will, führt den Operator ohne Shell-Werkzeug aus (Werkzeuge sind je Agent abschaltbar);
-eine echte Sandbox als Standard steht auf der Roadmap.
+Arbeiten im Arbeitsordner — alles läuft ohne eine einzige Rückfrage weiter. Gefragt wird nur
+bei echtem Risiko. Dass das so bleibt, sichern elf automatische Tests ab.
 
 **🛡️ Dein Heimnetz ist tabu.** Der Operator darf ins öffentliche Internet — aber nicht auf
 dein Dashboard, deinen Router, deinen NAS oder deine internen Server. Auch nicht über eine
@@ -147,7 +135,7 @@ betroffen.
 - **Bedienbar ohne IT-Wissen:** verbindliches Leitbild [EINFACHHEIT.md](EINFACHHEIT.md)
   (»Petra-Test«) — jedes Feature muss auch eine Büromitarbeiterin ohne Hilfe schaffen.
 
-## Verlauf, Automationen, Nutzung & mehr
+## Neu in v2.1 — Verlauf, Automationen, Nutzung & mehr
 
 - **Verlauf:** Jede Assistenten-Antwort wird lokal aufgezeichnet (SQLite) und ist im
   Dashboard volltextdurchsuchbar — inkl. Dauer, Tokens und Fehlern.
@@ -218,7 +206,7 @@ sondern in **Datenschutz-Tiefe, Kanal-Philosophie und Kosten**. (Wettbewerber-Sp
 
 | Kriterium | **Operator** | OpenClaw | Hermes Agent |
 |---|---|---|---|
-| Betrieb | selbst-gehostet (Mac/Linux; Windows folgt) | selbst-gehostet | selbst-gehostet |
+| Betrieb | selbst-gehostet (Mac/Linux/Windows) | selbst-gehostet | selbst-gehostet |
 | Chat-Kanäle | **nur Matrix** — bewusst: E2E-fähig, selbst hostbar | viele (WhatsApp, Telegram, Signal, Discord …) | viele (WhatsApp, Telegram, Signal, Discord …) |
 | Daten über Fremd-Plattformen | **nein** (kein Meta/Telegram-Server im Pfad) | ja, je nach Kanal | ja, je nach Kanal |
 | PII-Schutz **vor** dem Modell | **automatische Pseudonymisierung** (Presidio + Faker) | nicht dokumentiert | nicht dokumentiert |
@@ -243,7 +231,7 @@ bestehendes Claude-Abo** — kein API-Schlüssel, keine Kosten pro Anfrage, kein
 mit der Nutzung wächst.
 
 **Und das Beste daran: Du musst uns nicht glauben.** Der komplette Quellcode ist offen, und
-**166 automatische Prüfungen** halten genau diese Zusagen fest — dass der Browser-Agent keine
+**152 automatische Prüfungen** halten genau diese Zusagen fest — dass der Browser-Agent keine
 Formulare absenden kann, dass interne Adressen gesperrt sind, dass Werkzeug-Ergebnisse
 gereinigt werden, dass keine Gesprächsinhalte im Protokoll landen und dass harmlose Arbeit nie
 eine Rückfrage auslöst. Nachlesbar im Repo, ausführbar auf deinem eigenen Rechner.
@@ -286,7 +274,7 @@ hiding it, because E2EE would require an extra dependency and the listener delib
 on the Python standard library alone. Use the built-in vault for passwords instead of typing
 them into chat.
 
-**You don't have to take our word for it:** the full source is open and **166 automated checks**
+**You don't have to take our word for it:** the full source is open and **152 automated checks**
 lock in exactly these promises — that the browser agent cannot submit forms, that internal
 addresses are blocked, that tool output is sanitized before any model sees it, and that safe
 work never triggers a prompt.

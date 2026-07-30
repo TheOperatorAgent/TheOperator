@@ -4143,8 +4143,12 @@ def test_prompt_geht_nie_ueber_die_befehlszeile():
             f"{datei}: Prompt wieder als Argument — auf Windows tot ab 8191 Zeichen"
         assert '"-p", f"' not in code, f"{datei}: zusammengesetzter Prompt als Argument"
     li = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
-    assert li.count("input=prompt") >= 1 and 'input=f"{system}' in li, \
-        "Prompt wird nicht per Standardeingabe übergeben"
+    # Der Owner-Lauf geht seit 1.22.1 über eine Datei als Standardeingabe
+    # (_lauf_mit_wartezuschlag) — noch sicherer als eine Pipe und ebenfalls ohne
+    # Längengrenze. Der Verifier-Lauf nutzt weiterhin input=.
+    assert "_lauf_mit_wartezuschlag(argv, prompt, env)" in li, \
+        "Owner-Lauf übergibt den Prompt nicht mehr über die Standardeingabe"
+    assert 'input=f"{system}' in li, "Verifier-Lauf übergibt den Prompt als Argument"
     srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py")).read()
     assert "input=prompt" in srv, "Assistent im Dashboard hat dieselbe Falle"
 
@@ -4245,3 +4249,89 @@ def test_login_meldungen_nennen_die_dauerhafte_loesung():
     probe = ch.split("def probe(")[1].split("\ndef ")[0]
     assert 'input="ok"' in probe and '"-p", "--output-format"' in probe, \
         "Probe schickt den Prompt noch als Argument"
+
+
+def test_ja_wird_unabhaengig_von_schreibweise_erkannt():
+    """Michi (30.07.): »er erkennt mein Ja nicht, das sollte doch egal sein, groß oder
+    klein«. Erkennung war und ist unabhängig von Groß-/Kleinschreibung — hier
+    festgenagelt, damit es so bleibt."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    for ja in ("ja", "Ja", "JA", "Ja.", "ja!", "  Ja  ", "ja bitte", "Ja gerne",
+               "ok", "Ok", "OK", "👍", "passt", "mach"):
+        assert pb._antwort_aus_text(ja) is True, f"{ja!r} nicht als Ja erkannt"
+    for nein in ("nein", "Nein", "NEIN", "nein danke", "Stop", "❌"):
+        assert pb._antwort_aus_text(nein) is False, f"{nein!r} nicht als Nein erkannt"
+    for unklar in ("vielleicht", "was meinst du", ""):
+        assert pb._antwort_aus_text(unklar) is None
+
+
+def test_kein_fehlalarm_bei_argumenten_die_zufaellig_i_enthalten():
+    """Der wahre Grund für Michis zweite Rückfrage (30.07.): »--id« enthält »-i«, und
+    die Prüfung auf In-Place-Schreiben war eine TEILSTRING-Suche. Damit galt
+    »m365.py mail send --id 5« als Schreibzugriff auf den Programmordner — eine
+    Rückfrage, die mit der Aktion nichts zu tun hatte. Zwei Fragen für eine Aufgabe
+    wirken wie »er erkennt mein Ja nicht«."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    bot = os.path.expanduser("~/.claude/matrix-bot")
+    for harmlos in (f"python3 {bot}/m365.py mail send --id 5 test",
+                    f"python3 {bot}/m365.py mail list --include-body",
+                    f"python3 {bot}/memory.py list --info",
+                    f"python3 {bot}/send.py hallo"):
+        assert pb._schreibt_in_botdir(harmlos) is False, f"Fehlalarm: {harmlos}"
+        assert pb.unbekannte_befehle(harmlos) == [], f"Fehlalarm: {harmlos}"
+    # Echtes In-Place-Schreiben und Umleitungen müssen weiter auffallen
+    for gefaehrlich in (f"sed -i s/a/b/ {bot}/permission_broker.py",
+                        f"perl -i.bak -pe s/x/y/ {bot}/updater.py",
+                        f"echo x > {bot}/repo_raw.txt",
+                        f"cp /tmp/evil.py {bot}/listener.py"):
+        assert pb._schreibt_in_botdir(gefaehrlich) is True, f"Lücke: {gefaehrlich}"
+    # Fremdes Skript mit gleichem Namen ist KEIN eigenes Werkzeug
+    assert pb._eigenes_werkzeug("python3 /tmp/fremd/m365.py --id 1") is False
+    assert pb._eigenes_werkzeug(f"python3 {bot}/../evil/m365.py") is False
+
+
+def test_wartezeit_auf_freigabe_zaehlt_nicht_als_rechenzeit(tmp_path, monkeypatch):
+    """Michi (30.07.): »Die Aufgabe hat länger als 10 Minuten gedauert — abgebrochen«
+    kam, und DIREKT DANACH die fertige Antwort. Die Aufgabe war also nicht zu groß.
+
+    Ursache: Die 10-Minuten-Uhr lief mit, während der Broker auf ein »ja« wartete.
+    Zwei Rückfragen à 3 Minuten fraßen 6 der 10 Minuten. Warten auf den Menschen ist
+    keine Rechenzeit — es muss dem Zeitlimit zugeschlagen werden."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    monkeypatch.setattr(pb, "WARTE_DATEI", str(tmp_path / "w.json"))
+    assert pb.wartezeit_gesamt() == 0.0
+    pb._warten_verbuchen(180)
+    pb._warten_verbuchen(180)
+    assert pb.wartezeit_gesamt() == 360.0, "Wartezeit wird nicht addiert"
+    # Der Broker muss an beiden Ausgängen verbuchen: Entscheidung UND Zeitablauf
+    src = open(os.path.expanduser("~/.claude/matrix-bot/permission_broker.py")).read()
+    assert src.count("_verbuche_wartezeit()") >= 2
+    assert "def _entscheidung" in src and \
+        src.split("def _entscheidung")[1].lstrip().startswith("(ja, fp, log):\n    _verbuche")
+
+
+def test_langer_lauf_wird_ohne_pipes_und_mit_zuschlag_ausgefuehrt():
+    """Der Lauf nutzt Dateien statt Pipes (umgeht Windows-Befehlszeilengrenze UND
+    mögliche Pipe-Blockaden) und prüft das Zeitlimit in einer Schleife, damit der
+    Zuschlag WÄHREND des Laufs wachsen kann — ein festes Limit könnte das nicht."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    assert "_lauf_mit_wartezuschlag" in src
+    teil = src.split("def _lauf_mit_wartezuschlag")[1].split("\nclass ")[0].split("\ndef ")[0]
+    assert "Popen" in teil and "proc.wait(timeout=" in teil, "kein Schleifen-Zeitlimit"
+    assert "_gewartet()" in teil, "Wartezeit wird nicht berücksichtigt"
+    assert "warte_max" in teil, "ohne Deckel könnte ein Hänger ewig laufen"
+    assert "tempfile" in teil and "stdin=fi" in teil, "läuft noch über Pipes"
+    assert "finally" in teil and "unlink" in teil, "Temporärdateien bleiben liegen"
+
+
+def test_abbruch_meldung_ist_keine_sackgasse():
+    """Michi: »ich erwarte, dass man die Aufgabe ausführt oder gleich eine Lösung
+    präsentiert«. Die alte Meldung schickte den Nutzer zu einem anderen Werkzeug —
+    das ist keine Hilfe, sondern eine Absage."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    code = "\n".join(z for z in src.splitlines() if not z.strip().startswith("#"))
+    assert "Claude-Code-Session" not in code, "schickt den Nutzer wieder weg"
+    assert "Schreib **weiter**" in code, "nennt keinen Weg, wie es weitergeht"

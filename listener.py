@@ -465,6 +465,79 @@ def _schreibt_starter_schon_ins_log():
     return _starter_log
 
 
+class _Lauf:
+    """Ergebnis eines Claude-Laufs — gleiche Felder wie subprocess.run."""
+
+    def __init__(self, returncode, stdout, stderr):
+        self.returncode, self.stdout, self.stderr = returncode, stdout, stderr
+
+
+def _gewartet():
+    try:
+        import permission_broker as _pb
+        return _pb.wartezeit_gesamt()
+    except Exception:
+        return 0.0
+
+
+def _lauf_mit_wartezuschlag(argv, prompt, env, grundlimit=600, warte_max=900):
+    """Claude starten und warten — Wartezeit auf DEINE Freigabe zählt nicht mit.
+
+    Zwei Gründe für diese Bauart statt subprocess.run(timeout=…):
+    1. Das Zeitlimit muss WÄHREND des Laufs wachsen. Vorher lief die 10-Minuten-Uhr
+       mit, während der Broker auf ein »ja« wartete — zwei Rückfragen à 3 Minuten
+       fraßen 6 der 10 Minuten. Die Aufgabe wurde »wegen Überlänge« abgebrochen,
+       obwohl sie fast fertig war (Michi, 30.07.: die Antwort kam direkt NACH der
+       Abbruch-Meldung).
+    2. Ein-/Ausgabe läuft über Dateien statt über Pipes. Das umgeht sowohl die
+       Windows-Grenze für Befehlszeilen als auch mögliche Pipe-Blockaden bei großen
+       Datenmengen (Verdachtsmoment im offenen Windows-Fall).
+    """
+    import tempfile
+    dateien = []
+    try:
+        for zweck, inhalt in (("in", prompt), ("out", None), ("err", None)):
+            f = tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False,
+                                            prefix=f"operator-{zweck}-", suffix=".txt")
+            if inhalt is not None:
+                f.write(inhalt)
+            f.close()
+            dateien.append(f.name)
+        p_in, p_out, p_err = dateien
+        gewartet0 = _gewartet()
+        with open(p_in, encoding="utf-8") as fi, \
+                open(p_out, "w", encoding="utf-8") as fo, \
+                open(p_err, "w", encoding="utf-8") as fe:
+            proc = subprocess.Popen(argv, stdin=fi, stdout=fo, stderr=fe,
+                                    cwd=WORKSPACE, env=env, text=True)
+            start = time.time()
+            while True:
+                try:
+                    proc.wait(timeout=2)
+                    break
+                except subprocess.TimeoutExpired:
+                    zuschlag = min(max(0.0, _gewartet() - gewartet0), warte_max)
+                    if time.time() - start > grundlimit + zuschlag:
+                        proc.kill()
+                        try:
+                            proc.wait(timeout=10)
+                        except Exception:
+                            pass
+                        raise subprocess.TimeoutExpired(argv, grundlimit)
+        def _lies(pfad):
+            try:
+                return open(pfad, encoding="utf-8", errors="replace").read()
+            except OSError:
+                return ""
+        return _Lauf(proc.returncode, _lies(p_out), _lies(p_err))
+    finally:
+        for d in dateien:
+            try:
+                os.unlink(d)
+            except OSError:
+                pass
+
+
 def log(msg):
     """Auf die Konsole UND in die Log-Datei.
 
@@ -927,9 +1000,13 @@ class BotSession(threading.Thread):
                 # was er darf. Ohne verfügbare Sandbox läuft alles wie bisher (der
                 # Broker bleibt), und das Dashboard weist das ehrlich aus.
                 argv = sandbox.wrap(cmd) if sandbox else cmd
+                # Wartezeit auf DEINE Antwort zählt nicht als Rechenzeit. Vorher lief
+                # die 10-Minuten-Uhr mit, während der Broker auf ein »ja« wartete —
+                # zwei Rückfragen à 3 Minuten fraßen 6 der 10 Minuten, und die Aufgabe
+                # wurde »wegen Überlänge« abgebrochen, obwohl sie fast fertig war
+                # (Michi, 30.07.: die fertige Antwort kam direkt NACH der Abbruch-Meldung).
                 with CLAUDE_SLOTS:
-                    rr = subprocess.run(argv, input=prompt, capture_output=True,
-                                        text=True, timeout=600, cwd=WORKSPACE, env=env)
+                    rr = _lauf_mit_wartezuschlag(argv, prompt, env)
                 res, ti, to, du = "", 0, 0, int((time.time() - start) * 1000)
                 try:
                     d = json.loads(rr.stdout)
@@ -1028,9 +1105,14 @@ class BotSession(threading.Thread):
                                        -1, 600000, 0, 0, kind, model or "inherit")
                 except Exception:
                     pass
-            self.send_message("⚠️ Die Aufgabe hat länger als 10 Minuten gedauert — abgebrochen. "
-                              "Für so große Sachen besser eine Claude-Code-Session "
-                              f"auf dem {GERAET} nutzen.")
+            # Keine Sackgasse: sagen, wie es weitergeht, statt den Nutzer wegzuschicken
+            # (Michi, 30.07.: »ich erwarte, dass man die Aufgabe ausführt oder gleich
+            # eine Lösung mit präsentiert«). Wartezeit auf Freigaben zählt nicht mit.
+            self.send_message(
+                "⏳ Diese Aufgabe hat sehr lange gebraucht — ich habe sie angehalten, "
+                "damit du nicht ewig wartest.\n"
+                "👉 Schreib **weiter**, dann mache ich dort weiter, wo ich war. "
+                "Oder teile sie in kleinere Schritte — dann bin ich schneller.")
         finally:
             done.set()
             t.join(timeout=5)
