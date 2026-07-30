@@ -556,13 +556,28 @@ def m365_status() -> str:
     c = conn(); require(c, "status", "read")
     res = g(c, "GET", "/admin/serviceAnnouncement/healthOverviews")
     audit("m365_status", "")
+    # »eingeschränkt« allein ist zu wenig (Michi, 30.07.): zu jeder nicht-grünen
+    # Zeile gehört dazu, WAS klemmt — Titel der offenen Störung + Kennung.
+    probleme = {}
+    try:
+        st = g(c, "GET", "/admin/serviceAnnouncement/issues"
+                         "?$filter=isResolved eq false"
+                         "&$select=id,title,service&$top=50")
+        for i in st.get("value", []):
+            probleme.setdefault(i.get("service", "?"), []).append(
+                f"   ↳ {i.get('title', '')} [{i.get('id', '?')}]")
+    except Exception:
+        probleme = {}
     zeilen = []
     for d in sorted(res.get("value", []), key=lambda x: x.get("service", "")):
         text, ampel = zustand(d.get("status"))
-        zeilen.append(f"{ampel} {d.get('service', '?')}: {text}")
+        name = d.get("service", "?")
+        zeilen.append(f"{ampel} {name}: {text}")
+        if ampel != "🟢":
+            zeilen += probleme.get(name, [])[:3]
     if not zeilen:
         return "(keine Dienste gemeldet)"
-    schlecht = [z for z in zeilen if not z.startswith("🟢")]
+    schlecht = [z for z in zeilen if z.startswith(("🔴", "🟡"))]
     kopf = "Alles läuft normal." if not schlecht else f"{len(schlecht)} Dienst(e) nicht normal."
     return kopf + "\n" + "\n".join(zeilen)
 

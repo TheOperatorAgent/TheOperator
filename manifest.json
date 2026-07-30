@@ -1,5 +1,5 @@
 {
- "version": "1.18.0",
+ "version": "1.18.1",
  "files": [
   {
    "src": "listener.py",
@@ -184,7 +184,7 @@
   {
    "src": "mcp_m365.py",
    "dst": "mcp_m365.py",
-   "sha256": "c11dfa40e5a36077df0661266748b063986db1c738ac3e659968b0c02974515c"
+   "sha256": "1b89473dd2959b7c7630a822a4d36d9997147581cf5e7499d4aae8e389d84ef8"
   },
   {
    "src": "vault.py",
@@ -224,7 +224,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "f0361d0f8265ce10a3726f85018c73fa0f297755eaa2135a66c96357d5bc63c3"
+   "sha256": "89e693376a1609ec2a72bb5dc61ee62190c0caf1772a74a0c84aeba0b51a6486"
   },
   {
    "src": "dashboard/tokens.py",
@@ -264,7 +264,7 @@
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "11694c59a5fea826965071d19657c2494bb5cf4711c0a808e1609a4bc71be35c"
+   "sha256": "f9c28faa1327e2ee126aebca6f78188ea762cb99cbaa0772b2ef81451a137906"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "04d659518a1793d5396007fcabdc9211a8c1db8406bf4e0fa8069171fdb06518"
+   "sha256": "71fc7bd16b1bc9b3681085fb0be8aea0b3a37d90d1685938dc2e8a31bf8c9b94"
   }
  ]
 }

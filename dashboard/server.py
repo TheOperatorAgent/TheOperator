@@ -714,11 +714,27 @@ def api_m365_dienstzustand():
         roh = mcp_m365.g(c, "GET", "/admin/serviceAnnouncement/healthOverviews")
     except Exception as e:                       # Graph/Recht/Verbindung — alles gleich behandelt
         return {"verfuegbar": False, "hinweis": str(e)[:300]}
+    # »eingeschränkt« allein ist zu wenig (Michi, 30.07.): zu jeder nicht-grünen Zeile
+    # gehören die offenen Störungen dazu — was genau klemmt, seit wann, mit Kennung.
+    probleme = {}
+    try:
+        st = mcp_m365.g(c, "GET", "/admin/serviceAnnouncement/issues"
+                                  "?$filter=isResolved eq false"
+                                  "&$select=id,title,service,startDateTime"
+                                  "&$orderby=startDateTime desc&$top=50")
+        for i in st.get("value", []):
+            probleme.setdefault(i.get("service", "?"), []).append({
+                "id": i.get("id", "?"), "titel": i.get("title", ""),
+                "seit": str(i.get("startDateTime", ""))[:10]})
+    except Exception:
+        probleme = {}                            # Details fehlen → Ampel bleibt nutzbar
     dienste = []
     for d in sorted(roh.get("value", []), key=lambda x: x.get("service", "")):
         text, ampel = mcp_m365.zustand(d.get("status"))
-        dienste.append({"name": d.get("service", "?"), "text": text, "ampel": ampel,
-                        "ok": ampel == "🟢"})
+        name = d.get("service", "?")
+        dienste.append({"name": name, "text": text, "ampel": ampel,
+                        "ok": ampel == "🟢",
+                        "probleme": probleme.get(name, [])[:3]})
     return {"verfuegbar": True, "dienste": dienste,
             "alles_gut": all(x["ok"] for x in dienste) if dienste else None}
 

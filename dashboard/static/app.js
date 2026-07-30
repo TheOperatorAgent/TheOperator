@@ -917,9 +917,15 @@ async function loadM365Zustand() {
       : z.alles_gut ? "🟢 Alles läuft normal."
         : "Nicht alles läuft normal — die Zeilen unten zeigen, wo.";
     box.innerHTML = `<p class="small" style="margin:2px 0 8px"><strong>${esc(kopf)}</strong></p>`
-      + z.dienste.map((d) => `<div class="agent-row" style="padding:6px 14px">
-           <div>${esc(d.ampel)} <strong>${esc(d.name)}</strong></div>
-           <span class="small">${esc(d.text)}</span></div>`).join("");
+      + z.dienste.map((d) => `<div class="agent-row" style="display:block;padding:6px 14px">
+           <div style="display:flex;justify-content:space-between;gap:10px">
+             <div>${esc(d.ampel)} <strong>${esc(d.name)}</strong></div>
+             <span class="small">${esc(d.text)}</span>
+           </div>
+           ${(d.probleme || []).map((p) => `<div class="hint" style="margin:4px 0 0 24px">
+             ↳ ${esc(p.titel)} <span class="mono small">(${esc(p.id)}, seit ${esc(p.seit)})</span>
+           </div>`).join("")}
+         </div>`).join("");
   } catch (e) {
     box.innerHTML = `<p class="hint">Status gerade nicht abrufbar: ${esc(friendlyError(e))}</p>`;
   }

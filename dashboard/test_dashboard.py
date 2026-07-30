@@ -3834,3 +3834,25 @@ def test_dashboard_befehl_offen_pfad_funktional(monkeypatch, tmp_path):
     assert "http" not in sent[0], "trotz Erfolg ging noch ein Link in den Chat"
     import socket
     assert socket.gethostname().split(".")[0] in sent[0], "Rechnername fehlt"
+
+
+def test_eingeschraenkt_nennt_immer_die_stoerung():
+    """»eingeschränkt« ohne das Was ist keine Information (Michi, 30.07.). Kachel
+    und Chat-Werkzeug müssen zu jeder nicht-grünen Zeile die offenen Störungen
+    nennen — Titel, Kennung, seit wann. Und: fehlen die Details (kein Recht,
+    Graph-Schluckauf), bleibt die Ampel trotzdem nutzbar."""
+    srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py")).read()
+    teil = srv.split("def api_m365_dienstzustand()")[1].split("\n@app.")[0]
+    assert "isResolved eq false" in teil, "Kachel holt die offenen Störungen nicht"
+    assert '"probleme"' in teil and '"titel"' in teil and '"seit"' in teil
+    assert 'probleme = {}' in teil.split("except Exception:")[1], \
+        "ein Detail-Fehler würde die ganze Ampel mitreißen"
+    js = open(os.path.expanduser(
+        "~/.claude/matrix-bot/dashboard/static/app.js"), encoding="utf-8").read()
+    kachel = js.split("async function loadM365Zustand()")[1].split("\nasync function ")[0]
+    assert "p.titel" in kachel and "p.id" in kachel and "p.seit" in kachel
+    assert "esc(p.titel)" in kachel, "Microsoft-Störungstext ungeprüft ins HTML = XSS"
+    mcp = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
+    status = mcp.split("def m365_status(")[1].split("\n@mcp.tool()")[0]
+    assert "isResolved eq false" in status and "↳" in status, \
+        "im Chat bliebe »eingeschränkt« weiter ohne Begründung"

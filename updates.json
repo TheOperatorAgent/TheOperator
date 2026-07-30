@@ -1,8 +1,7 @@
 {
- "version": "1.18.0",
+ "version": "1.18.1",
  "date": "2026-07-30",
  "highlights": [
-  "🖥️ »Öffne das Dashboard« im Chat tut jetzt genau das: dein Operator öffnet es selbst im Browser des Rechners, auf dem er läuft — schon entsperrt, nichts zu klicken, nichts zu kopieren. Der Link kommt nur noch, wenn dort kein Bildschirm ist (z. B. Raspberry Pi) — dann mit dem ehrlichen Hinweis, wo er funktioniert.",
-  "🚀 Die Installation endet auf Windows jetzt wie auf dem Mac: das Dashboard öffnet sich am Ende von selbst, bereits entsperrt. Und dein Operator hat dir schon geschrieben — einfach antworten."
+  "🚦 »Eingeschränkt« sagt jetzt auch, WAS eingeschränkt ist: Unter jeder roten Zeile stehen die offenen Störungen — Titel, Microsoft-Kennung, seit wann. In der Dashboard-Kachel und im Chat gleichermaßen."
  ]
 }
