@@ -1,7 +1,7 @@
 {
- "version": "1.17.4",
+ "version": "1.17.5",
  "date": "2026-07-30",
  "highlights": [
-  "🔎 Neue Selbstprüfung: Die mitgelieferten Tests vergleichen jetzt live, ob operator.bayern denselben Installer ausliefert wie das öffentliche Repo. Eine veraltete Website fällt damit sofort auf — nicht erst, wenn eine Installation schiefgeht."
+  "🕹️ Die Installation begrüßt dich jetzt mit einem 8-Bit-Startbild im Terminal — auf macOS, Linux und Windows identisch. Bei sehr schmalen Fenstern weicht es automatisch auf eine schlichte Zeile aus."
  ]
 }

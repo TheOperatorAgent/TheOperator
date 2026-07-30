@@ -233,7 +233,26 @@ if ($Uninstall) {
 }
 
 # ------------------------------------------------------------ Phase 1: PRUeFEN
-Bold "Operator-Installation (Windows) - your operator inside the Matrix"
+# 8-Bit-Startbild - dieselben Zeilen wie in install.sh (Waechter-Test prueft die
+# Gleichheit). Reines ASCII, Farben ueber Write-Host (laeuft auch in PowerShell 5.1,
+# wo ANSI-Codes nicht sicher funktionieren). Zu schmales Fenster -> schlichte Zeile.
+function Banner {
+    $rows = @(
+        ' ###  ####  ##### ####   ###  #####  ###  #### ',
+        '#   # #   # #     #   # #   #   #   #   # #   #',
+        '#   # ####  ####  ####  #####   #   #   # #### ',
+        '#   # #     #     #  #  #   #   #   #   # #  # ',
+        ' ###  #     ##### #   # #   #   #    ###  #   #'
+    )
+    $w = 80; try { $w = $Host.UI.RawUI.WindowSize.Width } catch {}
+    if ($w -lt 54) { Bold "OPERATOR"; return }
+    foreach ($r in $rows) { Write-Host ("  " + $r) -ForegroundColor Magenta }
+    Write-Host ("  " + "-----------------------------------------------") -ForegroundColor DarkGray
+    Write-Host "  > your operator inside the matrix_" -ForegroundColor Green
+    Write-Host ""
+}
+Banner
+Bold "Operator-Installation (Windows)"
 Bold "Phase 1/7 - Voraussetzungen"
 # Python bei Bedarf selbst installieren - der Kunde soll nur EINEN Befehl eingeben.
 # (Steht hier und nicht oben, weil Ask-YesNo erst weiter oben im Skript definiert wird.)

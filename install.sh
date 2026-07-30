@@ -38,6 +38,22 @@ fi
 
 # ---------------------------------------------------------------- Ausgabe/Eingabe --
 bold()  { printf '\033[1m%s\033[0m\n' "$*"; }
+
+# 8-Bit-Startbild — bewusst reines ASCII (die Windows-Fassung MUSS ASCII bleiben,
+# und beide sollen identisch aussehen). Zu schmales Fenster -> schlichte Zeile.
+banner() {
+  local cols; cols=$( { tput cols; } 2>/dev/null || echo "${COLUMNS:-80}" )
+  case "$cols" in (*[!0-9]*|"") cols=80;; esac
+  if [ "$cols" -lt 54 ]; then bold "OPERATOR"; return; fi
+  printf '\033[95m  %s\033[0m\n' \
+    ' ###  ####  ##### ####   ###  #####  ###  #### ' \
+    '#   # #   # #     #   # #   #   #   #   # #   #' \
+    '#   # ####  ####  ####  #####   #   #   # #### ' \
+    '#   # #     #     #  #  #   #   #   #   # #  # ' \
+    ' ###  #     ##### #   # #   #   #    ###  #   #'
+  printf '\033[2m  %s\033[0m\n' '-----------------------------------------------'
+  printf '\033[92m  %s\033[0m\n\n' '> your operator inside the matrix_'
+}
 ok()    { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn()  { printf '  \033[33m!\033[0m %s\n' "$*"; }
 die()   { printf '  \033[31m✗ %s\033[0m\n' "$*" >&2; exit 1; }
@@ -294,7 +310,8 @@ find_venv_python() {
 }
 
 phase1_check() {
-  bold "Operator-Installation — your operator inside the Matrix"
+  banner
+  bold "Operator-Installation (macOS/Linux)"
   bold "Phase 1/7 — Voraussetzungen prüfen"
   case "$OS" in
     Darwin) command -v python3 >/dev/null || die "python3 fehlt (xcode-select --install)";

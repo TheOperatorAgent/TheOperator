@@ -3748,3 +3748,30 @@ def test_website_liefert_dieselben_installer_wie_das_repo():
             f"operator.bayern/{datei} weicht vom öffentlichen Repo ab — "
             "die Website liefert alten Code an Kunden aus. "
             "👉 cd operator-site && ./deploy-strato.command")
+
+
+def test_startbild_in_beiden_installern_identisch_und_terminal_tauglich():
+    """Das 8-Bit-Startbild soll auf allen drei Systemen GLEICH aussehen. Die zwei
+    bekannten Fallen: (1) install.ps1 muss reines ASCII bleiben — Blockzeichen wie
+    █▓▒ wären bei »irm | iex« Matsch; (2) über ~78 Zeichen bricht es in einem
+    Standard-Terminal um und sieht kaputt aus statt retro."""
+    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read() \
+        if os.path.exists("/tmp/_diff_op/install.sh") else None
+    ps = _ps1()
+    if sh is None:
+        import pytest
+        pytest.skip("install.sh nicht ausgecheckt")
+    zeilen = [
+        " ###  ####  ##### ####   ###  #####  ###  #### ",
+        "#   # #   # #     #   # #   #   #   #   # #   #",
+        "#   # ####  ####  ####  #####   #   #   # #### ",
+        "#   # #     #     #  #  #   #   #   #   # #  # ",
+        " ###  #     ##### #   # #   #   #    ###  #   #",
+    ]
+    for z in zeilen:
+        assert z in sh, f"install.sh: Bildzeile fehlt: {z!r}"
+        assert z in ps, f"install.ps1: Bildzeile fehlt: {z!r}"
+        assert len(z) <= 78 and all(ord(c) < 128 for c in z)
+    for quelle, name in ((sh, "install.sh"), (ps, "install.ps1")):
+        assert "your operator inside the matrix_" in quelle, f"{name}: Tagline fehlt"
+        assert "-lt 54" in quelle, f"{name}: kein Fallback für schmale Fenster"
