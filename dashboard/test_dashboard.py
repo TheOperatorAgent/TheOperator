@@ -3897,3 +3897,17 @@ def test_windows_dienste_laufen_im_utf8_modus():
     assert 'SetEnvironmentVariable("PYTHONUTF8", "1", "User")' in s
     assert '$env:PYTHONUTF8 = "1"' in s, \
         "die Installer-Sitzung selbst schriebe sonst weiter cp1252-Dateien"
+
+
+def test_windows_dienste_starten_ohne_konsolenfenster():
+    """Realer Ausfall (Michi, 30.07., LastTaskResult 0xC000013A): Der Task Scheduler
+    startete py.exe mit sichtbarem Konsolenfenster — es wirkt wie ein Versehen,
+    jemand schließt es, der Listener ist tot, das Log bleibt leer. Deshalb bevorzugt
+    Install-Service die fensterlose Variante (pyw.exe/pythonw.exe), wenn sie neben
+    der Exe liegt. Der Handstart im Vordergrund bewies vorher, dass der Code selbst
+    gesund war — es starb immer nur das Fenster."""
+    s = _ps1()
+    teil = s.split("function Install-Service")[1].split("\nfunction ")[0]
+    assert '($exeName + "w.exe")' in teil, "Dienste starten wieder mit sichtbarer Konsole"
+    assert "Test-Path $leise" in teil, "pythonw wird nicht geprüft, nur geraten"
+    assert "-X utf8" in teil, "UTF-8-Modus (1.18.3) darf dabei nicht verloren gehen"

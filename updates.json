@@ -1,7 +1,7 @@
 {
- "version": "1.18.4",
+ "version": "1.18.5",
  "date": "2026-07-30",
  "highlights": [
-  "🛡️ Die Selbstprüfung erkennt jetzt auch, wenn die Update-Quelle selbst verschwindet (z. B. Repo versehentlich auf privat): Das meldet sie als Alarm mit klarer Anweisung — vorher wäre es still übersprungen worden."
+  "🪟 Windows: Die Operator-Dienste laufen jetzt unsichtbar im Hintergrund — vorher öffnete jeder Dienst ein schwarzes Konsolenfenster, das wie ein Versehen aussah. Wer es schloss, beendete damit unwissentlich seinen Operator. Jetzt gibt es kein Fenster mehr, das man schließen könnte."
  ]
 }

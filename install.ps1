@@ -170,6 +170,15 @@ function Fetch-File($rel, $dest) {
 # Dienst als Task-Scheduler-Aufgabe (onlogon, Neustart bei Fehler ~ KeepAlive)
 function Install-Service($name, $exe, $scriptPath) {
     $task = $Tasks[$name]
+    # FENSTERLOS starten (pythonw/pyw statt python/py). Realer Ausfall (Michi, 30.07.,
+    # LastTaskResult 0xC000013A = "Konsole geschlossen"): Der Task Scheduler oeffnete
+    # ein sichtbares Konsolenfenster - es sieht aus wie Muell, jemand schliesst es,
+    # und der Dienst ist tot. Ohne Fenster gibt es nichts zu schliessen.
+    # (Ausgaben landen weiter in den Log-Dateien; die Konsole braucht niemand.)
+    $exeDir = Split-Path $exe -Parent
+    $exeName = [IO.Path]::GetFileNameWithoutExtension($exe)
+    $leise = Join-Path $exeDir ($exeName + "w.exe")
+    if (Test-Path $leise) { $exe = $leise }
     # -X utf8: Windows-Python nutzt sonst cp1252 als Datei-Zeichensatz. Der Listener
     # stuerzte damit beim Lesen der VERHALTEN.md (Umlaute!) ab - der Operator hat auf
     # Windows NIE auf echte Nachrichten geantwortet (Michi, 30.07.). Ein Schalter,
