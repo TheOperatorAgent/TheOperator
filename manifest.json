@@ -1,10 +1,10 @@
 {
- "version": "1.18.9",
+ "version": "1.19.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "0992f1c9a4d535603be960d02e80eb7ded5aa66d5fc5dbf9bb5dc6ccbd6428d2"
+   "sha256": "2a59318046eae94568e2e68a41ed48061f2c351aa67b1728066f7e43875edd56"
   },
   {
    "src": "matrix_room.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "13d998dc1d8d8589fdf6090020f5e59ec9875126beda74ef6e81f6e9c638697c"
+   "sha256": "c55c898de5079ee498d5f051b29815688154292df4d72ab91f1edb5497ac4e6e"
   }
  ]
 }

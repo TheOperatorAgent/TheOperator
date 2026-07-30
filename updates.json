@@ -1,7 +1,8 @@
 {
- "version": "1.18.9",
+ "version": "1.19.0",
  "date": "2026-07-30",
  "highlights": [
-  "🗣️ Die Meldungen im Chat sagen nicht mehr »am Mac«, wenn dein Operator auf Windows oder Linux läuft — und eine Fehlermeldung nennt jetzt gleich den Weg zu den Details (»operator log«)."
+  "🔍 Dein Operator schreibt sein Protokoll jetzt selbst — auf Windows gab es die Log-Datei bisher überhaupt nicht, »operator log« zeigte ins Leere und bei einem Fehler stand man ohne Diagnose da. Zusätzlich landet die genaue Fehlerursache im Protokoll statt nur »Fehler«.",
+  "🗣️ Meldungen im Chat sagen nicht mehr »am Mac«, wenn dein Operator auf Windows oder Linux läuft."
  ]
 }

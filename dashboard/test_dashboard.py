@@ -3999,3 +3999,29 @@ def test_chat_meldungen_nennen_das_richtige_geraet():
     assert "GERAET = " in code and "Windows-Rechner" in code and "Linux-Rechner" in code
     assert "TERMINAL = " in code and "in PowerShell" in code
     assert "operator log" in code, "Fehlermeldung nennt keinen Weg zu den Details"
+
+
+def test_listener_schreibt_sein_log_selbst(tmp_path, monkeypatch):
+    """Der stillste und teuerste Fund des Tages (Michi, 30.07.): »die logfiles sind
+    leer« — auf Windows existierte listener.log NIE. Auf dem Mac leitet der
+    LaunchAgent per StandardOutPath um, unter systemd geht es ins Journal; beim
+    Windows-Task-Scheduler gibt es NICHTS Vergleichbares. Der Dienst muss seine Spur
+    selbst schreiben. Zweite Anforderung: auf dem Mac darf dadurch nichts doppelt
+    stehen (live passiert, sofort behoben)."""
+    listener = _load_listener()
+    log = tmp_path / "listener.log"
+    monkeypatch.setattr(listener, "LOGDATEI", str(log))
+    monkeypatch.setattr(listener, "_starter_log", False)   # Windows-Fall: kein Redirect
+    listener.log("Zeile A")
+    listener.log("Zeile B")
+    zeilen = log.read_text(encoding="utf-8").splitlines()
+    assert len(zeilen) == 2 and "Zeile A" in zeilen[0] and "Zeile B" in zeilen[1]
+    # Mac-Fall: Starter schreibt schon dorthin -> wir dürfen NICHT zusätzlich schreiben
+    monkeypatch.setattr(listener, "_starter_log", True)
+    listener.log("Zeile C")
+    assert len(log.read_text(encoding="utf-8").splitlines()) == 2, \
+        "doppelte Zeilen — genau das war der Folgefehler"
+    # Und die Diagnose-Zeile bei einem gescheiterten Claude-Lauf muss drin sein
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    assert "Claude-Lauf rc=" in src, \
+        "Log sagte nur »Fehler« ohne Grund — damit ist keine Diagnose möglich"

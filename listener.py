@@ -443,8 +443,51 @@ danach in den Chat gestellt. Keine Meta-Kommentare über dich, nur die eigentlic
 Keine Secrets im Klartext — Zugangsdaten nur als Referenz {{{{tresor:name}}}}."""
 
 
+LOGDATEI = os.path.join(BOT_DIR, "listener.log")
+_starter_log = None      # None = noch nicht geprüft (einmalig, dann gemerkt)
+
+
+def _schreibt_starter_schon_ins_log():
+    """→ True, wenn unsere Standardausgabe BEREITS in listener.log zeigt.
+
+    Auf dem Mac leitet der LaunchAgent per StandardOutPath genau dorthin um; wir
+    würden sonst jede Zeile doppelt schreiben (live gesehen, 30.07.). Vergleich über
+    die Inode/Datei-Identität, nicht über Pfadnamen — das erfasst auch Symlinks."""
+    global _starter_log
+    if _starter_log is None:
+        _starter_log = False
+        try:
+            a = os.fstat(sys.stdout.fileno())
+            b = os.stat(LOGDATEI)
+            _starter_log = (a.st_dev, a.st_ino) == (b.st_dev, b.st_ino)
+        except (OSError, ValueError, AttributeError):
+            _starter_log = False
+    return _starter_log
+
+
 def log(msg):
-    print(f"[{time.strftime('%F %T')}] {msg}", flush=True)
+    """Auf die Konsole UND in die Log-Datei.
+
+    Warum selbst schreiben (Michi, 30.07.): Auf dem Mac leitet der LaunchAgent per
+    StandardOutPath in listener.log um, unter systemd geht es ins Journal — auf
+    Windows gibt es beim Task Scheduler NICHTS Vergleichbares. Dort existierte die
+    Datei nie, »operator log« zeigte ins Leere, und bei einem Fehler stand der Nutzer
+    ohne jede Diagnose da (»die logfiles sind leer«). Ein Dienst muss seine Spur
+    selbst schreiben, statt sich auf den Starter zu verlassen.
+    Fehler beim Schreiben werden geschluckt — Protokollieren darf nie der Grund sein,
+    dass der Operator stehen bleibt."""
+    zeile = f"[{time.strftime('%F %T')}] {msg}"
+    print(zeile, flush=True)
+    if _schreibt_starter_schon_ins_log():
+        return                      # sonst stünde jede Zeile doppelt drin
+    try:
+        # Grob begrenzen, damit die Datei nicht unbemerkt wächst (bei ~2 MB neu anfangen).
+        if os.path.exists(LOGDATEI) and os.path.getsize(LOGDATEI) > 2_000_000:
+            os.replace(LOGDATEI, LOGDATEI + ".alt")
+        with open(LOGDATEI, "a", encoding="utf-8") as f:
+            f.write(zeile + "\n")
+    except OSError:
+        pass
 
 
 # ---------- Mail-Watch (#62): alle ~5 min pollen, wenn aktive Regeln existieren ----------
@@ -937,6 +980,10 @@ class BotSession(threading.Thread):
                 # jeden erfolgreichen Sende-Weg, geprüft oder ungeprüft.)
                 self._merk_nachlauf = (messages_label, result, mapping)
             if r.returncode != 0:
+                # Ohne diese Zeile stand im Log nur »Fehler« ohne Grund — der Nutzer
+                # (und ich) hatten nichts zum Diagnostizieren (Michi, 30.07.).
+                log(f"[{self.bot_name}] Claude-Lauf rc={r.returncode}: "
+                    f"{(r.stderr or r.stdout or '')[:600].strip()}")
                 out = (r.stdout + r.stderr).lower()
                 if "401" in out or "authenticate" in out or "oauth" in out:
                     self.send_message(
