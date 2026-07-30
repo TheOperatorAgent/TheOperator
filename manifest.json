@@ -1,10 +1,10 @@
 {
- "version": "1.18.6",
+ "version": "1.18.7",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "bc805c2f69a20c8d811d156edc7301c5bdc7c33a2467576f585402d68fd6e169"
+   "sha256": "fedbd0f1a7f3db2f6d802028e36d1ecef95e26ec01763d691c0aed693054b416"
   },
   {
    "src": "matrix_room.py",
@@ -69,7 +69,7 @@
   {
    "src": "platform_compat.py",
    "dst": "platform_compat.py",
-   "sha256": "97ced003ea1ed5b85bac9809ae8c304a9ffa8de60bafa0b720d87eba9b9ee9fa"
+   "sha256": "4be8fd45441d80096be63799fde1b71c33f2132deab9c8457cb37d1f526a1f22"
   },
   {
    "src": "secretstore.py",
@@ -119,7 +119,7 @@
   {
    "src": "permission_broker.py",
    "dst": "permission_broker.py",
-   "sha256": "a730d619a7e47d596074be62b74a41e73b6d6312ad23fc53d35cd0f6bc926c91"
+   "sha256": "8497b3d2f7bda92a12a9b10f0e79b4c395641f62c8649ffcc4654aad074dcce2"
   },
   {
    "src": "sandbox.py",
@@ -204,7 +204,7 @@
   {
    "src": "pseudonym_daemon.py",
    "dst": "pseudonym_daemon.py",
-   "sha256": "0aae539a601676ce79252a9c92bd4e103512d0be82bb56056bc53b0b8bb1296d"
+   "sha256": "bf4246dd5a65c3422837b805e6b82a13aa46cbe57d63b35635ea1d4494277b53"
   },
   {
    "src": "migrate_sessions.py",
@@ -224,7 +224,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "04b7b0361c4d39949090a27ed913674505c2bffb749f62290ad04e957c8a663a"
+   "sha256": "4048493a1e1c284b361eae03512422467e31e831927f4dfdf4e942f41152fbe6"
   },
   {
    "src": "dashboard/tokens.py",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "991ed7e3778a47251b5321c915b920a8bb606a7022240e8dbcf397f31df25038"
+   "sha256": "ac46e582d4bbe716d28eb98e9c555885a676220a7d1ee40b2d9ff9d704b5a108"
   }
  ]
 }

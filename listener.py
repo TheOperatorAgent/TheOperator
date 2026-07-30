@@ -24,6 +24,8 @@ import urllib.request
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 sys.path.insert(0, BOT_DIR)
 import platform_compat as _plat   # noqa: E402  (stdlib-Modul aus BOT_DIR)
+_plat.ensure_std_streams(
+    os.path.join(os.path.expanduser("~/.claude/matrix-bot"), "listener.log"))
 import secretstore                # noqa: E402  (stdlib-Modul aus BOT_DIR)
 try:
     import providers              # noqa: E402  (stdlib; Multi-LLM-Registry)

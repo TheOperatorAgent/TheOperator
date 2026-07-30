@@ -166,11 +166,57 @@ def _befehlswort(segment):
     return ""
 
 
+def _ohne_heredoc(cmd):
+    """Heredoc-INHALTE entfernen, bevor Segmente gebildet werden. Realer Fehlgriff
+    (Michi, 30.07.): »send.py <<'EOF' Deine letzten 10 Mails …« — der Broker hielt
+    die Wörter des Mail-TEXTES für Befehle und fragte nach »deine« und »📧«.
+    Heredoc-Body ist Daten, keine Befehle; der Befehl selbst bleibt erhalten."""
+    out, pos = [], 0
+    for m in re.finditer(r"<<-?\s*(['\"]?)(\w+)\1", cmd):
+        if m.start() < pos:
+            continue
+        rest = cmd[m.end():]
+        ende = re.search(rf"^\s*{re.escape(m.group(2))}\s*$", rest, re.M)
+        if not ende:
+            continue                              # kein Terminator → nichts anfassen
+        out.append(cmd[pos:m.end()])              # bis einschließlich <<EOF-Marker
+        pos = m.end() + ende.end()                # Body + Terminator überspringen
+    out.append(cmd[pos:])
+    return "".join(out)
+
+
+# Eigene, geprüfte Werkzeuge des Operators: dürfen NIE eine Rückfrage auslösen —
+# »im Alltag merkst du nichts« ist das Produktversprechen. send.py schreibt nur in
+# den eigenen Matrix-Raum; m365.py hat seine eigene Regler-Matrix (die Regler SIND
+# die Zustimmung); memory.py arbeitet nur auf der lokalen Gedächtnis-DB.
+_EIGENE_WERKZEUGE = ("send.py", "m365.py", "memory.py")
+
+
+def _eigenes_werkzeug(segment):
+    """→ True, wenn das Segment ein python-Aufruf eines eigenen Werkzeugs im
+    Bot-Ordner ist (Pfad wird real aufgelöst — kein ../-Ausbruch)."""
+    toks = [t for t in segment.split() if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=\S*", t)]
+    toks = [t for t in toks if t.rsplit("/", 1)[-1].lower() not in _WRAPPER]
+    if len(toks) < 2 or toks[0].rsplit("/", 1)[-1].lower() not in ("python", "python3", "py"):
+        return False
+    pfad = toks[1].strip("'\"").replace("\\", "/")
+    if pfad.rsplit("/", 1)[-1] not in _EIGENE_WERKZEUGE:
+        return False
+    try:
+        echt = os.path.realpath(os.path.expanduser(os.path.expandvars(pfad)))
+        bd = os.path.realpath(BOT_DIR)
+        return os.path.dirname(echt) == bd
+    except OSError:
+        return False
+
+
 def unbekannte_befehle(cmd):
     """→ Liste der Befehlsworte, die weder eingebaut noch gelernt erlaubt sind."""
     erlaubt = SAFE_COMMANDS | _gelernte()
     fremd = []
-    for seg in _segmente(cmd):
+    for seg in _segmente(_ohne_heredoc(cmd)):
+        if _eigenes_werkzeug(seg):
+            continue
         wort = _befehlswort(seg)
         if wort and wort not in erlaubt and wort not in fremd:
             fremd.append(wort)

@@ -1,7 +1,7 @@
 {
- "version": "1.18.6",
+ "version": "1.18.7",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Windows: Der Aufruf des Sprachmodells schlug fehl (»WinError 193«), weil Windows die falsche der drei Claude-Startdateien erwischte. Jetzt wird immer die startbare Variante gewählt — dein Operator antwortet."
+  "🪟 Windows: Nachtrag zum fensterlosen Start — ohne Konsole hatten die Dienste keinen Ort für ihre Ausgaben und das Dashboard startete gar nicht mehr. Ausgaben laufen jetzt in die Log-Dateien, alle Dienste starten unsichtbar und zuverlässig."
  ]
 }

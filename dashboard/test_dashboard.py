@@ -3933,3 +3933,35 @@ def test_claude_aufruf_ist_windows_sicher():
     srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py")).read()
     assert 'shutil.which("claude")' not in li, "listener nutzt wieder das rohe which"
     assert 'shutil.which("claude")' not in srv, "server nutzt wieder das rohe which"
+
+
+def test_dienste_ueberleben_fehlende_ausgabekanaele():
+    """Folgefehler meines eigenen 1.18.5-Fixes (Michi, 30.07.): Die Dienste starten
+    fensterlos über pythonw.exe — dort sind sys.stdout/-err **None**. uvicorn stirbt
+    beim ersten Log-Schreiben → Dashboard weg (ERR_CONNECTION_REFUSED). Deshalb
+    biegen alle drei Einstiegspunkte die Kanäle ganz früh auf ihre Log-Datei um."""
+    import platform_compat
+    import sys as _sys
+    import tempfile
+    # Funktional: der pythonw-Zustand darf nicht mehr wehtun
+    log = os.path.join(tempfile.mkdtemp(), "t.log")
+    echt = (_sys.stdout, _sys.stderr)
+    _sys.stdout = None
+    _sys.stderr = None
+    try:
+        platform_compat.ensure_std_streams(log)
+        print("probe-out")
+        print("probe-err", file=_sys.stderr)
+        gesetzt = _sys.stdout is not None and _sys.stderr is not None
+    finally:
+        _sys.stdout, _sys.stderr = echt
+    assert gesetzt, "Kanäle bleiben None — jeder print() killt den Dienst"
+    inhalt = open(log, encoding="utf-8").read()
+    assert "probe-out" in inhalt and "probe-err" in inhalt, \
+        "Ausgaben verschwinden statt in der Log-Datei zu landen"
+    # Und alle drei Dienste rufen es auf — sonst hilft es dem Betroffenen nicht
+    for datei, marke in (("listener.py", "_plat.ensure_std_streams"),
+                         ("pseudonym_daemon.py", "_plat.ensure_std_streams"),
+                         ("dashboard/server.py", "platform_compat.ensure_std_streams")):
+        src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
+        assert marke in src, f"{datei} sichert seine Ausgabekanäle nicht"

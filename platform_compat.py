@@ -91,6 +91,36 @@ def venv_python(botdir: str) -> str:
 
 
 # ---------------------------------------------------------------- Browser --
+def ensure_std_streams(logdatei: str = "") -> None:
+    """Fehlende Ausgabekanäle ersetzen — Pflicht unter pythonw.exe (Windows).
+
+    Realer Ausfall (Michi, 30.07.): Damit kein Konsolenfenster mehr aufgeht, starten
+    die Dienste als pythonw.exe. Dort sind sys.stdout/-err aber **None** — der erste
+    print() bzw. uvicorns Log-Handler stirbt mit AttributeError, und der Dienst ist
+    sofort tot (Dashboard: ERR_CONNECTION_REFUSED). Deshalb: Kanäle auf die Log-Datei
+    umbiegen (nicht auf devnull — Ausgaben sollen auffindbar bleiben).
+
+    Ohne Wirkung, wenn Kanäle vorhanden sind; scheitert nie (Dienst-Start hat Vorrang)."""
+    import sys
+    if sys.stdout is not None and sys.stderr is not None:
+        return
+    ziel = None
+    if logdatei:
+        try:
+            ziel = open(logdatei, "a", encoding="utf-8", buffering=1)
+        except OSError:
+            ziel = None
+    if ziel is None:
+        try:
+            ziel = open(os.devnull, "w")
+        except OSError:
+            return
+    if sys.stdout is None:
+        sys.stdout = ziel
+    if sys.stderr is None:
+        sys.stderr = ziel
+
+
 def claude_bin() -> str:
     """Pfad zum Claude CLI — Windows-sicher aufgelöst.
 

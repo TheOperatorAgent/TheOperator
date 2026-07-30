@@ -17,6 +17,9 @@ import sys
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 sys.path.insert(0, BOT_DIR)
 import platform_compat as _plat  # noqa: E402  (stdlib-Modul aus BOT_DIR)
+_plat.ensure_std_streams(
+    os.path.join(os.path.expanduser("~/.claude/matrix-bot"),
+                 "pseudonym-daemon.log"))
 
 
 # Cross-Turn-Konsistenz (Issue #34): pro Konversation ein fortgeführtes Mapping im RAM,

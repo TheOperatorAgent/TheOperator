@@ -35,6 +35,11 @@ import secretstore                   # noqa: E402  (plattformübergreifender Sec
 import matrix_room                   # noqa: E402  (#90 Dock: Raum-Brücke, read-through)
 import servicemgr                    # noqa: E402  (Dienst-Status/Neustart je OS)
 import platform_compat               # noqa: E402  (Plattform-Abstraktion)
+
+# pythonw.exe (Windows-Dienst) hat KEINE Ausgabekanaele -> uvicorn stirbt beim
+# ersten Log-Schreiben. Deshalb ganz frueh auf die Log-Datei umbiegen.
+platform_compat.ensure_std_streams(
+    os.path.join(os.path.expanduser("~/.claude/matrix-bot"), "dashboard.log"))
 import providers as providers_reg    # noqa: E402  (Multi-LLM-Provider-Registry)
 import persona as persona_mod         # noqa: E402  (Operator-Persona + Nutzerprofil)
 import mcp_catalog                    # noqa: E402  (#55 kuratierte MCP-Integrationen)
