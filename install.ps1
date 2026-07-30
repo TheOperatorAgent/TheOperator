@@ -594,6 +594,12 @@ goto :eof
     }
     $env:Path = "$env:Path;$BinDir"
     Ok "Dashboard oeffnen mit:  operator    (oder: $VenvPy $DashDir\open.py)"
+    # #124: Die Installation endet mit einem OFFENEN, entsperrten Dashboard - kein
+    # Befehl zum Abtippen, keine Entsperr-Karte (open.py haengt den Dauer-Token an).
+    # Fehler hier sind NIE fatal: die Installation ist trotzdem gelungen.
+    Write-Host "  Dein Dashboard oeffnet sich gleich im Browser ..."
+    Start-Sleep -Seconds 4
+    try { & $VenvPy (Join-Path $DashDir "open.py") | Out-Null } catch {}
 }
 
 # -------------------------------------------------------------- Phase 7: TEST

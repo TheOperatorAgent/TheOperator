@@ -1830,6 +1830,10 @@ def test_dashboard_intercept_records_history(monkeypatch, tmp_path):
     monkeypatch.setattr(listener, "sessions_db", sessions)
     monkeypatch.setattr(listener, "dashboard_link",
                         lambda: "http://127.0.0.1:8738/#ott=deadbeef")
+    # #123: Ohne diesen Patch würde der Test ein ECHTES Browserfenster öffnen —
+    # auch beim Kunden, der die mitgelieferten Tests laufen lässt. open_url→False
+    # erzwingt hier gezielt den Link-Fallback, den dieser Test prüft.
+    monkeypatch.setattr(listener._plat, "open_url", lambda url: False)
     s = listener.BotSession("owner", "owner", "http://hs", "tok", "!r:hs", "@claude:hs")
     sent = []
     monkeypatch.setattr(s, "send_message", lambda text: sent.append(text))
@@ -3775,3 +3779,58 @@ def test_startbild_in_beiden_installern_identisch_und_terminal_tauglich():
     for quelle, name in ((sh, "install.sh"), (ps, "install.ps1")):
         assert "your operator inside the matrix_" in quelle, f"{name}: Tagline fehlt"
         assert "-lt 54" in quelle, f"{name}: kein Fallback für schmale Fenster"
+
+
+# --------------------------------------------- #123/#124 Dashboard ohne Hürden --
+def test_dashboard_befehl_oeffnet_selbst_statt_nur_link():
+    """Realer Fehlgriff (30.07.): Michi bat »öffne das Dashboard auf dem Windows-
+    Rechner« und bekam einen 127.0.0.1-Link — den er auf dem MAC las. Der Listener
+    läuft auf demselben Rechner wie das Dashboard, also öffnet er es jetzt selbst;
+    der Link ist nur noch Fallback ohne Bildschirm, mit ehrlicher Grenze."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
+    teil = src.split("and wants_dashboard(bodies):")[1].split("#116")[0]
+    assert "_plat.open_url(dashboard_link())" in teil, "öffnet nicht selbst"
+    assert teil.index("open_url") < teil.index("Ein-Klick-Link"), \
+        "Link kommt vor dem Öffnen-Versuch — falsche Reihenfolge"
+    assert "funktioniert nur auf dem Rechner" in teil, \
+        "Fallback verschweigt die Grenze, an der Michi real gescheitert ist"
+    assert "gethostname" in teil, "welcher Rechner gemeint ist, bleibt unklar"
+    assert "record_direct" in teil and "ott" not in teil.lower().replace("#ott", ""), \
+        "Einmal-Ticket dürfte nie im Verlauf landen"
+
+
+def test_installation_endet_mit_offenem_dashboard_auf_beiden_systemen():
+    """#124 + Paritäts-Lehre: install.sh öffnete das Dashboard am Ende längst von
+    selbst — install.ps1 nicht. Der Windows-Kunde bekam stattdessen einen Befehl
+    zum Abtippen. Beide Systeme müssen gleich enden: offenes, entsperrtes Dashboard."""
+    ps = _ps1()
+    zeile = [z for z in ps.splitlines() if "open.py" in z and "try" in z]
+    assert zeile, "install.ps1 öffnet das Dashboard nicht automatisch"
+    assert "catch {}" in zeile[0], "ein Fehler beim Öffnen dürfte nie fatal sein"
+    assert "oeffnet sich gleich im Browser" in ps, "keine Ankündigung — wirkt wie Spuk"
+    if os.path.exists("/tmp/_diff_op/install.sh"):
+        sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+        assert "dashboard/open.py" in sh and "Öffne das Dashboard" in sh
+
+
+def test_dashboard_befehl_offen_pfad_funktional(monkeypatch, tmp_path):
+    """Funktional, nicht nur strukturell: gelingt das lokale Öffnen, geht KEIN Link
+    in den Chat (nichts zu kopieren), und die Antwort nennt den Rechner."""
+    listener = _load_listener()
+    import sessions
+    monkeypatch.setattr(sessions, "DB", str(tmp_path / "s.db"))
+    monkeypatch.setattr(listener, "sessions_db", sessions)
+    geoeffnet = []
+    monkeypatch.setattr(listener, "dashboard_link", lambda: "http://127.0.0.1:1/#ott=x")
+    monkeypatch.setattr(listener._plat, "open_url",
+                        lambda url: geoeffnet.append(url) or True)
+    s = listener.BotSession("owner", "owner", "http://hs", "tok", "!r:hs", "@claude:hs")
+    sent = []
+    monkeypatch.setattr(s, "send_message", lambda text: sent.append(text))
+    monkeypatch.setattr(s, "mark_read", lambda eid: None)
+    s.answer(["öffne das dashboard"], "$evt1")
+    assert geoeffnet == ["http://127.0.0.1:1/#ott=x"], "lokal geöffnet wurde nicht"
+    assert sent and "Erledigt" in sent[0]
+    assert "http" not in sent[0], "trotz Erfolg ging noch ein Link in den Chat"
+    import socket
+    assert socket.gethostname().split(".")[0] in sent[0], "Rechnername fehlt"

@@ -1,7 +1,8 @@
 {
- "version": "1.17.5",
+ "version": "1.18.0",
  "date": "2026-07-30",
  "highlights": [
-  "🕹️ Die Installation begrüßt dich jetzt mit einem 8-Bit-Startbild im Terminal — auf macOS, Linux und Windows identisch. Bei sehr schmalen Fenstern weicht es automatisch auf eine schlichte Zeile aus."
+  "🖥️ »Öffne das Dashboard« im Chat tut jetzt genau das: dein Operator öffnet es selbst im Browser des Rechners, auf dem er läuft — schon entsperrt, nichts zu klicken, nichts zu kopieren. Der Link kommt nur noch, wenn dort kein Bildschirm ist (z. B. Raspberry Pi) — dann mit dem ehrlichen Hinweis, wo er funktioniert.",
+  "🚀 Die Installation endet auf Windows jetzt wie auf dem Mac: das Dashboard öffnet sich am Ende von selbst, bereits entsperrt. Und dein Operator hat dir schon geschrieben — einfach antworten."
  ]
 }

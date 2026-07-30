@@ -708,14 +708,35 @@ class BotSession(threading.Thread):
                 pass
 
     def answer(self, bodies, last_event_id):
-        # Login-Kurzbefehl: »dashboard« → Ein-Klick-Link, ohne Claude-Lauf (nur für den Owner).
+        # Login-Kurzbefehl: »dashboard« → SELBST öffnen statt Link schicken (#123).
+        # Realer Fehlgriff (30.07.): Michi bat »öffne das Dashboard auf dem Windows-
+        # Rechner« und bekam einen 127.0.0.1-Link — den er auf dem MAC las. Der Link
+        # kann auf jedem anderen Gerät nur ins Leere gehen. Der Listener läuft aber
+        # auf demselben Rechner wie das Dashboard: also öffnet er es einfach selbst.
         if self.kind == "owner" and wants_dashboard(bodies):
             self.mark_read(last_event_id)
+            import socket
+            rechner = socket.gethostname().split(".")[0] or "diesem Rechner"
+            geoeffnet = False
+            try:
+                geoeffnet = bool(_plat.open_url(dashboard_link()))
+            except Exception:
+                geoeffnet = False
+            if geoeffnet:
+                self.send_message(
+                    f"✅ Erledigt — das Dashboard ist auf deinem Rechner »{rechner}« im "
+                    "Browser geöffnet und schon entsperrt. Schau auf den Bildschirm dort.")
+                self.record_direct(bodies, "(Ich habe das lokale Operator-Dashboard "
+                                           "direkt im Browser des Operator-Rechners geöffnet.)")
+                return
+            # Kein Bildschirm (z. B. Pi per SSH) → Link als Fallback, aber mit der
+            # ehrlichen Grenze, an der Michi real gescheitert ist.
             self.send_message(
                 "🔓 Dein Ein-Klick-Link zum Dashboard (10 Min gültig, einmal verwendbar):\n"
                 f"{dashboard_link()}\n"
-                "Öffne ihn auf dem Rechner, auf dem dein Operator läuft — der Browser merkt "
-                "sich den Zugang danach dauerhaft, du musst das nur einmal machen.")
+                f"⚠️ Wichtig: Der Link funktioniert nur auf dem Rechner, auf dem dein "
+                f"Operator läuft (»{rechner}«) — auf dem Handy oder einem anderen Rechner "
+                "geht er ins Leere. Danach merkt sich der Browser den Zugang dauerhaft.")
             # Verlauf OHNE den Einmal-Link (Token gehört nicht in die durchsuchbare DB)
             self.record_direct(bodies, "(Ich habe dem Nutzer einen Ein-Klick-Login-Link "
                                        "zum lokalen Operator-Dashboard in den Chat geschickt.)")
