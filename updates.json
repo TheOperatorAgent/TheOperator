@@ -1,7 +1,7 @@
 {
- "version": "1.18.2",
+ "version": "1.18.3",
  "date": "2026-07-30",
  "highlights": [
-  "📊 Die Dashboard-Installation zeigt jetzt Fortschritt in Prozent — inklusive ehrlicher Ansage, welcher Schritt mehrere Minuten dauert. Kein stummes Fenster mehr, in dem man nicht weiß, ob noch etwas passiert."
+  "🪟 Der wichtigste Windows-Fix bisher: Wegen eines Zeichensatz-Fehlers hat der Operator auf Windows nie auf echte Nachrichten geantwortet, das Dashboard zeigte kaputte Umlaute (»fÃ¼r«) und der Chat-Knopf blieb stumm. Alle drei Symptome hatten dieselbe Ursache — behoben. Einmal neu installieren, dann antwortet er."
  ]
 }

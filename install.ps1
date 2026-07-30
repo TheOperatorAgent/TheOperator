@@ -14,6 +14,10 @@ try {
     $OutputEncoding = [System.Text.Encoding]::UTF8
 } catch {}
 
+# UTF-8 fuer JEDES Python auf diesem Rechner - auch fuer Unterprozesse (mcp_m365,
+# llm_runner), die nicht ueber den Task Scheduler starten. Ohne das: cp1252-Fallen.
+try { [Environment]::SetEnvironmentVariable("PYTHONUTF8", "1", "User") } catch {}
+$env:PYTHONUTF8 = "1"
 $BotDir  = Join-Path $HOME ".claude\matrix-bot"
 $DashDir = Join-Path $BotDir "dashboard"
 # #106: Arbeitsordner NICHT unter ~/.claude (Claude Code sperrt dort Schreibzugriffe)
@@ -166,7 +170,11 @@ function Fetch-File($rel, $dest) {
 # Dienst als Task-Scheduler-Aufgabe (onlogon, Neustart bei Fehler ~ KeepAlive)
 function Install-Service($name, $exe, $scriptPath) {
     $task = $Tasks[$name]
-    $action  = New-ScheduledTaskAction -Execute $exe -Argument "`"$scriptPath`""
+    # -X utf8: Windows-Python nutzt sonst cp1252 als Datei-Zeichensatz. Der Listener
+    # stuerzte damit beim Lesen der VERHALTEN.md (Umlaute!) ab - der Operator hat auf
+    # Windows NIE auf echte Nachrichten geantwortet (Michi, 30.07.). Ein Schalter,
+    # alle Dienste kuriert.
+    $action  = New-ScheduledTaskAction -Execute $exe -Argument "-X utf8 `"$scriptPath`""
     $trigger = New-ScheduledTaskTrigger -AtLogOn
     $settings = New-ScheduledTaskSettingsSet -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) `
                 -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)

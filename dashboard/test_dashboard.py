@@ -3874,3 +3874,18 @@ def test_dashboard_installation_zeigt_fortschritt_in_prozent():
         sh_marken = [int(m) for m in re.findall(r'step (\d+) "', sh)]
         assert sh_marken == ps_marken, \
             f"Prozent-Marken driften: sh={sh_marken} ps1={ps_marken}"
+
+
+def test_windows_dienste_laufen_im_utf8_modus():
+    """Der schwerste Windows-Fehler bisher (30.07.): Python nutzt dort cp1252 als
+    Datei-Zeichensatz. Der Listener stürzte beim Lesen der VERHALTEN.md (Umlaute!)
+    ab — der Operator hat auf Windows NIE auf echte Nachrichten geantwortet; das
+    Dashboard zeigte »fÃ¼r«. Auf Mac/Linux unsichtbar, weil dort UTF-8 Standard ist.
+    Deshalb: jeder Dienst startet mit -X utf8, und PYTHONUTF8=1 deckt die
+    Unterprozesse (mcp_m365, llm_runner) ab, die nicht über den Task Scheduler laufen."""
+    s = _ps1()
+    teil = s.split("function Install-Service")[1].split("\nfunction ")[0]
+    assert "-X utf8" in teil, "Dienste starten wieder mit cp1252 — stiller Total-Ausfall"
+    assert 'SetEnvironmentVariable("PYTHONUTF8", "1", "User")' in s
+    assert '$env:PYTHONUTF8 = "1"' in s, \
+        "die Installer-Sitzung selbst schriebe sonst weiter cp1252-Dateien"
