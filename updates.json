@@ -1,7 +1,7 @@
 {
- "version": "1.18.3",
+ "version": "1.18.4",
  "date": "2026-07-30",
  "highlights": [
-  "🪟 Der wichtigste Windows-Fix bisher: Wegen eines Zeichensatz-Fehlers hat der Operator auf Windows nie auf echte Nachrichten geantwortet, das Dashboard zeigte kaputte Umlaute (»fÃ¼r«) und der Chat-Knopf blieb stumm. Alle drei Symptome hatten dieselbe Ursache — behoben. Einmal neu installieren, dann antwortet er."
+  "🛡️ Die Selbstprüfung erkennt jetzt auch, wenn die Update-Quelle selbst verschwindet (z. B. Repo versehentlich auf privat): Das meldet sie als Alarm mit klarer Anweisung — vorher wäre es still übersprungen worden."
  ]
 }

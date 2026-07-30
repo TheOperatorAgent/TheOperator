@@ -3741,6 +3741,14 @@ def test_website_liefert_dieselben_installer_wie_das_repo():
         try:
             with urllib.request.urlopen(url, timeout=15) as r:
                 return r.read()
+        except urllib.error.HTTPError as e:
+            # 30.07.: Das GitHub-Repo stand über Nacht auf privat — raw antwortet dann
+            # mit 404, und dieser Test hätte still übersprungen. Ein 404 der Lieferkette
+            # ist aber kein »offline«, sondern der Ernstfall: keine Installation und
+            # kein Update eines Kunden funktioniert mehr. Deshalb: harter Fehler.
+            assert False, (f"{url} antwortet mit HTTP {e.code} — Repo privat/gelöscht? "
+                           "Damit sind ALLE Installationen und Updates tot. "
+                           "👉 Repo auf öffentlich stellen.")
         except Exception as e:
             pytest.skip(f"{url} nicht erreichbar ({e}) — Drift-Prüfung offline übersprungen")
 
