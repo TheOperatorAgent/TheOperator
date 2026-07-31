@@ -1,6 +1,7 @@
 """Kern-Tests für das Operator Dashboard (im venv: venv/bin/python3 -m pytest)."""
 import importlib
 import os
+import re
 import sys
 
 import pytest
@@ -3577,11 +3578,23 @@ def test_freie_fenster_ist_fail_closed_bei_kurzer_kette():
     assert [(a.strftime("%H:%M"), b.strftime("%H:%M")) for a, b in f] == [("08:00", "10:00")]
 
 
+def _m365_funktion(src, name):
+    """Den Rumpf EINER Werkzeug-Funktion aus mcp_m365.py schneiden.
+
+    Der Anker war bis #121 der Text »@mcp.tool()«. Nach der Umstellung auf »@werkzeug(...)«
+    lieferte derselbe split() stillschweigend den GESAMTEN Rest der Datei — die Tests
+    blieben gruen, prueften aber laengst nicht mehr, was sie sollten. Ein falsch-gruener
+    Test ist schlimmer als keiner, deshalb sitzt der Schnitt jetzt an einer Stelle."""
+    rest = src.split(f"def {name}(", 1)[1]
+    return re.split(r"\n@(?:mcp\.tool\(\)|werkzeug\()", rest)[0]
+
+
 def test_mailsuche_kombiniert_search_nicht_mit_orderby():
     """Graph lehnt $search zusammen mit $orderby ab — das würde erst beim Kunden
     auffallen. Deshalb hier als Wächter festgehalten."""
     src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
-    teil = src.split("def mail_suchen(")[1].split("\n@mcp.tool()")[0]
+    # Anker ist der nächste Dekorator — seit #121 heißt der @werkzeug statt @mcp.tool().
+    teil = _m365_funktion(src, "mail_suchen")
     # Kommentarzeilen raus — der erklärende Kommentar nennt $orderby ja gerade deshalb
     code = "\n".join(z for z in teil.splitlines() if not z.strip().startswith("#"))
     assert "$search=" in code
@@ -3593,11 +3606,11 @@ def test_antworten_haelt_den_faden_und_loest_pseudonyme_auf():
     und der Text muss vor dem echten Versand re-identifiziert werden, sonst geht ein
     Platzhalter-Name an einen echten Kunden."""
     src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
-    teil = src.split("def mail_antworten(")[1].split("\n@mcp.tool()")[0]
+    teil = _m365_funktion(src, "mail_antworten")
     assert "replyAll" in teil and '"reply"' in teil
     assert "_rid(text)" in teil, "Surrogat würde real rausgehen"
     assert 'require(c, "mail", "write")' in teil
-    weiter = src.split("def mail_weiterleiten(")[1].split("\n@mcp.tool()")[0]
+    weiter = _m365_funktion(src, "mail_weiterleiten")
     assert "_rid(an" in weiter and "_rid(text)" in weiter
 
 
@@ -3606,7 +3619,7 @@ def test_terminliste_nennt_kennungen():
     hätte das Modell nichts, worauf es sich beziehen kann — der klassische stille
     Bruch zwischen zwei Werkzeugen."""
     src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
-    teil = src.split("def calendar_list(")[1].split("\n@mcp.tool()")[0]
+    teil = _m365_funktion(src, "calendar_list")
     assert "$select=id," in teil, "ohne id gibt es keine Kennung"
     assert "e['id'][-12:]" in teil, "Kennung wird nicht ausgegeben"
 
@@ -3658,7 +3671,7 @@ def test_nutzungsbericht_liest_csv_nicht_json():
     """Graph lehnt »$format=application/json« bei diesem Bericht mit »JSON format is
     not supported« ab (live geprüft). Er kommt ausschließlich als CSV."""
     src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
-    teil = src.split("def m365_nutzung(")[1].split("\n@mcp.tool()")[0]
+    teil = _m365_funktion(src, "m365_nutzung")
     code = "\n".join(z for z in teil.splitlines() if not z.strip().startswith("#"))
     assert "$format=application/json" not in code, "Graph antwortet mit 400"
     assert "g_text(" in code and "csv.DictReader" in code
@@ -3864,7 +3877,7 @@ def test_eingeschraenkt_nennt_immer_die_stoerung():
     assert "p.titel" in kachel and "p.id" in kachel and "p.seit" in kachel
     assert "esc(p.titel)" in kachel, "Microsoft-Störungstext ungeprüft ins HTML = XSS"
     mcp = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py")).read()
-    status = mcp.split("def m365_status(")[1].split("\n@mcp.tool()")[0]
+    status = _m365_funktion(mcp, "m365_status")
     assert "isResolved eq false" in status and "↳" in status, \
         "im Chat bliebe »eingeschränkt« weiter ohne Begründung"
 
@@ -5038,3 +5051,158 @@ def test_raumwaechter_liest_agentenraeume_mit_deren_eigenem_zugang():
     assert '"api": _api_von(s)' in teil, "Agenten-Raeume werden mit fremdem Token gelesen"
     rw = open(os.path.expanduser("~/.claude/matrix-bot/raumwaechter.py"), encoding="utf-8").read()
     assert "def _api_fuer" in rw, "Heilung nutzt nicht den Raum-eigenen Zugang"
+
+
+# ------------------------- M365: Lade-nach-Bedarf + drei Profile (#121) --
+
+def _m365():
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot/dashboard"))
+    import mcp_m365
+    return mcp_m365
+
+
+def test_m365_werkzeuge_folgen_der_rechtematrix():
+    """#121: Jedes Werkzeug kostet Platz im Prompt. Bei ~45 (Stand nach #119) wird jede
+    Antwort spuerbar langsamer — das war Anfang Juli schon einmal so (#99–#102)."""
+    m = _m365()
+    aktiv = m.aktive_werkzeuge({"mail": {"read": True}})
+    assert "mail_list" in aktiv and "mail_suchen" in aktiv
+    assert "mail_send" not in aktiv, "Schreiben ohne Schreibrecht sichtbar"
+    assert "calendar_list" not in aktiv, "fremder Dienst sichtbar"
+    # Schreiben impliziert Lesen — wie in m365_setup.matrix_to_values().
+    aktiv = m.aktive_werkzeuge({"mail": {"write": True}})
+    assert {"mail_list", "mail_send"} <= aktiv
+    assert m.aktive_werkzeuge({}) == set(), "ohne Rechte bleibt nichts uebrig"
+
+
+def test_m365_bedarf_deckt_sich_mit_require():
+    """Der Test, der #119 ueberleben muss. Es gibt ZWEI Quellen — den Dekorator und den
+    require()-Aufruf im Rumpf. Das ist Absicht: require() bleibt die Sicherheitsgrenze,
+    das Beschneiden ist nur Optimierung. Aber sie muessen deckungsgleich sein, sonst
+    verschwindet ein Werkzeug, das eigentlich erlaubt waere."""
+    import ast as _ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py"), encoding="utf-8").read()
+    baum = _ast.parse(src)
+    fehler = []
+    for k in _ast.walk(baum):
+        if not isinstance(k, _ast.FunctionDef):
+            continue
+        deko = [d for d in k.decorator_list
+                if isinstance(d, _ast.Call) and getattr(d.func, "id", "") == "werkzeug"]
+        if not deko:
+            continue
+        laut_deko = tuple(a.value for a in deko[0].args)
+        laut_rumpf = {(n.args[1].value, n.args[2].value) for n in _ast.walk(k)
+                      if isinstance(n, _ast.Call) and getattr(n.func, "id", "") == "require"
+                      and len(n.args) == 3
+                      and all(isinstance(a, _ast.Constant) for a in n.args[1:])}
+        if laut_rumpf != {laut_deko}:
+            fehler.append(f"{k.name}: Dekorator {laut_deko}, require {laut_rumpf}")
+    assert not fehler, "Dekorator und require() weichen ab:\n  " + "\n  ".join(fehler)
+
+
+def test_m365_jedes_werkzeug_hat_einen_bedarf():
+    """Faengt ein vergessenes @werkzeug — dann bliebe ein Werkzeug IMMER sichtbar,
+    auch wenn sein Dienst ausgeschaltet ist."""
+    m = _m365()
+    registriert = {t.name for t in m.mcp._tool_manager.list_tools()}
+    ohne = registriert - set(m._BEDARF) - {"m365_hilfe"}
+    assert not ohne, f"Werkzeuge ohne Bedarf (werden nie beschnitten): {ohne}"
+    assert set(m._BEDARF) <= registriert
+
+
+def test_m365_hilfe_bleibt_immer_da():
+    """Ein MCP-Server mit null Werkzeugen ist ein unerprobter Randfall — und der Nutzer
+    bekommt so eine Antwort statt Schweigen, wenn das Modell nichts findet."""
+    m = _m365()
+    assert "m365_hilfe" not in m._BEDARF, "das Hilfe-Werkzeug wuerde mit beschnitten"
+    assert "m365_hilfe" in {t.name for t in m.mcp._tool_manager.list_tools()}
+
+
+def test_mcp_m365_schreibt_nie_auf_stdout():
+    """stdio-MCP: stdout IST der Protokollkanal. Ein print() dort zerschiesst die
+    Verbindung zum Modell — und zwar so, dass es nach einem Netzproblem aussieht."""
+    import ast as _ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py"), encoding="utf-8").read()
+    for k in _ast.walk(_ast.parse(src)):
+        if isinstance(k, _ast.Call) and getattr(k.func, "id", "") == "print":
+            ziele = [kw.value for kw in k.keywords if kw.arg == "file"]
+            assert ziele and getattr(ziele[0], "attr", "") == "stderr", \
+                f"print() ohne file=sys.stderr in Zeile {k.lineno}"
+
+
+def test_m365_beschneiden_nur_beim_start():
+    """Das Dashboard importiert mcp_m365 fuer /api/m365/dienstzustand. Wuerde beim Import
+    beschnitten, waere diese Route je nach Rechtelage tot."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py"), encoding="utf-8").read()
+    kopf, main = src.split('if __name__ == "__main__":')
+    assert "_beschneiden()" in main, "wird beim Start gar nicht aufgerufen"
+    aufrufe = [z for z in kopf.splitlines() if z.strip() == "_beschneiden()"]
+    assert not aufrufe, "beschneidet schon beim Import — bricht die Dashboard-Route"
+
+
+def test_m365_profile_decken_alle_dienste():
+    """Die Matrizen werden AUS PERMISSION_MAP erzeugt, nicht abgetippt. Sonst fehlte nach
+    #119 still ein neuer Dienst in allen drei Profilen."""
+    import m365_setup as ms
+    assert set(ms.PROFILE) == {"lesen", "buero", "alles"}
+    for pid, p in ms.PROFILE.items():
+        assert set(p["matrix"]) == set(ms.PERMISSION_MAP), f"{pid} deckt nicht alle Dienste"
+        assert ms.erkenne_profil(p["matrix"]) == pid, f"{pid} erkennt sich selbst nicht"
+    # »Nur lesen« darf nirgends schreiben.
+    assert not any(r["write"] for r in ms.PROFILE["lesen"]["matrix"].values())
+    # Dienste ohne Schreib-Recht bleiben auch in »Alles« aus.
+    for svc in ms.NUR_LESEN:
+        assert ms.PROFILE["alles"]["matrix"][svc]["write"] is False
+    # Eigene Auswahl ist ein gueltiger Zustand, kein Fehler.
+    eigen = ms.profil_matrix("lesen")
+    eigen["mail"]["write"] = True
+    assert ms.erkenne_profil(eigen) is None
+
+
+def test_bueroalltag_gibt_keine_tenantweiten_schreibrechte():
+    """Files.ReadWrite.All und Sites.ReadWrite.All sind Schreibrechte auf ALLE Dateien der
+    Firma. Das gehoert nicht in ein Profil, das »Alltag« heisst — auch wenn es bequem waere."""
+    import m365_setup as ms
+    m = ms.PROFILE["buero"]["matrix"]
+    assert m["onedrive"]["write"] is False and m["sharepoint"]["write"] is False
+    werte = ms.matrix_to_values(m)
+    assert "Files.ReadWrite.All" not in werte and "Sites.ReadWrite.All" not in werte
+    assert {"Mail.Send", "Calendars.ReadWrite"} <= set(werte), "Alltag kann zu wenig"
+
+
+def test_m365_profil_ist_kein_zweiter_schreibweg():
+    """Die Profil-Knoepfe setzen nur Haekchen. Gespeichert wird ueber die bestehende
+    Route — sonst umginge man die Widerrufs-Logik in update_permissions(), die ein
+    abgeschaltetes Recht bei Microsoft WIRKLICH entzieht."""
+    srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py"),
+               encoding="utf-8").read()
+    assert 'm365/profil' not in srv, "es gibt eine zweite Route, die Rechte schreibt"
+    js = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/app.js"),
+              encoding="utf-8").read()
+    teil = js.split("function m365Profil")[1].split("\nfunction ")[0]
+    assert "api(" not in teil, "der Profil-Knopf schreibt selbst"
+    assert "i.checked" in teil, "er setzt die Haekchen gar nicht"
+
+
+def test_m365_werkzeugliste_schrumpft_messbar():
+    """Die Zahl, auf die es ankommt: Wie viel Prompt spart »Nur lesen« gegenueber »Alles«?
+    Deterministisch gemessen an den Schema-Bytes — eine Latenzmessung waere hier nicht
+    reproduzierbar (Prompt-Caching, Auslastung bei Anthropic)."""
+    import json as _j
+    import m365_setup as ms
+    m = _m365()
+    alle = {t.name: t for t in m.mcp._tool_manager.list_tools()}
+
+    def bytes_fuer(matrix):
+        # Name + Beschreibung + Parameter-Schema — das, was wirklich in den Prompt geht.
+        aktiv = m.aktive_werkzeuge(matrix) | {"m365_hilfe"}
+        return len(_j.dumps([{"n": alle[n].name, "d": alle[n].description,
+                              "p": alle[n].parameters}
+                             for n in sorted(aktiv) if n in alle], default=str))
+    lesen, alles = bytes_fuer(ms.PROFILE["lesen"]["matrix"]), bytes_fuer(ms.PROFILE["alles"]["matrix"])
+    aus = bytes_fuer({})
+    assert aus < lesen < alles, f"aus={aus} lesen={lesen} alles={alles}"
+    assert lesen <= alles * 0.75, f"»Nur lesen« spart zu wenig ({lesen}/{alles})"

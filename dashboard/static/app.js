@@ -908,6 +908,16 @@ async function loadM365() {
       <div id="m365-zustand"><p class="hint">wird geladen …</p></div>
     </div>
     <div class="card"><h2>Berechtigungen je Dienst</h2>
+      <p class="small">Am schnellsten geht es über eine Voreinstellung — die setzt nur die
+        Häkchen unten, danach kannst du einzeln nachjustieren. Gespeichert wird erst mit
+        »${s.connected ? "Rechte aktualisieren" : "Einrichtung starten"}«.</p>
+      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0 14px">
+        ${(s.profile || []).map((pr) => `<button class="${s.aktives_profil === pr.id ? "primary" : "ghost"}"
+             onclick="m365Profil('${esc(pr.id)}')" title="${esc(pr.beschreibung)}">${esc(pr.label)}</button>`).join("")}
+        <span class="small" style="align-self:center">${s.aktives_profil
+          ? esc((s.profile.find((x) => x.id === s.aktives_profil) || {}).beschreibung || "")
+          : "Eigene Auswahl"}</span>
+      </div>
       ${M365_SERVICES.map(([k, label, note]) => {
         const p = perms[k] || { read: false, write: false };
         const noWrite = M365_NUR_LESEN.includes(k);
@@ -925,6 +935,7 @@ async function loadM365() {
       „Schreiben" erlaubt automatisch auch „Lesen". Schaltest du einen Regler wieder AUS,
       wird das Recht bei Microsoft <strong>wirklich entzogen</strong> — nicht nur versteckt.</p>
     </div>`;
+  M365_PROFILE = s.profile || [];
   loadM365Zustand();
 }
 // #117: Ampel je Microsoft-Dienst. Läuft absichtlich NACH dem Rendern und getrennt —
@@ -972,6 +983,22 @@ async function m365Login() {
   try { const r = await api("POST", "/api/m365/auth/start"); window.open(r.auth_url, "_blank"); toast("Anmeldefenster geöffnet — danach hier fortfahren"); }
   catch (e) { toast(friendlyError(e), 1); }
 }
+/* #121: Voreinstellung anwenden. Setzt AUSSCHLIESSLICH die Checkboxen — gespeichert
+   wird wie bisher über »Rechte aktualisieren« (PUT /api/m365/permissions). Ein eigener
+   Schreibweg würde die Widerrufs-Logik in update_permissions() umgehen; ein Wächter-Test
+   hält fest, dass es ihn nicht gibt. */
+let M365_PROFILE = [];
+function m365Profil(id) {
+  const p = M365_PROFILE.find((x) => x.id === id);
+  if (!p) return;
+  document.querySelectorAll("#m365-content input[data-svc]").forEach((i) => {
+    const regler = p.matrix[i.dataset.svc];
+    if (!regler || i.disabled) return;
+    i.checked = !!regler[i.dataset.mode];
+  });
+  toast(`»${p.label}« gewählt — jetzt noch auf »Rechte aktualisieren« klicken`);
+}
+
 function collectM365Matrix() {
   const m = {};
   document.querySelectorAll("#m365-content input[data-svc]").forEach((i) => {

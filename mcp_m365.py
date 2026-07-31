@@ -36,6 +36,65 @@ def _rid(s):
 GRAPH = "https://graph.microsoft.com/v1.0"
 mcp = FastMCP("m365")
 
+# ---------------------------------------------------- Lade-nach-Bedarf (#121) --
+# Jedes Werkzeug kostet Platz im Prompt. Bei ~45 Werkzeugen (Stand nach #119) wird jede
+# Antwort spürbar langsamer — das war Anfang Juli schon einmal der Fall (#99–#102).
+# Deshalb: Werkzeuge von Diensten, die im Dashboard AUS sind, gar nicht erst anbieten.
+#
+# WICHTIG — das hier ist KEINE Sicherheitsgrenze. Die ist und bleibt `require()` im
+# Rumpf jeder Funktion. Wäre die Tabelle unten falsch, sähe das Modell ein Werkzeug, das
+# `require()` anschließend trotzdem ablehnt. Ein Fehler kostet also Sichtbarkeit, nie ein
+# Recht. Die Deckungsgleichheit erzwingt ein AST-Test, der auch #119 überlebt.
+_BEDARF = {}          # werkzeugname -> (dienst, modus)
+
+
+def werkzeug(dienst, modus="read"):
+    """Wie @mcp.tool(), merkt sich aber Dienst + Regler AM Werkzeug.
+
+    Registriert IMMER — so sehen Import und Tests die vollständige Liste. Beschnitten
+    wird erst beim Serverstart (`_beschneiden`), also nur im echten stdio-Betrieb."""
+    def deko(fn):
+        _BEDARF[fn.__name__] = (dienst, modus)
+        return mcp.tool()(fn)
+    return deko
+
+
+def aktive_werkzeuge(perms):
+    """Rechte-Matrix → Menge der Werkzeugnamen, die bleiben. Rein, ohne I/O.
+
+    »read« ist auch durch »write« erfüllt: Wer schreiben darf, darf erst recht lesen —
+    genau wie `m365_setup.matrix_to_values()` es beim Anfordern der Rechte handhabt."""
+    aktiv = set()
+    for name, (dienst, modus) in _BEDARF.items():
+        regler = (perms or {}).get(dienst) or {}
+        if regler.get(modus) or (modus == "read" and regler.get("write")):
+            aktiv.add(name)
+    return aktiv
+
+
+def _beschneiden():
+    """Beim Start alles entfernen, wofür keine Rechte gesetzt sind.
+
+    Fail-soft: Ist M365 nicht verbunden oder die Konfiguration kaputt, bleiben null
+    Dienste übrig — das ist richtig (ohne Rechte geht ohnehin nichts) und der Nutzer
+    bekommt über `m365_hilfe` eine Antwort statt Schweigen.
+
+    Ausgaben NUR nach stderr: stdout ist bei stdio-MCP der Protokollkanal, ein `print()`
+    hier zerschießt die Verbindung."""
+    try:
+        perms = conn().get("permissions", {})
+    except Exception as e:
+        print(f"[m365] Rechte nicht lesbar ({e}) — nur Hilfe-Werkzeug aktiv.",
+              file=sys.stderr)
+        perms = {}
+    aktiv = aktive_werkzeuge(perms)
+    for name in sorted(set(_BEDARF) - aktiv):
+        try:
+            mcp.remove_tool(name)
+        except Exception:
+            pass
+    print(f"[m365] {len(aktiv)} von {len(_BEDARF)} Werkzeugen aktiv.", file=sys.stderr)
+
 DIENST_DE = {"mail": "Mail", "calendar": "Kalender", "onedrive": "OneDrive",
              "sharepoint": "SharePoint", "planner": "Planner", "teams": "Teams",
              "status": "Status & Berichte"}
@@ -152,7 +211,7 @@ def _mail_zeilen(mails):
         for m in mails)
 
 
-@mcp.tool()
+@werkzeug("mail", "read")
 def mail_list(count: int = 10, ordner: str = "") -> str:
     """Letzte Mails auflisten (ID, Datum, Absender, Betreff). ordner: leer = Posteingang;
     sonst ein Name wie inbox, sentitems, drafts, archive oder eine Kennung aus mail_ordner."""
@@ -180,7 +239,7 @@ def _resolve_mail(c, u, mail_id, select):
     return next((m for m in res.get("value", []) if m["id"].endswith(mail_id)), None)
 
 
-@mcp.tool()
+@werkzeug("mail", "read")
 def mail_read(mail_id: str) -> str:
     """Eine Mail im Volltext lesen. mail_id: Suffix aus mail_list ODER die ID aus einem
     Mail-Watch-Ereignis (exakt übernehmen — auch wenn sie wie ein Name aussieht,
@@ -194,7 +253,7 @@ def mail_read(mail_id: str) -> str:
     return f"Von: {msg.get('from', {}).get('emailAddress', {}).get('address', '?')}\nBetreff: {msg.get('subject', '')}\nDatum: {msg['receivedDateTime'][:16]}\n\n{body[:6000]}"
 
 
-@mcp.tool()
+@werkzeug("mail", "read")
 def mail_attachments(mail_id: str) -> str:
     """Anhänge einer Mail lesen: Name, Typ, Größe und — wo möglich — extrahierter Text
     (txt/csv/json/html direkt, PDF via pypdf). mail_id wie bei mail_read (Ereignis-IDs
@@ -242,7 +301,7 @@ def mail_attachments(mail_id: str) -> str:
     return "\n\n".join(out)
 
 
-@mcp.tool()
+@werkzeug("mail", "write")
 def mail_send(to: str, subject: str, text: str) -> str:
     """Eine Mail im Namen des Nutzers senden (braucht Mail › Schreiben)."""
     c = conn(); require(c, "mail", "write"); u = user(c)
@@ -255,7 +314,7 @@ def mail_send(to: str, subject: str, text: str) -> str:
     return f"Mail an {to} gesendet."
 
 
-@mcp.tool()
+@werkzeug("mail", "read")
 def mail_suchen(text: str, anzahl: int = 25) -> str:
     """Das ganze Postfach durchsuchen — nicht nur die letzten Mails. Nutze das, sobald
     jemand nach einer älteren Mail fragt (»die Mail von Petra über die Rechnung«).
@@ -275,7 +334,7 @@ def mail_suchen(text: str, anzahl: int = 25) -> str:
     return f"{len(treffer)} Treffer (nach Relevanz):\n" + _mail_zeilen(treffer)
 
 
-@mcp.tool()
+@werkzeug("mail", "read")
 def mail_ordner(unter: str = "") -> str:
     """Mail-Ordner mit Anzahl und Ungelesenen auflisten. unter: leer = oberste Ebene,
     sonst eine Ordner-Kennung, um dessen Unterordner zu sehen."""
@@ -294,7 +353,7 @@ def mail_ordner(unter: str = "") -> str:
     return "\n".join(zeilen) or "(keine Ordner)"
 
 
-@mcp.tool()
+@werkzeug("mail", "write")
 def mail_antworten(mail_id: str, text: str, allen: bool = False) -> str:
     """Auf eine Mail ANTWORTEN, statt eine neue zu schreiben — so bleibt der Gesprächs-
     faden zusammen. allen=True antwortet allen Empfängern. Braucht Mail › Schreiben."""
@@ -311,7 +370,7 @@ def mail_antworten(mail_id: str, text: str, allen: bool = False) -> str:
     return f"Antwort auf »{msg.get('subject', '')}« an {wem} gesendet."
 
 
-@mcp.tool()
+@werkzeug("mail", "write")
 def mail_weiterleiten(mail_id: str, an: str, text: str = "") -> str:
     """Eine Mail weiterleiten (mehrere Empfänger mit Komma trennen).
     Braucht Mail › Schreiben."""
@@ -329,7 +388,7 @@ def mail_weiterleiten(mail_id: str, an: str, text: str = "") -> str:
     return f"»{msg.get('subject', '')}« an {', '.join(adressen)} weitergeleitet."
 
 
-@mcp.tool()
+@werkzeug("calendar", "read")
 def calendar_list(days: int = 7) -> str:
     """Termine der nächsten Tage auflisten."""
     c = conn(); require(c, "calendar", "read"); u = user(c)
@@ -344,7 +403,7 @@ def calendar_list(days: int = 7) -> str:
         for e in res.get("value", [])) or "(keine Termine)"
 
 
-@mcp.tool()
+@werkzeug("calendar", "write")
 def calendar_add(subject: str, start_iso: str, end_iso: str) -> str:
     """Termin anlegen, Zeiten als ISO z. B. 2026-07-22T14:00:00 (braucht Kalender › Schreiben)."""
     c = conn(); require(c, "calendar", "write"); u = user(c)
@@ -388,7 +447,7 @@ def _freie_fenster(views, start, minuten):
              start + datetime.timedelta(minutes=b * minuten)) for a, b in fenster]
 
 
-@mcp.tool()
+@werkzeug("calendar", "read")
 def kalender_freibelegt(personen: str, von_iso: str, bis_iso: str,
                         raster_min: int = 30) -> str:
     """WANN HABEN ALLE ZEIT? Frei/Belegt mehrerer Personen abfragen und die gemeinsamen
@@ -462,7 +521,7 @@ def _resolve_event(c, u, tid, tage=60):
     return next((e for e in res.get("value", []) if e["id"].endswith(tid)), None)
 
 
-@mcp.tool()
+@werkzeug("calendar", "write")
 def kalender_verschieben(termin_id: str, start_iso: str, ende_iso: str) -> str:
     """Einen Termin auf eine neue Zeit legen. termin_id: Suffix aus calendar_list.
     Braucht Kalender › Schreiben."""
@@ -477,7 +536,7 @@ def kalender_verschieben(termin_id: str, start_iso: str, ende_iso: str) -> str:
     return f"»{ev.get('subject', '')}« liegt jetzt am {start_iso[:16]}."
 
 
-@mcp.tool()
+@werkzeug("calendar", "write")
 def kalender_absagen(termin_id: str, grund: str = "") -> str:
     """Einen Termin absagen und die Teilnehmer benachrichtigen. Geht nur bei Terminen,
     die der Nutzer selbst eingeladen hat. Braucht Kalender › Schreiben."""
@@ -490,7 +549,7 @@ def kalender_absagen(termin_id: str, grund: str = "") -> str:
     return f"»{ev.get('subject', '')}« wurde abgesagt, die Teilnehmer sind benachrichtigt."
 
 
-@mcp.tool()
+@werkzeug("onedrive", "read")
 def files_list(path: str = "") -> str:
     """OneDrive-Ordner auflisten (leer = Wurzel)."""
     c = conn(); require(c, "onedrive", "read"); u = user(c)
@@ -502,7 +561,7 @@ def files_list(path: str = "") -> str:
         for f in res.get("value", [])) or "(leer)"
 
 
-@mcp.tool()
+@werkzeug("sharepoint", "read")
 def sharepoint_search(query: str = "*") -> str:
     """SharePoint-Sites suchen/auflisten."""
     c = conn(); require(c, "sharepoint", "read")
@@ -512,7 +571,7 @@ def sharepoint_search(query: str = "*") -> str:
                      for s in res.get("value", [])) or "(keine Sites)"
 
 
-@mcp.tool()
+@werkzeug("planner", "read")
 def planner_plans() -> str:
     """Planner-Pläne aller Gruppen auflisten."""
     c = conn(); require(c, "planner", "read")
@@ -527,7 +586,7 @@ def planner_plans() -> str:
     return "\n".join(out) or "(keine Pläne)"
 
 
-@mcp.tool()
+@werkzeug("teams", "read")
 def teams_list() -> str:
     """Teams und ihre Kanäle auflisten (nur Basisdaten)."""
     c = conn(); require(c, "teams", "read")
@@ -548,7 +607,7 @@ def teams_list() -> str:
 # den delegierten Anmeldeweg (app-only reicht). Deshalb der erste Ausbau-Schritt.
 
 
-@mcp.tool()
+@werkzeug("status", "read")
 def m365_status() -> str:
     """Läuft Microsoft überhaupt? Zustand aller abonnierten Dienste (Exchange, Teams,
     SharePoint …) mit Ampel. Nutze das, wenn der Nutzer fragt, ob etwas gestört ist,
@@ -582,7 +641,7 @@ def m365_status() -> str:
     return kopf + "\n" + "\n".join(zeilen)
 
 
-@mcp.tool()
+@werkzeug("status", "read")
 def m365_stoerungen(tage: int = 7) -> str:
     """Offene und kürzlich behobene Störungen der letzten Tage (mit Microsoft-Kennung
     wie MO123456), damit man dem Nutzer sagen kann, was los ist."""
@@ -606,7 +665,7 @@ def m365_stoerungen(tage: int = 7) -> str:
     return "\n".join(out)
 
 
-@mcp.tool()
+@werkzeug("status", "read")
 def m365_meldungen(tage: int = 14) -> str:
     """Nachrichten aus dem Message Center — was Microsoft an Änderungen ankündigt
     (neue Funktionen, Umstellungen, Handlungsbedarf)."""
@@ -630,7 +689,7 @@ def m365_meldungen(tage: int = 14) -> str:
     return "\n".join(out)
 
 
-@mcp.tool()
+@werkzeug("status", "read")
 def m365_lizenzen() -> str:
     """Welche Microsoft-Lizenzen sind gekauft und wie viele davon sind belegt?
     Zeigt auch, wo es knapp wird."""
@@ -649,7 +708,7 @@ def m365_lizenzen() -> str:
     return "\n".join(out) or "(keine Lizenzen gefunden)"
 
 
-@mcp.tool()
+@werkzeug("status", "read")
 def m365_nutzung(tage: int = 7) -> str:
     """Wie viele Leute haben Exchange, Teams, SharePoint und OneDrive zuletzt genutzt?
     Grober Überblick, keine Einzelpersonen."""
@@ -676,5 +735,35 @@ def m365_nutzung(tage: int = 7) -> str:
             + ("\n".join(out) or "(an diesem Tag keine Aktivität gemeldet)"))
 
 
+@mcp.tool()
+def m365_hilfe() -> str:
+    """Sagt, welche Microsoft-365-Dienste gerade verfügbar sind und was zu tun ist,
+    wenn ein gewünschter Dienst fehlt. Immer verfügbar, auch ohne Verbindung."""
+    # Bewusst OHNE @werkzeug: Dieses eine Werkzeug wird nie beschnitten. Ein MCP-Server
+    # mit null Werkzeugen ist ein unerprobter Randfall — und der Nutzer bekommt eine
+    # Antwort statt Schweigen, wenn das Modell ein Werkzeug nicht findet.
+    try:
+        perms = conn().get("permissions", {})
+    except Exception:
+        return ("Microsoft 365 ist auf diesem Rechner nicht verbunden. "
+                "👉 Im Dashboard unter »Microsoft 365« einrichten — danach stehen Mail, "
+                "Kalender, Dateien und die Übersicht zur Verfügung.")
+    an, aus = [], []
+    for dienst, name in DIENST_DE.items():
+        regler = perms.get(dienst) or {}
+        if regler.get("read") or regler.get("write"):
+            an.append(f"{name} ({'Lesen und Schreiben' if regler.get('write') else 'nur Lesen'})")
+        else:
+            aus.append(name)
+    text = "Verfügbar: " + (", ".join(an) if an else "nichts — alle Regler sind aus")
+    if aus:
+        text += ("\nAusgeschaltet: " + ", ".join(aus)
+                 + "\n👉 Wenn du einen davon brauchst: Dashboard › Microsoft 365, Regler "
+                   "umlegen und auf »Rechte aktualisieren« klicken. Ab der nächsten "
+                   "Nachricht ist der Dienst da.")
+    return text
+
+
 if __name__ == "__main__":
+    _beschneiden()          # #121: nur laden, was im Dashboard an ist
     mcp.run()  # stdio

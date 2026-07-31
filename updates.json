@@ -1,9 +1,10 @@
 {
- "version": "1.24.1",
+ "version": "1.25.0",
  "date": "2026-07-31",
  "highlights": [
-  "🩹 Wichtige Korrektur zu 1.24.0: Der neue Raum-Wächter brachte den Operator beim Start zum Absturz — wer 1.24.0 installiert hat, sollte sofort aktualisieren. Ursache und Lehre stehen im Repo (#98).",
-  "🚪 Der Wächter prüft alle 30 Minuten die vier Türen zu deinem Chat und richtet Raum-Einstellungen selbst wieder gerade. Bei allem, wo es um Personen geht, fragt er dich.",
-  "🙋 Ein »ja« im Dashboard, während dein Operator auf eine Freigabe wartet, verpufft nicht mehr stillschweigend — er sagt dir, dass die Antwort in den Chat gehört."
+  "⚡ Microsoft 365 macht deinen Operator nicht mehr langsamer als nötig: Er lädt nur noch die Werkzeuge der Dienste, die du im Dashboard eingeschaltet hast. Bei »Nur lesen« sind das 17 statt 23 — und je mehr Dienste dazukommen, desto mehr spart das.",
+  "🎚️ Drei Voreinstellungen für die Microsoft-Rechte: »Nur lesen« (empfohlen zum Anfangen), »Büro-Alltag« (Mails schreiben, Termine anlegen, Aufgaben pflegen) und »Alles«. Ein Klick setzt die Häkchen, danach kannst du einzeln nachjustieren.",
+  "🛡️ »Büro-Alltag« lässt Dateien in OneDrive und SharePoint bewusst schreibgeschützt — dort hätte dein Operator sonst Zugriff auf alle Dateien der Firma.",
+  "💬 Ist Microsoft 365 nicht verbunden oder ein Dienst aus, sagt dein Operator das jetzt im Klartext, statt das Werkzeug einfach nicht zu finden."
  ]
 }

@@ -59,6 +59,66 @@ PERMISSION_MAP = {
 # Dienste ohne sinnvollen Schreib-Regler (das Dashboard sperrt den Schalter)
 NUR_LESEN = tuple(k for k, v in PERMISSION_MAP.items() if not v["write"])
 
+# ------------------------------------------------------- Drei Voreinstellungen (#121) --
+# Nach dem Ausbau der Microsoft-Breite steht der Nutzer vor einer Wand aus Häkchen. Drei
+# Profile legen sich ÜBER die Feinregler — sie setzen die Matrix, mehr nicht. Die Matrix
+# bleibt die einzige Wahrheit; es gibt bewusst keinen zweiten Schreibweg (ein Wächter-Test
+# hält das fest), damit die bestehende Widerrufs-Logik in update_permissions() greift.
+#
+# Die Matrizen werden AUS PERMISSION_MAP erzeugt, nicht abgetippt: Sonst fehlte nach dem
+# nächsten neuen Dienst (#119) still ein Eintrag in allen drei Profilen.
+#
+# »Büro-Alltag« gibt Schreibrechte NUR für mail, calendar und planner. Bewusst nicht für
+# onedrive/sharepoint: Files.ReadWrite.All und Sites.ReadWrite.All sind tenant-weite
+# Schreibrechte auf ALLE Dateien der Firma. Das gehört nicht in ein Profil, das
+# »Alltag« heißt.
+_BUERO_SCHREIBT = ("mail", "calendar", "planner")
+
+
+def _matrix(schreib_dienste=()):
+    return {svc: {"read": True,
+                  "write": bool(PERMISSION_MAP[svc]["write"]) and svc in schreib_dienste}
+            for svc in PERMISSION_MAP}
+
+
+PROFILE = {
+    "lesen": {
+        "label": "Nur lesen",
+        "beschreibung": "Dein Operator darf alles ansehen, aber nichts verändern. "
+                        "Keine Mail geht raus, kein Termin wird angelegt. Empfohlen zum "
+                        "Anfangen — du kannst jederzeit erweitern.",
+        "matrix": _matrix(),
+    },
+    "buero": {
+        "label": "Büro-Alltag",
+        "beschreibung": "Zusätzlich Mails schreiben, Termine anlegen und Aufgaben pflegen. "
+                        "Dateien in OneDrive und SharePoint bleiben schreibgeschützt — "
+                        "dort hätte dein Operator sonst Zugriff auf alle Dateien der Firma.",
+        "matrix": _matrix(_BUERO_SCHREIBT),
+    },
+    "alles": {
+        "label": "Alles",
+        "beschreibung": "Volle Rechte überall, wo Microsoft Schreiben erlaubt — auch auf "
+                        "Dateien und SharePoint-Seiten. Nur wählen, wenn du das wirklich "
+                        "brauchst.",
+        "matrix": _matrix(tuple(PERMISSION_MAP)),
+    },
+}
+
+
+def profil_matrix(profil_id):
+    p = PROFILE.get(profil_id)
+    return {svc: dict(regler) for svc, regler in p["matrix"].items()} if p else None
+
+
+def erkenne_profil(matrix):
+    """Welches Profil entspricht dieser Matrix? None = eigene Auswahl (auch das ist ok)."""
+    for pid, p in PROFILE.items():
+        if all(bool((matrix or {}).get(svc, {}).get(k)) == v
+               for svc, regler in p["matrix"].items() for k, v in regler.items()):
+            return pid
+    return None
+
 
 def setup_client_id() -> str:
     cfg = json.load(open(os.path.join(BOT_DIR, "dashboard.json")))
@@ -323,6 +383,10 @@ def status() -> dict:
         "permissions": conn.get("permissions", {}),
         "active_values": matrix_to_values(conn.get("permissions", {})),
         "primary_user": conn.get("primary_user", ""),
+        # #121: Die drei Voreinstellungen + welche gerade zutrifft (None = eigene Auswahl)
+        "profile": [{"id": pid, "label": p["label"], "beschreibung": p["beschreibung"],
+                     "matrix": p["matrix"]} for pid, p in PROFILE.items()],
+        "aktives_profil": erkenne_profil(conn.get("permissions", {})),
     }
 
 
