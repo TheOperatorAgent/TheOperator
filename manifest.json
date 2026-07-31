@@ -1,5 +1,5 @@
 {
- "version": "1.29.0",
+ "version": "1.30.0",
  "files": [
   {
    "src": "listener.py",
@@ -129,7 +129,7 @@
   {
    "src": "permission_broker.py",
    "dst": "permission_broker.py",
-   "sha256": "f499707d2de8e4db6b01708fa34d76c61de6d5293717d62d3fd9b747ac7fa2b5"
+   "sha256": "2a95a74c16ed653fea8d97170f4abfd1ccd52e327d0168a27de6cf68177b084e"
   },
   {
    "src": "sandbox.py",
@@ -294,7 +294,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "14f3cbec9273cc3930799347014ca4604809060bd82d753e2a14d104dda8c985"
+   "sha256": "59ed8e11070a3db06654dc5a21ddccd8ca160b8040544b800ff19253ddefb978"
   },
   {
    "src": "dienst_start.py",
@@ -319,7 +319,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "ea382949585456d9740b981fcc3d3c07e49b6d1ded8fd59719d67cd872bc6d78"
+   "sha256": "4a580f1652b8c8658424b86e2b3f1aef8dd3d1c77a0c3880cc8f329c784cfbbe"
   },
   {
    "src": "dashboard/test_petra.py",

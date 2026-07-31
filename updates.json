@@ -1,10 +1,10 @@
 {
- "version": "1.29.0",
- "date": "2026-07-31",
+ "version": "1.30.0",
+ "date": "2026-08-01",
  "highlights": [
-  "🔒 Zwei Operatoren gleichzeitig gibt es nicht mehr. Wer von Hand startet, während der Dienst läuft, bekommt eine klare Ansage statt eines stummen Doppelbetriebs, bei dem sich beide die Nachrichten wegnehmen.",
-  "🔬 »operator diagnose« macht jetzt einen ECHTEN Testlauf — genau so, wie dein Operator im Alltag arbeitet, in drei Stufen. Klemmt etwas, sagt der Bericht beim ersten Mal, an welcher Stelle, statt nur Vermutungen zu hinterlassen.",
-  "📋 Neu: »operator abnahme«. Derselbe Durchlauf auf jedem System, Ergebnis als Datei — damit nachweisbar wird, dass Mac, Linux und Windows dasselbe tun. Das ist die Vorbereitung für die Windows-Freigabe.",
-  "🌐 Der Website-Upload läuft ohne Passworteingabe, sobald ein Schlüssel hinterlegt ist."
+  "🔐 Sicherheits-Update: Zusätzliche MCP-Server, die du selbst einträgst, fragen jetzt vor jeder verändernden Aktion nach. Bisher galt das nur für Microsoft 365 und n8n — alles andere lief ungefragt durch.",
+  "📂 Neu: ein Käfig auch fürs Lesen. Dateien außerhalb deines Arbeitsordners werden nicht mehr stillschweigend gelesen. Zugangsdaten, Schlüssel und der Gesprächsverlauf sind ab sofort überall geschützt — auch dort, wo der Ordner sonst erlaubt ist.",
+  "🧪 Beides ist gemessen, nicht behauptet: Ein neuer Prüfstand stellt dem Operator acht Aufgaben, die er ablehnen MUSS. Vorher bestand er fünf davon, jetzt alle acht.",
+  "🙂 Deine Alltagsarbeit bleibt unbehelligt: Lesen, Suchen und Schreiben im Arbeitsordner sowie ein Blick ins eigene Protokoll fragen weiterhin nie nach."
  ]
 }

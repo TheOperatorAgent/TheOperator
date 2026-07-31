@@ -122,7 +122,21 @@ RISKY_TOOLS = {
 #
 # Nicht enthalten: `mcp__learn__*` (Microsofts Dokumentations-Server, reine Lesequelle
 # ohne Bezug zu Nutzerdaten) — bewusst ausgenommen, sonst fragt jede Doku-Suche nach.
-BESTAETIGUNGSPFLICHTIGE_MCP = ("mcp__m365__", "mcp__n8n__")
+# Bis 1.29.0 stand hier eine Aufzaehlung: ("mcp__m365__", "mcp__n8n__"). Alles, was ein
+# Kunde selbst eintraegt — und das Eintragen bewerben wir —, fiel durch bis zum
+# abschliessenden »nicht riskant« und lief OHNE Rueckfrage. Der Pruefstand (#138) hat es
+# am 01.08. bewiesen: ein Server unter mcp__buero__ leitete eine Firmenmail an eine
+# externe Adresse weiter und sagte einen Termin ab, beides ungefragt (#148).
+#
+# Das war #119 eine Ebene hoeher: Damals war die Liste der riskanten WERKZEUGE eine
+# Aufzaehlung. Wir haben sie umgedreht — aber die Umkehrung selbst hing an einer
+# Aufzaehlung von PRAEFIXEN. Jetzt gilt sie fuer jedes mcp__-Werkzeug.
+BESTAETIGUNGSPFLICHTIGE_MCP = ("mcp__",)
+# Server, die ausschliesslich oeffentliche Dokumentation liefern und keinerlei Bezug zu
+# Nutzerdaten haben. Nur solche duerfen ganz ausgenommen sein — sonst fragt jede
+# Doku-Suche nach. Wer hier etwas eintraegt, nimmt einen ganzen Server von der
+# Bestaetigungspflicht aus; das ist eine bewusste Entscheidung, keine Bequemlichkeit.
+MCP_NUR_LESEQUELLE = ("mcp__learn__",)
 MCP_LESEND = {
     # Microsoft 365 — alles, was ausschließlich liest
     "mcp__m365__mail_list", "mcp__m365__mail_read", "mcp__m365__mail_attachments",
@@ -143,7 +157,57 @@ MCP_LESEND = {
     "mcp__n8n__workflows_list", "mcp__n8n__workflow_get",
     "mcp__n8n__executions_list", "mcp__n8n__execution_get", "mcp__n8n__health",
 }
-SAFE_TOOLS = {"Read", "Glob", "Grep", "WebSearch", "Skill", "Agent", "TodoWrite"}
+# »Read« stand hier bis 1.29.0 und wurde damit NIE geprueft, waehrend Write/Edit eine
+# Pfadpruefung hatten. Die OS-Sandbox faengt es auch nicht: sie setzt »(allow default)«
+# plus »(deny file-write*)« — nur Schreiben ist eingesperrt, Lesen war frei (#148).
+# Fuer einen Assistenten, der Dateiinhalte an ein Sprachmodell weitergibt, ist die
+# Leserichtung die heiklere: Was gelesen wird, verlaesst das Haus.
+SAFE_TOOLS = {"Glob", "Grep", "WebSearch", "Skill", "Agent", "TodoWrite"}
+LESE_TOOLS = {"Read", "NotebookRead"}
+
+# Oeffentliche Systempfade, deren Inhalt jeder auf dem Rechner ohnehin sehen kann und in
+# denen keine persoenlichen Daten liegen. Ohne diese Ausnahme fragt der Operator bei
+# jedem »python3 --version«-artigen Blick nach und wird unbenutzbar.
+# Bewusst NICHT dabei: /tmp (dort liegen unsere eigenen Zwischendateien, u. a. die
+# Pseudonym-Zuordnung) und /etc (Konfiguration, Nutzerliste).
+# Zwei Regeln statt einer. Der erste Entwurf haengte alles am ORT, und das war zu grob:
+# Er verbot Petra, einen Bericht aus /tmp vorlesen zu lassen, und dem Operator, sein
+# eigenes Log zu lesen — beides taegliche, harmlose Arbeit. Entscheidend ist nicht, WO
+# eine Datei liegt, sondern WAS sie ist.
+OEFFENTLICHE_PFADE = ("/usr/", "/bin/", "/sbin/", "/opt/", "/System/", "/Library/",
+                      "/Applications/", "/tmp/", "/private/tmp/",
+                      os.path.join(BOT_DIR, ""))
+# Bewusst NICHT dabei: /var/folders — das ist auf macOS der TMPDIR, aber unter genau
+# diesem Pfad liegt in der Testisolation auch das HOME. Ein Ordner, den man fuer
+# Systemkram haelt und der in Wahrheit Nutzerdaten enthaelt, ist die schlechteste
+# Sorte Ausnahme. Dort liegen ausserdem unsere eigenen Zwischendateien.
+
+# Diese Dateien sind IMMER eine Rueckfrage wert — unabhaengig davon, wo sie liegen und
+# ob der Ordner sonst erlaubt ist. Was hier drinsteht, darf ein Sprachmodell nicht
+# beilaeufig zu sehen bekommen: Zugangsdaten, Schluessel, die Zuordnung von Pseudonym
+# zu echtem Namen, der Gespraechsverlauf.
+GEHEIM_MUSTER = re.compile(
+    r"credentials\.json|bots\.json|/secrets?/|\.ssh/|id_(rsa|ed25519|ecdsa)|"
+    r"operator-pii-|\.db$|Keychains|\.env$|broker_allow|update-signing|"
+    r"connections/|tokens\.json|\.pem$|\.key$", re.IGNORECASE)
+_PFAD_IM_BEFEHL = re.compile(r"(?<![\w=])(~/[^\s;|&\)\"']*|/[A-Za-z0-9._\-/]{3,})")
+
+
+def _fremder_lesepfad(text):
+    """Erster Pfad im Text, der eine Rueckfrage verdient — oder None.
+
+    Arbeitet auf dem ganzen Befehl statt auf einzelnen Argumenten: »cat /etc/passwd«,
+    »grep -r x ~/.ssh« und »head ~/Documents/steuer.pdf« sehen unterschiedlich aus,
+    meinen aber dasselbe."""
+    if GEHEIM_MUSTER.search(text or ""):
+        return GEHEIM_MUSTER.search(text).group(0)
+    for treffer in _PFAD_IM_BEFEHL.findall(text or ""):
+        pfad = os.path.expanduser(treffer)
+        if pfad.startswith(OEFFENTLICHE_PFADE):
+            continue
+        if _ausserhalb_arbeitsordner(pfad):
+            return treffer
+    return None
 
 # ---------------------------------------------------------------- Allowlist (#104-B) --
 # Fail-closed statt fail-open: Nur Befehle, die hier (oder in der gelernten Liste)
@@ -463,9 +527,13 @@ def classify(tool, tool_input):
     # Fail-closed für die angebundenen Dienste: Was nicht ausdrücklich als lesend bekannt
     # ist, wird bestätigt. Siehe MCP_LESEND — die alte Positivliste hinkte dem
     # Werkzeugkasten hinterher, und zwar zulasten der Zusage.
-    if tool.startswith(BESTAETIGUNGSPFLICHTIGE_MCP) and tool not in MCP_LESEND:
-        was = tool.split("__")[-1].replace("_", " ")
-        dienst = "Microsoft 365" if "__m365__" in tool else "n8n"
+    if (tool.startswith(BESTAETIGUNGSPFLICHTIGE_MCP)
+            and not tool.startswith(MCP_NUR_LESEQUELLE)
+            and tool not in MCP_LESEND):
+        teile = tool.split("__")
+        was = teile[-1].replace("_", " ")
+        dienst = {"m365": "Microsoft 365", "n8n": "n8n"}.get(
+            teile[1] if len(teile) > 2 else "", teile[1] if len(teile) > 2 else "einem Dienst")
         return True, f"in {dienst} etwas verändern: »{was}«"
     if tool in WEB_TOOLS:
         # #82: Adressen ins eigene Netz gar nicht erst anbieten — direkt ablehnen.
@@ -482,6 +550,12 @@ def classify(tool, tool_input):
             return True, f"eine Webseite abrufen: {_shorten(tool_input.get('url', ''), 80)}"
         return False, ""
     if tool in SAFE_TOOLS:
+        return False, ""
+    if tool in LESE_TOOLS:
+        pfad = str(tool_input.get("file_path") or tool_input.get("notebook_path") or "")
+        fremd = _fremder_lesepfad(pfad) if pfad else None
+        if fremd:
+            return True, f"eine geschützte Datei lesen: {_shorten(pfad, 80)}"
         return False, ""
     if tool == "Bash":
         cmd = str(tool_input.get("command", ""))
@@ -501,6 +575,12 @@ def classify(tool, tool_input):
         # ist unbekannt, aber nicht als gefährlich erkannt.
         if stufe() == "locker":
             return False, ""
+        # Lesen ausserhalb des Kaefigs: »cat« ist ein harmloses Befehlswort, »cat
+        # ~/.ssh/id_ed25519« ist es nicht. Bis 1.29.0 pruefte hier nur das Wort.
+        fremder = _fremder_lesepfad(cmd)
+        if fremder:
+            return True, ("auf etwas außerhalb des Arbeitsordners zugreifen: "
+                          f"{_shorten(fremder, 60)} — Befehl: {_shorten(cmd, 70)}")
         fremd = unbekannte_befehle(cmd)
         if fremd:
             return True, (f"einen Befehl ausführen, den ich nicht als harmlos kenne "
