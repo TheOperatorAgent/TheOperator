@@ -4498,3 +4498,24 @@ def test_selbsttest_meldet_dem_kunden_keine_fremden_probleme():
     conf = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/conftest.py"),
                 encoding="utf-8").read()
     assert "lieferkette:" in conf, "Marke nicht registriert — pytest warnt sonst"
+
+
+def test_website_kopie_der_installer_ist_die_oeffentliche_fassung():
+    """Am 31.07. deployte Michi die Website — und lud die Installer von 1.20.0 hoch.
+    Der Deploy war fehlerfrei; die Ursache lag davor: `operator-site/public/` haelt eine
+    EIGENE Kopie der Installer, die niemand mitgezogen hatte. Das ist eine DRITTE
+    Auslieferungsspur neben Gitea und GitHub — und der beworbene Kundenweg.
+
+    Dieser Test greift schon im Repo, bevor irgendetwas hochgeladen wird. Der
+    Netz-Wächter (test_website_liefert_dieselben_installer_wie_das_repo) merkt es erst
+    danach — und nur, wenn jemand die Suite mit Netz laufen laesst."""
+    import pytest
+    quelle, kopie = "/tmp/_rel10gh", "/tmp/operator-site/public"
+    if not (os.path.isdir(quelle) and os.path.isdir(kopie)):
+        pytest.skip("Repos nicht ausgecheckt")
+    for datei in ("install.sh", "install.ps1"):
+        a = open(os.path.join(quelle, datei), encoding="utf-8").read()
+        b = open(os.path.join(kopie, datei), encoding="utf-8").read()
+        assert a == b, (f"operator-site/public/{datei} weicht vom oeffentlichen Spiegel ab "
+                        "— ein Deploy wuerde alten Code an Kunden ausliefern. "
+                        "👉 Release-Skript erneut laufen lassen, dann deploy-strato.command")
