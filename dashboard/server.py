@@ -242,6 +242,55 @@ def api_audit_integrity():
     return audit_log.verify()
 
 
+@app.post("/api/selbsttest")
+def api_selbsttest():
+    """#87: »Nicht versprochen. Sichtbar.« steht auf der Website — aber die Prüfungen,
+    die das belegen, landeten nie beim Nutzer. Seit 1.23.0 werden sie mitgeliefert und
+    hier ausgeführt: der misstrauische Nutzer kann SEINE Installation prüfen statt uns
+    zu glauben.
+
+    Bewusst synchron: es dauert ~15 s, und ein Fortschrittsbalken, der nichts weiß,
+    wäre gelogen. Bewusst ohne Parameter — kein Weg, von außen beliebige Tests zu
+    starten."""
+    hier = os.path.dirname(os.path.abspath(__file__))
+    tests = [os.path.join(hier, n) for n in ("test_dashboard.py", "test_petra.py")]
+    fehlend = [os.path.basename(t) for t in tests if not os.path.exists(t)]
+    if fehlend:
+        return err("selbsttest",
+                   f"Die Prüfungen fehlen in deiner Installation ({', '.join(fehlend)}). "
+                   "👉 Das kommt bei Installationen vor 1.23.0 vor — einmal den "
+                   "Installationsbefehl erneut ausführen, dann sind sie da.")
+    py = platform_compat.venv_python(BOT_DIR) or sys.executable
+    try:
+        # »lieferkette« ausblenden: das sind Prüfungen unserer eigenen Auslieferung
+        # (liegt auf operator.bayern derselbe Installer wie auf GitHub?). Ein Kunde
+        # kann daran nichts ändern — ihm »1 Prüfung durchgefallen« zu melden, wäre
+        # ein Schrecken über ein Problem, das gar nicht seines ist.
+        r = subprocess.run([py, "-m", "pytest", *tests, "-q", "--tb=no",
+                            "-m", "not lieferkette"],
+                           capture_output=True, text=True, timeout=600, cwd=BOT_DIR)
+    except subprocess.TimeoutExpired:
+        return err("selbsttest", "Die Prüfung hat zu lange gebraucht und wurde "
+                                 "abgebrochen. 👉 Bitte später noch einmal versuchen.")
+    except Exception as e:
+        return err("selbsttest", f"Die Prüfung ließ sich nicht starten ({e}). "
+                                 "👉 Bitte den Installationsbefehl erneut ausführen.")
+    m = re.search(r"(\d+) passed", r.stdout)
+    bestanden = int(m.group(1)) if m else 0
+    m = re.search(r"(\d+) failed", r.stdout)
+    gescheitert = int(m.group(1)) if m else 0
+    gesamt = bestanden + gescheitert
+    audit("dashboard", "selbsttest", f"{bestanden}/{gesamt} bestanden")
+    return {"ok": gescheitert == 0, "bestanden": bestanden, "gescheitert": gescheitert,
+            "gesamt": gesamt,
+            "text": (f"{bestanden} von {gesamt} Sicherheitsprüfungen bestanden."
+                     if gescheitert == 0 else
+                     f"{gescheitert} von {gesamt} Prüfungen sind durchgefallen. "
+                     "👉 Bitte melde das über den Fehler-Knopf — mit dieser Zahl "
+                     "können wir es nachstellen."),
+            "ausgabe": (r.stdout or "")[-4000:]}
+
+
 _update_cache = {"at": 0.0, "data": None}
 
 

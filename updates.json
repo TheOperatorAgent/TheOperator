@@ -1,9 +1,9 @@
 {
- "version": "1.22.1",
- "date": "2026-07-30",
+ "version": "1.23.0",
+ "date": "2026-07-31",
  "highlights": [
-  "⏱️ Wartezeit auf deine Freigabe zählt nicht mehr als Arbeitszeit. Bisher lief die 10-Minuten-Uhr weiter, während der Operator auf dein »ja« wartete — zwei Rückfragen und die Aufgabe wurde »wegen Überlänge« abgebrochen, obwohl sie fast fertig war.",
-  "🙋 Deutlich weniger Rückfragen: Ein Argument wie »--id« galt fälschlich als Schreibzugriff auf den Programmordner. Dadurch kamen zwei Fragen für eine einzige Aufgabe — das wirkte, als würde dein »Ja« nicht erkannt.",
-  "🧭 Bricht etwas doch ab, sagt der Operator jetzt, wie es weitergeht (»schreib weiter«), statt dich auf ein anderes Werkzeug zu verweisen."
+  "🔎 Neu in der Übersicht: »Meine Installation prüfen«. Wir behaupten einiges über deinen Operator — dass der Surf-Agent nichts anklicken kann, dass niemand in dein Heimnetz kommt, dass keine Gesprächsinhalte im Protokoll landen. Ab jetzt liegen die Prüfungen bei dir auf der Platte und laufen auf Knopfdruck gegen deine Installation. Du musst uns nicht glauben.",
+  "🏷️ Der Installer und »operator pruefen« sagen jetzt, welche Fassung wirklich läuft — inklusive Prüfsumme jeder einzelnen Datei. Ein steckengebliebenes Update fällt damit beim ersten Blick auf statt nach drei Fehlversuchen.",
+  "🧪 Unter der Haube: Unsere eigenen Prüfungen arbeiten auf einer Kopie statt am laufenden System. Das beseitigt einen seltenen Fehlalarm und stellt sicher, dass ein Testlauf deiner Installation nichts anhaben kann."
  ]
 }

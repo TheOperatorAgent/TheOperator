@@ -113,6 +113,7 @@ async function loadStatus() {
   badge.textContent = STATUS.listener_running ? "● Listener läuft" : "● Listener aus";
   badge.className = "badge " + (STATUS.listener_running ? "ok" : "err");
   renderSandbox();
+  verdrahteSelbsttest();
   $("#overview-tiles").innerHTML = `
     <div class="tile ${STATUS.listener_running ? "ok" : "err"}"><div class="k">${STATUS.listener_running ? "aktiv" : "aus"}</div><div class="l">Listener · <a href="#" onclick="restartListener();return false">neu starten</a></div></div>
     <div class="tile"><div class="k">${STATUS.agents.length}</div><div class="l">Agenten (${Object.keys(STATUS.published).length} veröffentlicht)</div></div>
@@ -1942,6 +1943,39 @@ async function asstExec(name, args) {
     }
   }, 66);
 })();
+
+/* ---------- Selbsttest (#87): der Nutzer prüft seine eigene Installation ----------
+   Die Website verspricht »Nicht versprochen. Sichtbar.« — die Prüfungen, die das
+   belegen, lagen aber nie beim Nutzer. Seit 1.23.0 werden sie mitgeliefert.
+   Ausgabe bewusst per textContent: die kommt aus pytest und darf nie Markup sein. */
+let _selbsttestLaeuft = false;
+function verdrahteSelbsttest() {
+  const btn = document.getElementById("selbsttest-btn");
+  if (!btn || btn.dataset.bereit) return;
+  btn.dataset.bereit = "1";
+  btn.addEventListener("click", async () => {
+    if (_selbsttestLaeuft) return;
+    _selbsttestLaeuft = true;
+    const out = document.getElementById("selbsttest-out");
+    btn.disabled = true;
+    btn.textContent = "Prüfe …";
+    out.textContent = "Die Prüfungen laufen gegen deine Installation. Das dauert etwa "
+      + "eine Viertelminute — du kannst das Fenster offen lassen.";
+    out.style.color = "";
+    try {
+      const r = await api("POST", "/api/selbsttest");
+      out.textContent = r.text || "";
+      out.style.color = r.ok ? "var(--green)" : "var(--red,#f85149)";
+    } catch (e) {
+      out.textContent = friendlyError(e);
+      out.style.color = "var(--red,#f85149)";
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Erneut prüfen";
+      _selbsttestLaeuft = false;
+    }
+  });
+}
 
 /* ---------- Schutzraum-Karte (#104-A): ehrlich zeigen, ob die OS-Sandbox greift ---------- */
 function renderSandbox() {

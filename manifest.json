@@ -1,5 +1,5 @@
 {
- "version": "1.22.1",
+ "version": "1.23.0",
  "files": [
   {
    "src": "listener.py",
@@ -224,7 +224,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "2b3401655e172af9565897f71434031b8f48eaa7876e7e5ee3017acfd360cb24"
+   "sha256": "b3335ade2104f588983f23863910746d7bcdfc365164a0666974c991a588b849"
   },
   {
    "src": "dashboard/tokens.py",
@@ -259,12 +259,12 @@
   {
    "src": "dashboard/static/index.html",
    "dst": "dashboard/static/index.html",
-   "sha256": "38c7a97a8fd5996f3bf3ccfcb22269a5b66276474696301c2968919394ed12d4"
+   "sha256": "1776691e31f54e80707fcad427a1a07adec65789a9335d2a22630315c68b2f47"
   },
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "f9c28faa1327e2ee126aebca6f78188ea762cb99cbaa0772b2ef81451a137906"
+   "sha256": "f388bf4a00cb70a372e353253d2bb8748aaf78ada0b5db2eef390aba50416cfa"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -284,7 +284,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "9ab1866f12256201a2850a9a9f874ec83f0de235ab93c2396fdac036493c5e81"
+   "sha256": "8fc21140add9202a29f2eec0793eaa9dcf4065a756d9d91775190096d44a62aa"
   },
   {
    "src": "dienst_start.py",
@@ -294,12 +294,27 @@
   {
    "src": "pruefung.py",
    "dst": "pruefung.py",
-   "sha256": "14492b62d7139d79cfdfb39e1d94223b56667d5651cf983c89ff6bcce8ce2c8e"
+   "sha256": "74be1c96fc6e451e96d11968e2148cf841aabf994fd46e14a904eaa9813beec6"
   },
   {
    "src": "diagnose.py",
    "dst": "diagnose.py",
    "sha256": "471308d4e03b2320788d8a88ef6f56c3e7517b5a48d28e1acfb3f12bdb192b6c"
+  },
+  {
+   "src": "dashboard/test_dashboard.py",
+   "dst": "dashboard/test_dashboard.py",
+   "sha256": "0c545625059eef1d535e01239d411715941971c603eeedac46a5839a9f8dba7e"
+  },
+  {
+   "src": "dashboard/test_petra.py",
+   "dst": "dashboard/test_petra.py",
+   "sha256": "021a83346ee7aa915866bfe4f0bb61c67fd080149cdbc3469d12deabf1ea9eea"
+  },
+  {
+   "src": "dashboard/conftest.py",
+   "dst": "dashboard/conftest.py",
+   "sha256": "20729b197d62354cad1391c0c870958977de2c7aedff238996278c2077753a4d"
   }
  ]
 }

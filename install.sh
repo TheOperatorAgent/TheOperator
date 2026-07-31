@@ -22,6 +22,9 @@ BOT_DIR="$HOME/.claude/matrix-bot"
 # und genau dort legen Agenten ihre Ergebnisse ab. Nebeneffekt: auffindbar statt versteckt.
 WORKSPACE="${OPERATOR_WORKSPACE:-$HOME/Operator}"
 STATE_FILE="$BOT_DIR/.install-state.json"
+# #131: Der Installer nennt seine eigene Fassung. Bei zwei Auslieferungswegen
+# (GitHub sofort, operator.bayern per Handupload) ist Drift sonst unsichtbar.
+INSTALLER_VERSION="1.23.0"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main}"
 
@@ -52,7 +55,8 @@ banner() {
     '#   # #     #     #  #  #   #   #   #   # #  # ' \
     ' ###  #     ##### #   # #   #   #    ###  #   #'
   printf '\033[2m  %s\033[0m\n' '-----------------------------------------------'
-  printf '\033[92m  %s\033[0m\n\n' '> your operator inside the matrix_'
+  printf '\033[92m  %s\033[0m\n' '> your operator inside the matrix_'
+  printf '\033[2m  Installer %s\033[0m\n\n' "$INSTALLER_VERSION"
 }
 ok()    { printf '  \033[32m✓\033[0m %s\n' "$*"; }
 warn()  { printf '  \033[33m!\033[0m %s\n' "$*"; }
@@ -752,7 +756,7 @@ phase8_dashboard() {
     step 18 "Bausteine laden — der längste Schritt, je nach Netz mehrere Minuten ..."
     "$DASH_DIR/venv/bin/pip" install -q "fastapi==0.116.*" "uvicorn==0.35.*" \
       "msal==1.33.*" "cryptography==45.*" "requests==2.32.*" "mcp==1.*" "starlette<0.49" \
-      "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" || DASH_OK=0
+      "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" "pytest" || DASH_OK=0
     step 55 "Deutsches Sprachmodell für den Datenschutz-Filter laden (ca. 500 MB) ..."
     "$DASH_DIR/venv/bin/pip" install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" \
       || warn "Deutsches Sprachmodell konnte nicht geladen werden — Pseudonymisierung meldet sich beim ersten Einsatz"
@@ -765,6 +769,13 @@ phase8_dashboard() {
     for F in server.py tokens.py agents_store.py m365_setup.py google_auth.py open.py mcp_catalog.py; do
       if [ -f "$SCRIPT_DIR/dashboard/$F" ]; then cp "$SCRIPT_DIR/dashboard/$F" "$DASH_DIR/$F"
       else curl -fsSL "$REPO_RAW/dashboard/$F" -o "$DASH_DIR/$F" || DASH_OK=0; fi
+    done
+    # #87: Die Sicherheitspruefungen gehoeren zum Produkt, nicht nur ins Repo —
+    # sonst kann niemand nachpruefen, was wir versprechen. conftest.py isoliert
+    # den Lauf (#89), damit er die laufende Installation nicht anfasst.
+    for F in test_dashboard.py test_petra.py conftest.py; do
+      if [ -f "$SCRIPT_DIR/dashboard/$F" ]; then cp "$SCRIPT_DIR/dashboard/$F" "$DASH_DIR/$F"
+      else curl -fsSL "$REPO_RAW/dashboard/$F" -o "$DASH_DIR/$F" || warn "$F fehlt — Selbsttest im Dashboard nicht verfuegbar"; fi
     done
     for F in index.html app.js style.css; do
       if [ -f "$SCRIPT_DIR/dashboard/static/$F" ]; then cp "$SCRIPT_DIR/dashboard/static/$F" "$DASH_DIR/static/$F"

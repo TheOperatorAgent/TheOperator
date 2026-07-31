@@ -3,6 +3,8 @@ import importlib
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import agents_store
@@ -3726,6 +3728,7 @@ def test_windows_installer_haengt_nie_an_der_claude_pruefung():
     assert '$probe = & claude -p' not in code, "die ungeschuetzte Probe ist zurueck"
 
 
+@pytest.mark.lieferkette
 def test_website_liefert_dieselben_installer_wie_das_repo():
     """Wächter gegen die Falle vom 30.07.: operator.bayern lieferte tagelang einen
     Uralt-Installer aus (Mojibake, Phase-5-Absturz, stummer Claude-Hänger), weil der
@@ -4335,3 +4338,163 @@ def test_abbruch_meldung_ist_keine_sackgasse():
     code = "\n".join(z for z in src.splitlines() if not z.strip().startswith("#"))
     assert "Claude-Code-Session" not in code, "schickt den Nutzer wieder weg"
     assert "Schreib **weiter**" in code, "nennt keinen Weg, wie es weitergeht"
+
+
+# ------------------------------------------------------- Testisolation (#89) --
+
+def test_testlauf_arbeitet_auf_der_kopie_nicht_am_original():
+    """#89: Bei 1.8.6 meldete ein Lauf einmalig »1 failed«, sechzehn Wiederholungen
+    danach grün. Ursache war nicht der Test, sondern dass die Suite den Zustand eines
+    LAUFENDEN Systems liest, während Listener und retention.py dort schreiben.
+
+    Dieser Test hält fest, dass die Umlenkung tatsächlich greift — sonst wäre die
+    conftest.py da, ohne zu wirken, und der Flackerer käme zurück."""
+    import conftest
+    if not conftest.AKTIV:
+        import pytest
+        pytest.skip("Isolation per OPERATOR_TEST_NO_ISOLATION abgeschaltet")
+    bot = os.path.expanduser("~/.claude/matrix-bot")
+    assert bot != conftest.ECHT, "HOME wurde nicht umgebogen — die Suite liest das Original"
+    assert bot == conftest.ZIEL
+    assert os.environ.get("OPERATOR_BOT_DIR") == conftest.ZIEL, \
+        "permission_broker und claude_tool_hook wuerden weiter aufs Original zeigen"
+    # Die Kopie muss vollstaendig genug sein, dass Module sie laden koennen.
+    for pflicht in ("listener.py", "VERSION", "manifest.json", "VERHALTEN.md"):
+        assert os.path.exists(os.path.join(bot, pflicht)), f"{pflicht} fehlt in der Kopie"
+
+
+def test_testkopie_enthaelt_keine_echten_geheimnisse():
+    """Die Momentaufnahme liegt in /tmp. Ein lebendes Matrix-Token gehoert dort nicht
+    hin — Struktur ja, Werte nein. (Der Listener wird in der Suite ohnehin nie echt
+    gestartet; er wird nur gelesen.)"""
+    import conftest
+    if not conftest.AKTIV:
+        import pytest
+        pytest.skip("Isolation abgeschaltet")
+    import json as _j
+    creds = _j.load(open(os.path.join(conftest.ZIEL, "credentials.json")))
+    echte = _j.load(open(os.path.join(conftest.ECHT, "credentials.json")))
+    assert set(creds) == set(echte), "Attrappe hat andere Schluessel — Tests pruefen Struktur"
+    assert creds["access_token"] != echte["access_token"], "echtes Token in der Testkopie"
+    assert not os.listdir(os.path.join(conftest.ZIEL, "secrets")), \
+        "verschluesselte Geheimnisse wurden mitkopiert"
+
+
+def test_isolation_fasst_die_auslieferung_nicht_an():
+    """Die Wächter gegen Installer-Drift (#131: »zwei Auslieferungswege sind ein
+    Fehler-Verstaerker«) pruefen absichtlich die ECHTEN Repos unter /tmp. Wuerde die
+    conftest.py sie mit umbiegen, pruefte die Suite ihre eigene Kopie und die Drift
+    zwischen GitHub und operator.bayern faende niemand mehr."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/conftest.py"),
+               encoding="utf-8").read()
+    for repo in ("/tmp/_diff_op", "/tmp/_rel10gh", "/tmp/operator-site"):
+        assert f'"{repo}"' in src, f"{repo} nicht als geschuetzt vermerkt"
+    # Kein Umschreiben: die Pfade duerfen nur in der AUSLIEFERUNG-Konstante und in
+    # Erklaertexten stehen, nie in ausgefuehrtem Code.
+    import ast as _ast
+    baum = _ast.parse(src)
+    erlaubt = set()
+    for k in _ast.walk(baum):
+        if isinstance(k, _ast.Assign) and any(
+                getattr(z, "id", "") == "AUSLIEFERUNG" for z in k.targets):
+            erlaubt.update(id(s) for s in _ast.walk(k.value))
+        if isinstance(k, _ast.Expr) and isinstance(k.value, _ast.Constant):
+            erlaubt.add(id(k.value))            # Docstrings sind Erklaerung, kein Code
+    for k in _ast.walk(baum):
+        if isinstance(k, _ast.Constant) and isinstance(k.value, str) \
+                and "/tmp/_" in k.value and id(k) not in erlaubt:
+            assert False, f"conftest fasst die Auslieferung an: {k.value!r}"
+
+
+def test_isolation_meldet_veraenderungen_am_echten_ordner():
+    """Der Beweis, der #89 rechtfertigt: nach dem Lauf muss nachweisbar sein, dass die
+    Suite das laufende System nicht angefasst hat. Historisch schrieb der Sandbox-Test
+    eine Datei .sandbox-angriff-test direkt in den echten Bot-Ordner."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/conftest.py"),
+               encoding="utf-8").read()
+    assert "def pytest_sessionfinish" in src
+    assert "_fingerabdruck(ECHT)" in src, "es wird gar nicht nachgeprueft"
+    assert "def _fingerabdruck" in src
+
+
+# ------------------------------------------- Tests ausliefern (#87) + Fassung (#131) --
+
+def test_pruefungen_werden_mit_ausgeliefert():
+    """#87: Die Website verspricht »Nicht versprochen. Sichtbar.« — aber genau die
+    Prüfungen, die das belegen (Surf-Agent liest nur, kein Heimnetz-Zugriff, keine
+    Gesprächsinhalte im Protokoll), landeten nie beim Nutzer. Ohne sie ist das
+    Argument eine Behauptung wie jede andere."""
+    import json as _j
+    man = _j.load(open(os.path.expanduser("~/.claude/matrix-bot/manifest.json")))
+    gefuehrt = {f["dst"] for f in man["files"]}
+    for datei in ("dashboard/test_dashboard.py", "dashboard/test_petra.py",
+                  "dashboard/conftest.py"):
+        assert datei in gefuehrt, f"{datei} fehlt im Manifest — kein Update erreicht sie"
+    if not os.path.exists("/tmp/_diff_op/install.sh"):
+        return
+    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    ps1 = open("/tmp/_diff_op/install.ps1", encoding="utf-8").read()
+    assert "test_dashboard.py test_petra.py conftest.py" in sh, \
+        "install.sh laedt die Pruefungen nicht"
+    assert '"test_dashboard.py","test_petra.py","conftest.py"' in ps1, \
+        "install.ps1 laedt die Pruefungen nicht — die bekannte Paritaets-Drift (#126)"
+    # Ohne pytest im venv waere der Knopf im Dashboard eine Attrappe.
+    for name, quelle in (("install.sh", sh), ("install.ps1", ps1)):
+        assert '"pytest"' in quelle, f"{name}: pytest fehlt in der Paketliste"
+
+
+def test_selbsttest_route_startet_nur_die_eigenen_pruefungen():
+    """Der Knopf darf kein Einfallstor sein: keine Parameter von aussen, feste
+    Dateinamen, hartes Zeitlimit."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py"),
+               encoding="utf-8").read()
+    assert '@app.post("/api/selbsttest")' in src
+    teil = src.split('@app.post("/api/selbsttest")')[1].split("\n@app.")[0]
+    assert "def api_selbsttest():" in teil, "die Route nimmt Parameter entgegen"
+    assert '"test_dashboard.py", "test_petra.py"' in teil, "Testdateien nicht fest verdrahtet"
+    assert "timeout=" in teil, "ohne Zeitlimit kann ein Haenger das Dashboard blockieren"
+
+
+def test_installer_nennt_seine_eigene_fassung():
+    """#131: »Zwei Auslieferungswege sind ein Fehler-Verstaerker.« GitHub ist nach jedem
+    Push aktuell, operator.bayern erst nach einem Handupload. Mehrfach hat das einen
+    Testlauf wertlos gemacht, weil niemand wusste, welcher Installer gerade lief.
+    Seit 1.23.0 sagt er es im Startbild — und diese Angabe muss stimmen."""
+    import pytest
+    if not os.path.exists("/tmp/_diff_op/install.sh"):
+        pytest.skip("Auslieferungs-Repo nicht ausgecheckt")
+    version = open("/tmp/_diff_op/VERSION", encoding="utf-8").read().strip()
+    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    ps1 = open("/tmp/_diff_op/install.ps1", encoding="utf-8").read()
+    assert f'INSTALLER_VERSION="{version}"' in sh, \
+        "install.sh nennt eine andere Fassung als VERSION — genau die Drift, die das verhindern soll"
+    assert f'$InstallerVersion = "{version}"' in ps1, "install.ps1 nennt eine andere Fassung"
+    assert '"$INSTALLER_VERSION"' in sh and "$InstallerVersion)" in ps1, \
+        "die Fassung wird nirgends ausgegeben"
+
+
+def test_selbstpruefung_zeigt_die_fassung_je_datei():
+    """#131: »operator pruefen« soll Drift beim ERSTEN Blick zeigen, nicht nach drei
+    Fehlversuchen. Dazu gehoert die Pruefsumme je ausgelieferter Datei gegen das
+    Manifest — sonst bleibt »laeuft ueberhaupt das, was ich gebaut habe?« offen."""
+    pr = open(os.path.expanduser("~/.claude/matrix-bot/pruefung.py"), encoding="utf-8").read()
+    assert "manifest.json" in pr, "vergleicht nicht gegen das Manifest"
+    assert "sha256" in pr, "prueft die Dateien nicht wirklich"
+
+
+def test_selbsttest_meldet_dem_kunden_keine_fremden_probleme():
+    """Beim ersten Live-Lauf des Selbsttests (#87) meldete er »1 von 290 durchgefallen«
+    — durchgefallen war der Wächter, der prüft, ob auf operator.bayern derselbe
+    Installer liegt wie auf GitHub. Das ist UNSERE Auslieferungsdisziplin, nicht die
+    Installation des Kunden. Ihm eine rote Zahl für ein Problem zu zeigen, das er nicht
+    beheben kann, ist schlimmer als gar keine Anzeige."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py"),
+               encoding="utf-8").read()
+    teil = src.split('@app.post("/api/selbsttest")')[1].split("\n@app.")[0]
+    assert '"not lieferkette"' in teil, "Lieferketten-Pruefungen laufen beim Kunden mit"
+    tests = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/test_dashboard.py"),
+                 encoding="utf-8").read()
+    assert "@pytest.mark.lieferkette" in tests, "keine einzige Pruefung ist so markiert"
+    conf = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/conftest.py"),
+                encoding="utf-8").read()
+    assert "lieferkette:" in conf, "Marke nicht registriert — pytest warnt sonst"

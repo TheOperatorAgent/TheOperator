@@ -64,6 +64,59 @@ def schritt2_dateien():
     except Exception as e:
         sagen(FEHLER, f"VERHALTEN.md nicht lesbar: {e}",
               "Das ist genau der Fehler, der jede Antwort verhindert.")
+    _fassung_je_datei()
+
+
+def _fassung_je_datei():
+    """#131: »Läuft überhaupt das, was ich gebaut habe?« war am 30.07. tagelang offen,
+    weil GitHub nach jedem Push aktuell ist und operator.bayern erst nach einem
+    Handupload. Zwischendrin entstehen Mischzustände — alter Installer, neue Dateien —
+    und dann ist jeder Testlauf wertlos.
+
+    Deshalb hier die Pflichtangabe: welche Fassung ist installiert, und stimmt jede
+    Datei mit dem überein, was das Manifest für diese Fassung behauptet? Nur lokal,
+    ohne Netz — die Frage »bin ich aktuell?« beantwortet der Updater."""
+    import hashlib
+    import json
+    version = "unbekannt"
+    try:
+        version = open(os.path.join(BOT_DIR, "VERSION"), encoding="utf-8").read().strip()
+    except OSError:
+        pass
+    try:
+        manifest = json.load(open(os.path.join(BOT_DIR, "manifest.json"), encoding="utf-8"))
+    except Exception:
+        sagen(WARN, f"Fassung {version} — kein Manifest zum Vergleichen da",
+              "Nach dem nächsten Update ist es wieder da; kein Problem für den Betrieb.")
+        return
+    if manifest.get("version") != version:
+        sagen(WARN, f"VERSION sagt {version}, das Manifest sagt {manifest.get('version')}",
+              "Ein Update ist wahrscheinlich mittendrin abgebrochen. "
+              "Installationsbefehl erneut ausführen.")
+    abweichend, fehlend = [], []
+    for eintrag in manifest.get("files", []):
+        pfad = os.path.join(BOT_DIR, eintrag["dst"])
+        if not os.path.exists(pfad):
+            fehlend.append(eintrag["dst"]); continue
+        try:
+            with open(pfad, "rb") as f:
+                if hashlib.sha256(f.read()).hexdigest() != eintrag["sha256"]:
+                    abweichend.append(eintrag["dst"])
+        except OSError:
+            fehlend.append(eintrag["dst"])
+    gesamt = len(manifest.get("files", []))
+    if not abweichend and not fehlend:
+        sagen(OK, f"Fassung {version} — alle {gesamt} Dateien stimmen mit dem Manifest überein")
+        return
+    if fehlend:
+        sagen(FEHLER, f"Fassung {version} — {len(fehlend)} Datei(en) fehlen: "
+                      f"{', '.join(fehlend[:5])}",
+              "Installationsbefehl erneut ausführen — dann sind sie wieder da.")
+    if abweichend:
+        sagen(WARN, f"Fassung {version} — {len(abweichend)} Datei(en) weichen ab: "
+                    f"{', '.join(abweichend[:5])}",
+              "Entweder wurde hier von Hand geändert (dann ist es Absicht), oder ein "
+              "Update blieb stecken. Im Zweifel Installationsbefehl erneut ausführen.")
 
 
 def schritt3_claude():

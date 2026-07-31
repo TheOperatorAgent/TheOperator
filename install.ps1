@@ -23,6 +23,8 @@ $DashDir = Join-Path $BotDir "dashboard"
 # #106: Arbeitsordner NICHT unter ~/.claude (Claude Code sperrt dort Schreibzugriffe)
 $Workspace = if ($env:OPERATOR_WORKSPACE) { $env:OPERATOR_WORKSPACE } else { Join-Path $HOME "Operator" }
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
+# #131: Der Installer nennt seine eigene Fassung (siehe install.sh).
+$InstallerVersion = "1.23.0"
 $RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
 
@@ -274,6 +276,7 @@ function Banner {
     foreach ($r in $rows) { Write-Host ("  " + $r) -ForegroundColor Magenta }
     Write-Host ("  " + "-----------------------------------------------") -ForegroundColor DarkGray
     Write-Host "  > your operator inside the matrix_" -ForegroundColor Green
+    Write-Host ("  Installer " + $InstallerVersion) -ForegroundColor DarkGray
     Write-Host ""
 }
 Banner
@@ -515,7 +518,7 @@ if ($dashOptin -eq "ja") {
     & $VenvPy -m pip install -q --upgrade pip
     Step 18 "Bausteine laden - der laengste Schritt, je nach Netz mehrere Minuten ..."
     & $VenvPy -m pip install -q "fastapi==0.116.*" "uvicorn==0.35.*" "msal==1.33.*" "cryptography==45.*" `
-        "requests==2.32.*" "mcp==1.*" "starlette<0.49" "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker"
+        "requests==2.32.*" "mcp==1.*" "starlette<0.49" "openai>=1.40" "playwright>=1.40" "pypdf" "fido2>=1.1" "presidio-analyzer" "presidio-anonymizer" "Faker" "pytest"
     Step 55 "Deutsches Sprachmodell fuer den Datenschutz-Filter laden (ca. 500 MB) ..."
     try { & $VenvPy -m pip install -q "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
     catch { Warn "Deutsches Sprachmodell nicht geladen - Pseudonymisierung meldet sich beim ersten Einsatz" }
@@ -547,6 +550,8 @@ if ($dashOptin -eq "ja") {
     }
     Step 85 "Dashboard-Dateien einrichten ..."
     foreach ($f in @("server.py","tokens.py","agents_store.py","m365_setup.py","google_auth.py","open.py","mcp_catalog.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
+    # #87: Sicherheitspruefungen mitliefern (siehe install.sh).
+    foreach ($f in @("test_dashboard.py","test_petra.py","conftest.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
     foreach ($f in @("index.html","app.js","style.css")) { Fetch-File "dashboard\static\$f" (Join-Path $DashDir "static\$f") }
     foreach ($f in @("dienst_start.py","pruefung.py","diagnose.py","m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
     if (-not (Secret-Has "token-key")) { Secret-Set "token-key" (Rand-Hex) }
