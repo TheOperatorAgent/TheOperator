@@ -1,9 +1,10 @@
 {
- "version": "1.31.0",
+ "version": "1.32.0",
  "date": "2026-08-01",
  "highlights": [
-  "🔌 Deine eigenen Agenten können jetzt Outlook, n8n und die Microsoft-Dokumentation bedienen — auch die, die nicht auf Claude laufen. Bisher blieb ihnen das verschlossen: Sie konnten schreiben und rechnen, aber nicht in deinen Kalender sehen.",
-  "🛡️ Dabei gilt derselbe Schutz wie überall: Was verändert oder verschickt, wird nicht ausgeführt, sondern ehrlich zurückgemeldet. Ein Agent, der nicht fragen kann, tut es einfach nicht.",
-  "🔧 Ein hängender oder fehlerhafter Zusatz-Server bremst den Operator nicht mehr aus. Nach drei erfolglosen Versuchen wird er abgemeldet, der Rest arbeitet weiter."
+  "🧱 Das Fundament für die Unabhängigkeit steht: ein eigener Werkzeugkasten zum Lesen, Schreiben, Suchen und Ausführen — und eine einzige Stelle, durch die jede Handlung muss, bevor sie passiert.",
+  "✏️ »Ändern« ersetzt nur noch eindeutige Textstellen. Kommt der gesuchte Text mehrfach vor, fragt der Operator nach, statt die falsche Stelle zu treffen.",
+  "📏 Lange Ausgaben werden sichtbar gekürzt statt stillschweigend abgeschnitten — sonst hält der Operator einen Ausschnitt für das Ganze und zieht falsche Schlüsse.",
+  "🖥️ Wo ein Befehl läuft, ist ab jetzt eine Einstellung und keine feste Verdrahtung. Voreingestellt bleibt: auf deinem Rechner, ohne zusätzliche Software."
  ]
 }

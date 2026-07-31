@@ -1,5 +1,5 @@
 {
- "version": "1.31.0",
+ "version": "1.32.0",
  "files": [
   {
    "src": "listener.py",
@@ -232,6 +232,16 @@
    "sha256": "95184ebe49c8defa494f6c19a111275a895c0a5346d9a0d6b9fa9166b31b8995"
   },
   {
+   "src": "werkzeuge.py",
+   "dst": "werkzeuge.py",
+   "sha256": "e3da26e3995165c41149ed1564478c9cce8c76be5104f7210685d188f4182d13"
+  },
+  {
+   "src": "schleuse.py",
+   "dst": "schleuse.py",
+   "sha256": "841c0acd6f92d6af7449c05e257485e55fb8c02f6d56bf2c331276e0e48fa2d1"
+  },
+  {
    "src": "mail_watch.py",
    "dst": "mail_watch.py",
    "sha256": "f5cf8f31fa1919e2b7c5e5c72dcf1ff2985bed2b59c8b249aee007804276bae6"
@@ -299,7 +309,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "b4808e6e33fef47c318b7a15f93484ea3656ce673ddde651b5cc4375087f3739"
+   "sha256": "fb5d06054a807b4dfb034f1f4574148a59fe45cdbc0d0587f729b26e9b32a16f"
   },
   {
    "src": "dienst_start.py",
@@ -324,7 +334,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "1fbe833dc0e71e2e038dc0d4fb7bd7f02c043b319688959a16ec5302ef313239"
+   "sha256": "07f9dc92c28f40b0d2fe46cce2e87a715ff0c0ed23586b2c66f22b2f73ffc28e"
   },
   {
    "src": "dashboard/test_petra.py",

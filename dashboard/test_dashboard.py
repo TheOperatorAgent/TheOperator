@@ -6188,3 +6188,125 @@ def test_fremdmodell_faellt_geschlossen_aus_wenn_der_broker_fehlt():
     assert '"streng"' in teil and "except" in teil, "kein fail-closed Rückfall"
     assert "pb.MCP_LESEND" in teil, \
         "eigene Liste lesender Werkzeuge — das wäre eine zweite Wahrheit"
+
+
+# ============================================ Eigener Werkzeugkasten (#141) --
+def _wz():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import werkzeuge
+    return werkzeuge
+
+
+def _wz_umgebung(tmp):
+    return {"arbeitsordner": tmp, "stufe": "normal",
+            "sichere_befehle": {"ls", "echo", "cat", "pwd"}}
+
+
+def test_werkzeuge_gehen_nie_an_der_schleuse_vorbei():
+    """K1 hat eine Stelle geschaffen, durch die alles muss. Ein Werkzeug, das
+    »nur kurz« direkt ausführt, macht die Arbeit zunichte."""
+    import ast as _a
+    src = open(os.path.expanduser("~/.claude/matrix-bot/werkzeuge.py"),
+               encoding="utf-8").read()
+    baum = _a.parse(src)
+    fn = next(k for k in baum.body
+              if isinstance(k, _a.FunctionDef) and k.name == "ausfuehren")
+    assert "schleuse" in _a.dump(fn), "»ausfuehren« fragt die Schleuse nicht"
+    # Die Ausführungsfunktionen dürfen nur von dort aus erreichbar sein.
+    assert src.count('w["fn"](') == 1, "es gibt mehr als einen Ausführungspunkt"
+
+
+def test_werkzeugbeschreibungen_stammen_aus_einer_quelle():
+    """Anthropic und OpenAI erwarten verschiedene Formate, aber nicht verschiedene
+    Werkzeuge. Zwei Listen wären zwei Wahrheiten — das Muster, das bei den beiden
+    Installern zweimal Fehler erzeugt hat (#126)."""
+    wz = _wz()
+    a = {w["name"] for w in wz.beschreibungen("anthropic")}
+    o = {w["function"]["name"] for w in wz.beschreibungen("openai")}
+    assert a == o == {w["name"] for w in wz.KASTEN}
+
+
+def test_werkzeuge_kaefig_haelt():
+    """Drei Grenzen, drei Gegenproben."""
+    wz = _wz()
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        umg = _wz_umgebung(tmp)
+        # Schreiben außerhalb: nein, ohne Rückfrage.
+        r = wz.ausfuehren("schreib", {"pfad": "/etc/böse.txt", "inhalt": "x"}, umg)
+        assert "fehler" in r and not os.path.exists("/etc/böse.txt")
+        # Lesen außerhalb: Rückfrage, nicht heimlich.
+        r = wz.ausfuehren("lies", {"pfad": "/etc/passwd"}, umg)
+        assert r.get("bestaetigung_noetig") is True
+        # Gesperrter Befehl: nein.
+        r = wz.ausfuehren("befehl", {"befehl": "rm -rf /"}, umg)
+        assert "fehler" in r and r["urteil"]["bestaetigung_noetig"] is False
+        # Gegenprobe: im Arbeitsordner läuft alles glatt durch.
+        assert "ergebnis" in wz.ausfuehren(
+            "schreib", {"pfad": "notiz.txt", "inhalt": "hallo"}, umg)
+        assert wz.ausfuehren("lies", {"pfad": "notiz.txt"}, umg)["ergebnis"] == "hallo"
+
+
+def test_aendere_ersetzt_nur_bei_eindeutigkeit():
+    """Ein Werkzeug, das »ungefähr passende« Stellen ersetzt, zerstört stillschweigend
+    Dateien — und zwar so, dass es niemand bemerkt, bis etwas nicht mehr funktioniert."""
+    wz = _wz()
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        umg = _wz_umgebung(tmp)
+        wz.ausfuehren("schreib", {"pfad": "a.txt", "inhalt": "hallo\nhallo\n"}, umg)
+        r = wz.ausfuehren("aendere", {"pfad": "a.txt", "alt": "hallo", "neu": "tschüss"}, umg)
+        assert "2-mal" in r["ergebnis"], "hat trotz Mehrdeutigkeit geändert"
+        assert open(os.path.join(tmp, "a.txt")).read() == "hallo\nhallo\n"
+        r = wz.ausfuehren("aendere", {"pfad": "a.txt", "alt": "gibtsnicht", "neu": "x"}, umg)
+        assert "nicht vor" in r["ergebnis"]
+        # Eindeutig → wird geändert.
+        wz.ausfuehren("schreib", {"pfad": "b.txt", "inhalt": "eins\nzwei\n"}, umg)
+        wz.ausfuehren("aendere", {"pfad": "b.txt", "alt": "zwei", "neu": "drei"}, umg)
+        assert open(os.path.join(tmp, "b.txt")).read() == "eins\ndrei\n"
+
+
+def test_ausgabe_wird_sichtbar_gekappt():
+    """Eine stillschweigend abgeschnittene Ausgabe lässt das Modell glauben, es habe
+    alles gesehen — und es zieht falsche Schlüsse."""
+    wz = _wz()
+    lang = wz._kappen("x" * (wz.MAX_AUSGABE + 500))
+    assert "gekürzt" in lang and len(lang) < wz.MAX_AUSGABE + 200
+
+
+def test_ausfuehrungsort_ist_austauschbar_ohne_docker_zwang():
+    """Der Hermes-Gedanke, bewusst abgeschwächt: »hier« bleibt die Voreinstellung,
+    alles Weitere ist optional — der Pi und ein verwaltetes Firmen-Notebook müssen
+    mitkommen."""
+    wz = _wz()
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        gerufen = []
+
+        def woanders(cmd, ordner):
+            gerufen.append(cmd)
+            return "aus der Ferne"
+
+        umg = dict(_wz_umgebung(tmp), ausfuehren=woanders)
+        r = wz.ausfuehren("befehl", {"befehl": "echo hallo"}, umg)
+        assert r["ergebnis"] == "aus der Ferne" and gerufen == ["echo hallo"]
+    # Nur den CODE prüfen: »Docker« steht bewusst im Kommentar, der erklärt, warum es
+    # KEIN Zwang ist. Ein Test, der Prosa mit Programm verwechselt, zwingt einen später,
+    # die Begründung zu löschen statt sie zu lesen — derselbe Fehler wie beim
+    # Deploy-Skript (#135).
+    import ast as _a
+    baum = _a.parse(open(os.path.expanduser("~/.claude/matrix-bot/werkzeuge.py"),
+                         encoding="utf-8").read())
+    # Docstrings gehören zur Erklärung, nicht zum Programm — sie werden übersprungen.
+    doku = set()
+    for k in _a.walk(baum):
+        if isinstance(k, (_a.Module, _a.FunctionDef, _a.ClassDef, _a.AsyncFunctionDef)):
+            t = _a.get_docstring(k, clean=False)
+            if t:
+                doku.add(t)
+    stellen = {k.id.lower() for k in _a.walk(baum) if isinstance(k, _a.Name)}
+    stellen |= {k.value.lower() for k in _a.walk(baum)
+                if isinstance(k, _a.Constant) and isinstance(k.value, str)
+                and k.value not in doku}
+    assert not any("docker" in n for n in stellen), \
+        "Docker als Voraussetzung eingeschlichen"
