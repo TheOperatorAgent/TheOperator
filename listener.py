@@ -9,6 +9,7 @@ Ein Daemon, ein Thread je Matrix-Bot-Account:
 bots.json wird zur Laufzeit überwacht (mtime) — Publish/Unpublish greift ohne Neustart.
 100 % Python-Standardbibliothek (läuft auch ohne Dashboard-venv).
 """
+import atexit
 import collections
 import json
 import os
@@ -1692,7 +1693,87 @@ def accept_owner_invites(hs, token, blocked_rooms):
     return new_rooms
 
 
+# ---------------------------------------------------------------- Einmal-Sperre (#130) --
+LOCK_DATEI = os.path.join(BOT_DIR, "run", "listener.pid")
+
+
+def _prozess_laeuft(pid):
+    """Läuft dieser Prozess noch? Plattformübergreifend, ohne Fremdpakete."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        try:
+            r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
+                               capture_output=True, text=True, timeout=10)
+            return str(pid) in (r.stdout or "")
+        except Exception:
+            return True          # im Zweifel: als laufend behandeln, nicht doppelt starten
+    try:
+        os.kill(pid, 0)          # Signal 0 prüft nur die Existenz
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True              # existiert, gehört nur jemand anderem
+    except OSError:
+        return True
+
+
+def einmal_sperre():
+    """Verhindert, dass zwei Listener gleichzeitig laufen.
+
+    Warum das ein eigenes Feature ist: Im Windows-Log vom 30.07. (#130) starten um 17:03
+    der Dienst und um 17:14 ein Handstart. Beide pollen dieselben Räume, beide streiten um
+    dieselben CLAUDE_SLOTS, beide verbrauchen Matrix-Sync-Tokens des anderen. Der Verdacht,
+    dass genau das den Hänger nach »Modell erwacht« verursacht hat, ist der erste auf der
+    Liste — und ein Zustand, den ohnehin niemand haben will.
+
+    Ehrlich statt still: Wer von Hand startet, während der Dienst läuft, bekommt gesagt,
+    was Sache ist. Ein stiller Abbruch sähe aus wie ein Absturz.
+
+    Rückgabe True = wir dürfen laufen."""
+    try:
+        os.makedirs(os.path.dirname(LOCK_DATEI), exist_ok=True)
+        if os.path.exists(LOCK_DATEI):
+            try:
+                alt = json.load(open(LOCK_DATEI, encoding="utf-8"))
+            except (OSError, ValueError):
+                alt = {}
+            pid = int(alt.get("pid", 0) or 0)
+            if pid and pid != os.getpid() and _prozess_laeuft(pid):
+                log(f"Es läuft bereits ein Operator (Prozess {pid}, gestartet "
+                    f"{alt.get('seit', '?')}). Zwei gleichzeitig würden sich gegenseitig "
+                    "die Nachrichten wegnehmen — deshalb starte ich nicht.")
+                log("👉 Wenn du den laufenden beenden willst: 'operator stop', dann erneut "
+                    "starten. Den Dienst selbst musst du dafür nicht anfassen.")
+                return False
+            log(f"Verwaiste Sperre von Prozess {pid} entfernt (läuft nicht mehr).")
+        tmp = LOCK_DATEI + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"pid": os.getpid(),
+                       "seit": time.strftime("%Y-%m-%d %H:%M:%S")}, f)
+        os.replace(tmp, LOCK_DATEI)
+        atexit.register(_sperre_freigeben)
+        return True
+    except OSError as e:
+        # Fail-OPEN: Eine kaputte Sperre darf den Operator nie stummschalten. Der
+        # Doppelstart ist ein Ärgernis, ein gar nicht startender Operator ein Ausfall.
+        log(f"Einmal-Sperre nicht setzbar ({e}) — starte trotzdem.")
+        return True
+
+
+def _sperre_freigeben():
+    try:
+        d = json.load(open(LOCK_DATEI, encoding="utf-8"))
+        if int(d.get("pid", 0)) == os.getpid():
+            os.remove(LOCK_DATEI)
+    except (OSError, ValueError):
+        pass
+
+
 def main():
+    if not einmal_sperre():        # #130: nie zwei Listener gleichzeitig
+        return
     owner_token = keychain_token("matrix-owner", CREDS["access_token"])
     if not owner_token:
         log("FATAL: Owner-Token weder im Keychain noch in credentials.json")

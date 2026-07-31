@@ -52,11 +52,14 @@ def titel(t):
     sag("", "=" * 72, t, "=" * 72)
 
 
-def lauf(argv, timeout=60, eingabe=None):
-    """Befehl ausführen und ALLES zurückgeben — auch bei Fehlern."""
+def lauf(argv, timeout=60, eingabe=None, cwd=None):
+    """Befehl ausführen und ALLES zurückgeben — auch bei Fehlern.
+
+    `cwd` ist für #130 nötig: Der Listener startet Claude im Arbeitsordner des Agenten,
+    und ein MCP-Server, der relative Pfade nutzt, verhält sich anderswo anders."""
     try:
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
-                           input=eingabe,
+                           input=eingabe, cwd=cwd,
                            stdin=None if eingabe is not None else subprocess.DEVNULL,
                            errors="replace")
         return r.returncode, (r.stdout or ""), (r.stderr or "")
@@ -277,11 +280,114 @@ def teil6_grenze():
         sag("BEFUND: Beide Wege gelingen (typisch macOS/Linux).")
 
 
+def teil7_echter_lauf():
+    """#130: Der Lauf, den der Bericht am 30.07. nicht hatte.
+
+    Damals war die Diagnose komplett grün — und der Listener hing trotzdem nach »Modell
+    erwacht«. Grund: Alle bisherigen Teile prüfen VORAUSSETZUNGEN (Pfade, Rechte, Grenzen).
+    Keiner davon macht das, was der Listener wirklich tut: derselbe Aufruf, mit denselben
+    MCP-Servern, demselben Rückfrage-Hook und einer realistischen Prompt-Größe.
+
+    Deshalb hier vier Läufe, die sich nur in EINER Sache unterscheiden — so zeigt der
+    Bericht beim ersten Mal, WELCHE Zutat den Hänger verursacht, statt Verdachtsmomente
+    zu hinterlassen."""
+    titel("7 · ECHTER ENDE-ZU-ENDE-LAUF (was der Listener wirklich tut)")
+    try:
+        import platform_compat as pc
+        creds = json.load(open(os.path.join(BOT_DIR, "credentials.json")))
+        pfad = pc.claude_bin(creds.get("claude_bin") or "")
+        ws = pc.workspace()
+    except Exception:
+        import shutil
+        pfad = shutil.which("claude") or "claude"
+        ws = os.path.expanduser("~/Operator")
+
+    mcp = os.path.join(ws, ".mcp.json")
+    hook_da = os.path.exists(os.path.join(ws, ".claude", "settings.json"))
+    prompt = ("Du bist ein Testlauf der Operator-Diagnose. " * 200
+              + "\nAntworte NUR mit dem Wort: OK")
+    sag(f"Prompt: {len(prompt)} Zeichen   MCP-Konfiguration: "
+        f"{'vorhanden' if os.path.exists(mcp) else 'FEHLT'}   "
+        f"Hook: {'vorhanden' if hook_da else 'fehlt'}")
+    sag(f"Arbeitsordner: {ws}")
+
+    # Jede Stufe nimmt genau EINE Zutat dazu. Wo es hängt, ist die Zutat der Täter.
+    stufen = [("nackt (nur Modell)", [pfad, "-p", "--output-format", "json"], None)]
+    if os.path.exists(mcp):
+        stufen.append(("mit MCP-Servern",
+                       [pfad, "-p", "--output-format", "json", "--mcp-config", mcp], None))
+        stufen.append(("mit MCP + Arbeitsordner",
+                       [pfad, "-p", "--output-format", "json", "--mcp-config", mcp], ws))
+
+    for name, argv, cwd in stufen:
+        sag("", f"--- {name} ---")
+        t0 = time.time()
+        rc, out, err = lauf(argv, 180, eingabe=prompt, cwd=cwd)
+        dauer = time.time() - t0
+        sag(f"rc={rc}  {dauer:.1f}s  stdout: {out[:180]}")
+        if err:
+            sag(f"stderr: {err[:400]}")
+        if rc != 0 or dauer > 120:
+            sag("")
+            sag(f"BEFUND: Hier klemmt es — bei »{name}«.")
+            if "MCP" in name:
+                sag("Die Stufe davor lief. Damit ist ein MCP-Server der Verdächtige.")
+                sag("👉 In der .mcp.json einzelne Server auskommentieren und wiederholen.")
+            else:
+                sag("Schon der nackte Aufruf hängt — das liegt am Claude-CLI selbst, "
+                    "nicht an unserer Verdrahtung.")
+                sag("👉 'claude /login' prüfen und 'operator pruefen' Schritt 3 ansehen.")
+            return
+    sag("")
+    sag("BEFUND: Alle Stufen liefen durch. Ein Hänger im Betrieb kommt dann NICHT vom "
+        "Claude-Aufruf — als Nächstes den Rückfrage-Hook prüfen (Teil 8).")
+
+
+def teil8_hook():
+    """#130 Verdacht 4: Der PreToolUse-Hook läuft als eigener Prozess und wartet
+    gegebenenfalls auf eine Chat-Antwort. Hängt er, hängt der ganze Lauf — und zwar genau
+    nach »Modell erwacht«, weil der Hook erst beim ersten Werkzeug greift."""
+    titel("8 · RÜCKFRAGE-HOOK (läuft er, und antwortet er?)")
+    hook = os.path.join(BOT_DIR, "claude_tool_hook.py")
+    if not os.path.exists(hook):
+        sag("claude_tool_hook.py fehlt — dann kann der Hook nicht hängen, aber es "
+            "wird auch nichts geprüft. 👉 Installationsbefehl erneut ausführen.")
+        return
+    import platform_compat as pc
+    py = pc.venv_python(BOT_DIR) or sys.executable
+    # Ein harmloser Aufruf: Der Hook muss ihn OHNE Rückfrage durchwinken.
+    eingabe = json.dumps({"tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}})
+    t0 = time.time()
+    rc, out, err = lauf([py, hook], 30, eingabe=eingabe)
+    dauer = time.time() - t0
+    sag(f"harmloser Aufruf: rc={rc}  {dauer:.1f}s  stdout: {out[:200]}")
+    if err:
+        sag(f"stderr: {err[:300]}")
+    if dauer > 20:
+        sag("BEFUND: Der Hook antwortet nicht zügig. Genau das würde jeden Lauf nach "
+            "»Modell erwacht« einfrieren.")
+    elif rc != 0:
+        sag("BEFUND: Der Hook scheitert schon bei einem harmlosen Aufruf — dann wird "
+            "jede Werkzeugnutzung abgelehnt (fail-closed).")
+    else:
+        sag("BEFUND: Der Hook winkt Harmloses zügig durch. Als Ursache für einen "
+            "Hänger scheidet er aus.")
+    offen = os.path.join(BOT_DIR, "run", "frage_offen.json")
+    if os.path.exists(offen):
+        try:
+            d = json.load(open(offen, encoding="utf-8"))
+            sag(f"HINWEIS: Es steht gerade eine Rückfrage offen ({d.get('was', '?')}). "
+                "Solange die unbeantwortet ist, wartet der laufende Auftrag — das ist "
+                "kein Fehler, sieht aber wie einer aus.")
+        except (OSError, ValueError):
+            pass
+
+
 def main():
     sag(f"Operator-Diagnose  {time.strftime('%F %T')}")
     sag(f"Bericht wird zusätzlich geschrieben nach: {BERICHT}")
     for f in (teil1_fassung, teil2_umgebung, teil3_protokolle, teil4_dienste,
-              teil5_claude, teil6_grenze):
+              teil5_claude, teil6_grenze, teil7_echter_lauf, teil8_hook):
         try:
             f()
         except Exception as e:

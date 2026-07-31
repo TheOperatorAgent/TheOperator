@@ -24,7 +24,7 @@ $DashDir = Join-Path $BotDir "dashboard"
 $Workspace = if ($env:OPERATOR_WORKSPACE) { $env:OPERATOR_WORKSPACE } else { Join-Path $HOME "Operator" }
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 # #131: Der Installer nennt seine eigene Fassung (siehe install.sh).
-$InstallerVersion = "1.28.0"
+$InstallerVersion = "1.29.0"
 $RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
 
@@ -553,7 +553,7 @@ if ($dashOptin -eq "ja") {
     # #87: Sicherheitspruefungen mitliefern (siehe install.sh).
     foreach ($f in @("test_dashboard.py","test_petra.py","conftest.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
     foreach ($f in @("index.html","app.js","style.css")) { Fetch-File "dashboard\static\$f" (Join-Path $DashDir "static\$f") }
-    foreach ($f in @("dienst_start.py","pruefung.py","diagnose.py","m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
+    foreach ($f in @("dienst_start.py","pruefung.py","diagnose.py","abnahme.py","m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
     if (-not (Secret-Has "token-key")) { Secret-Set "token-key" (Rand-Hex) }
     if (-not (Test-Path (Join-Path $BotDir "dashboard.json"))) {
         $dtok = Rand-Hex; Secret-Set "dashboard-token" $dtok
@@ -617,9 +617,10 @@ if /i "%1"=="log" goto log
 if /i "%1"=="status" goto status
 if /i "%1"=="pruefen" goto pruefen
 if /i "%1"=="diagnose" goto diagnose
+if /i "%1"=="abnahme" goto abnahme
 if /i "%1"=="check" goto pruefen
 if /i "%1"=="uninstall" goto uninstall
-echo Nutzung: operator [dashboard^|chat^|log^|pruefen^|diagnose^|status^|uninstall]
+echo Nutzung: operator [dashboard^|chat^|log^|pruefen^|diagnose^|abnahme^|status^|uninstall]
 goto :eof
 :dashboard
 "%PY%" "%BOT%\dashboard\open.py"
@@ -635,6 +636,9 @@ goto :eof
 goto :eof
 :diagnose
 "%PY%" "%BOT%\diagnose.py"
+goto :eof
+:abnahme
+"%PY%" "%BOT%\abnahme.py"
 goto :eof
 :status
 powershell -NoProfile -Command "foreach (`$t in 'OperatorListener','OperatorDashboard','OperatorPseudonym') { `$s = (schtasks /query /tn `$t 2>`$null); if (`$LASTEXITCODE -eq 0) { Write-Host ('[ok] ' + `$t) } else { Write-Host ('[--] ' + `$t + ' nicht eingerichtet') } }"

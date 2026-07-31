@@ -5696,3 +5696,75 @@ def test_web_aktionen_sind_opt_in_und_fail_closed(tmp_path, monkeypatch):
     namen = {t["function"]["name"] for t in lr.browser_werkzeuge()}
     assert {"fill_field", "submit_form"} <= namen
     assert lr.browser_namen() == namen
+
+
+# --------------------------- Windows-Nacharbeit vorbereiten (#130, #131, #36) --
+
+def test_einmal_sperre_verhindert_zwei_listener():
+    """#130 Verdacht 1: Im Windows-Log vom 30.07. starten um 17:03 der Dienst und um
+    17:14 ein Handstart. Beide pollen dieselben Raeume, beide streiten um dieselben
+    CLAUDE_SLOTS, beide verbrauchen die Sync-Tokens des anderen."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"), encoding="utf-8").read()
+    assert "def einmal_sperre" in src
+    assert "if not einmal_sperre():" in src, "die Sperre wird nie aufgerufen"
+    # Vor allem anderen — ein zweiter Listener darf gar nicht erst Raeume oeffnen.
+    # Bewusst NUR innerhalb von main() suchen: keychain_token() kommt auch anderswo vor.
+    hauptteil = src.split("\ndef main():")[1]
+    assert hauptteil.index("if not einmal_sperre():") < hauptteil.index("BotSession("), \
+        "die Sperre greift erst, nachdem schon Raeume geoeffnet wurden"
+    teil = src.split("def einmal_sperre")[1].split("\ndef ")[0]
+    # Fail-OPEN: Eine kaputte Sperrdatei darf den Operator nie stummschalten.
+    assert "starte trotzdem" in teil, "eine kaputte Sperre wuerde den Operator lahmlegen"
+    # Ehrlich statt still: ein wortloser Abbruch saehe aus wie ein Absturz.
+    assert "👉" in teil, "kein naechster Schritt fuer den Nutzer"
+    # Windows braucht einen eigenen Weg — os.kill(pid, 0) gibt es dort nicht sinnvoll.
+    proc = src.split("def _prozess_laeuft")[1].split("\ndef ")[0]
+    assert 'os.name == "nt"' in proc and "tasklist" in proc
+
+
+def test_diagnose_macht_einen_echten_lauf():
+    """#130: Der Bericht war am 30.07. komplett gruen, waehrend der Listener hing. Grund:
+    Alle Teile pruefen VORAUSSETZUNGEN, keiner tut das, was der Listener wirklich tut."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/diagnose.py"), encoding="utf-8").read()
+    assert "def teil7_echter_lauf" in src and "def teil8_hook" in src
+    assert "teil7_echter_lauf, teil8_hook" in src, "die Teile laufen gar nicht mit"
+    teil7 = src.split("def teil7_echter_lauf")[1].split("\ndef ")[0]
+    # Stufenweise: nur so zeigt der Bericht, WELCHE Zutat haengt.
+    assert "nackt" in teil7 and "--mcp-config" in teil7
+    assert "cwd" in teil7, "der Arbeitsordner fehlt — MCP-Server verhalten sich dort anders"
+    assert "BEFUND" in teil7, "der Bericht sagt nicht, was der Fund bedeutet"
+    teil8 = src.split("def teil8_hook")[1].split("\ndef ")[0]
+    assert "frage_offen" in teil8, "eine offene Rueckfrage saehe sonst wie ein Haenger aus"
+
+
+def test_abnahme_prueft_die_windows_fallen():
+    """#131/#36: Alle Tests laufen auf macOS — keiner der neun Windows-Fehler vom 30.07.
+    waere darin aufgefallen. Dieses Skript prueft VERDRAHTUNG statt Logik und erzeugt ein
+    vergleichbares Protokoll, das ins Repo gehoert."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/abnahme.py"), encoding="utf-8").read()
+    for falle in ("cp1252", "8191", "Fehlstart", "Einmal-Sperre"):
+        assert falle in src, f"die Falle »{falle}« wird nicht geprueft"
+    # Das Protokoll ist der Zweck — ohne Datei kein Vergleich zwischen Systemen.
+    assert 'f"abnahme-{system.lower()}-{fassung}.md"' in src
+    assert "platform.platform()" in src, "ohne Systemangabe ist das Protokoll wertlos"
+    # Eine Ausnahme in einem Punkt darf das Protokoll nicht abbrechen.
+    teil = src.split("def pruefe")[1].split("\ndef ")[0]
+    assert "except Exception" in teil
+
+
+def test_abnahme_wird_ausgeliefert_und_ist_aufrufbar():
+    """Ein Abnahme-Skript, das nur bei uns liegt, kann keine Fremdsysteme abnehmen."""
+    import json as _j
+    import pytest
+    man = _j.load(open(os.path.expanduser("~/.claude/matrix-bot/manifest.json")))
+    assert "abnahme.py" in {f["dst"] for f in man["files"]}
+    if not os.path.exists("/tmp/_diff_op/install.sh"):
+        pytest.skip("Auslieferungs-Repo nicht ausgecheckt")
+    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    ps1 = open("/tmp/_diff_op/install.ps1", encoding="utf-8").read()
+    assert "abnahme.py" in sh and "abnahme.py" in ps1, "eine Paritaets-Luecke (#126)"
+    # Der Kurzbefehl auf BEIDEN Systemen — sonst ist er auf einem unbenutzbar.
+    assert "abnahme)" in sh, "»operator abnahme« fehlt auf macOS/Linux"
+    assert 'goto abnahme' in ps1, "»operator abnahme« fehlt auf Windows"
+    assert "abnahme" in sh.split("Nutzung: operator")[1][:120]
+    assert "abnahme" in ps1.split("Nutzung: operator")[1][:120]

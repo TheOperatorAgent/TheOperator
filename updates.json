@@ -1,10 +1,10 @@
 {
- "version": "1.28.0",
+ "version": "1.29.0",
  "date": "2026-07-31",
  "highlights": [
-  "🌐 Dein Surf-Agent kann jetzt auch Formulare ausfüllen und abschicken — aber nur, wenn du das ausdrücklich einschaltest. Ab Werk bleibt er wie bisher: er liest und klickt Links, mehr nicht. Und vor jedem Absenden fragt er dich im Chat.",
-  "🔒 Passwörter, Kartennummern, IBAN und Ausweisdaten trägt er nie ein — auch dann nicht, wenn du es ihm sagst. Solche Felder gibst du selbst im eigenen Browser ein.",
-  "📣 Neu: ein Marketing-Agent. Er schreibt Ankündigungen und Website-Texte aus dem, was wirklich gebaut wurde — er erfindet nichts und verschweigt keine Grenzen. Im Dashboard unter »Agenten« veröffentlichbar.",
-  "🚀 Der Website-Upload kann jetzt ohne Passworteingabe laufen, wenn ein Schlüssel hinterlegt ist. Damit hinkt operator.bayern nicht mehr hinter den Releases her."
+  "🔒 Zwei Operatoren gleichzeitig gibt es nicht mehr. Wer von Hand startet, während der Dienst läuft, bekommt eine klare Ansage statt eines stummen Doppelbetriebs, bei dem sich beide die Nachrichten wegnehmen.",
+  "🔬 »operator diagnose« macht jetzt einen ECHTEN Testlauf — genau so, wie dein Operator im Alltag arbeitet, in drei Stufen. Klemmt etwas, sagt der Bericht beim ersten Mal, an welcher Stelle, statt nur Vermutungen zu hinterlassen.",
+  "📋 Neu: »operator abnahme«. Derselbe Durchlauf auf jedem System, Ergebnis als Datei — damit nachweisbar wird, dass Mac, Linux und Windows dasselbe tun. Das ist die Vorbereitung für die Windows-Freigabe.",
+  "🌐 Der Website-Upload läuft ohne Passworteingabe, sobald ein Schlüssel hinterlegt ist."
  ]
 }
