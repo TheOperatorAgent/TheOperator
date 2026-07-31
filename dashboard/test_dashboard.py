@@ -4999,3 +4999,42 @@ def test_bedrohungsmodell_ist_dokumentiert():
     assert "Bedrohungsmodell des Chat-Fensters" in doku
     for punkt in ("XSS", "CSRF", "Prompt-Injection", "127.0.0.1", "Ende-zu-Ende"):
         assert punkt in doku, f"{punkt} fehlt im Bedrohungsmodell"
+
+
+def test_raumwaechter_nutzt_nur_attribute_die_es_wirklich_gibt():
+    """Beim ersten LIVE-Start stuerzte der Listener ab: `BotSession` hat kein `.creds`.
+    Alle Tests waren gruen — sie lesen Quelltext, sie fuehren ihn nicht aus. Genau die
+    Falle aus #131: »Fix eingebaut« ist nicht »Fix wirksam«.
+
+    Dieser Test schliesst die Luecke fuer diese Stelle: Jedes Attribut, das der Waechter
+    an einer Session anfasst, muss im Konstruktor von BotSession gesetzt werden."""
+    import ast as _ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"), encoding="utf-8").read()
+    baum = _ast.parse(src)
+    gesetzt = set()
+    for k in _ast.walk(baum):
+        if isinstance(k, _ast.Attribute) and isinstance(k.value, _ast.Name) \
+                and k.value.id == "self" and isinstance(k.ctx, _ast.Store):
+            gesetzt.add(k.attr)
+    # Methoden zaehlen genauso — send_message wird gerufen, nicht zugewiesen.
+    klasse = next(k for k in _ast.walk(baum)
+                  if isinstance(k, _ast.ClassDef) and k.name == "BotSession")
+    gesetzt |= {k.name for k in klasse.body if isinstance(k, _ast.FunctionDef)}
+    tick = next(k for k in _ast.walk(baum)
+                if isinstance(k, _ast.FunctionDef) and k.name == "_raumwaechter_tick")
+    benutzt = {k.attr for k in _ast.walk(tick)
+               if isinstance(k, _ast.Attribute) and isinstance(k.value, _ast.Name)
+               and k.value.id in ("owner", "s", "session")}
+    fehlend = benutzt - gesetzt
+    assert not fehlend, f"Waechter greift auf nicht existierende Attribute zu: {fehlend}"
+
+
+def test_raumwaechter_liest_agentenraeume_mit_deren_eigenem_zugang():
+    """Agenten-Raeume gehoeren eigenen Bot-Konten. Mit dem Owner-Token gaebe es dort 403 —
+    und der Waechter haette fuer JEDEN Agenten-Raum still nichts geprueft, ohne dass es
+    auffaellt. Ein Waechter, der schweigend nichts tut, ist schlimmer als keiner."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"), encoding="utf-8").read()
+    teil = src.split("def _raumwaechter_tick")[1].split("\ndef ")[0]
+    assert '"api": _api_von(s)' in teil, "Agenten-Raeume werden mit fremdem Token gelesen"
+    rw = open(os.path.expanduser("~/.claude/matrix-bot/raumwaechter.py"), encoding="utf-8").read()
+    assert "def _api_fuer" in rw, "Heilung nutzt nicht den Raum-eigenen Zugang"

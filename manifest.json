@@ -1,10 +1,10 @@
 {
- "version": "1.24.0",
+ "version": "1.24.1",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "64594e3cbde3df76265f4efcbe3a4f9af98dc29c6b75e686cb133d5459ff284e"
+   "sha256": "7bb675b729508f43c7344be6cbf6dd727bbcf9e5ac3ec2edcff41432c580c468"
   },
   {
    "src": "matrix_room.py",
@@ -94,7 +94,7 @@
   {
    "src": "raumwaechter.py",
    "dst": "raumwaechter.py",
-   "sha256": "52f2e191c47a3d4a065a47602e0d521f8f1fd8ca71d17d62a8eaa67924a961c2"
+   "sha256": "a9054212c6a8ac770d75b5bf88ef37e982cc4013a101d0810b49888ed6b22811"
   },
   {
    "src": "throttle.py",
@@ -289,7 +289,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "674f4a09248743250e5a3af0542b31ac96a6031a254069470b83b1a4e14210f8"
+   "sha256": "6cf1af66b4136eb686b1cb8f306977cf4c4105497a114b5f197f5980ac57f4fc"
   },
   {
    "src": "dienst_start.py",
@@ -309,7 +309,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "67893759d6eabe122f40d54165066827c6d91263832cedd81b06849e41d57251"
+   "sha256": "fc4097bdd6b0ad23c1dc9523641401b1ffe5d309935d4ae289ad2441fd1e29e8"
   },
   {
    "src": "dashboard/test_petra.py",

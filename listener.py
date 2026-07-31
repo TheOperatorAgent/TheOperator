@@ -1546,15 +1546,22 @@ def _raumwaechter_tick(owner, agents, interval=None):
     _waechter_state["last"] = now
     _waechter_state["busy"] = True
 
-    raeume = {owner.room: {CREDS["user_id"], CREDS["owner_id"]}}
-    for name, s in (agents or {}).items():
-        raeume[s.room] = {s.creds["user_id"], CREDS["owner_id"]}
+    def _api_von(session):
+        def api(pfad, method="GET", body=None):
+            return _owner_api(session.hs, session.token, pfad, method=method, body=body)
+        return api
+
+    # Je Raum der Zugang, der ihn wirklich lesen darf: Agenten-Räume gehören eigenen
+    # Bot-Konten, der Owner-Token bekäme dort 403 — der Wächter hätte dann für jeden
+    # Agenten-Raum still nichts geprüft.
+    raeume = {owner.room: {"erwartet": [owner.user, CREDS["owner_id"]],
+                           "api": _api_von(owner)}}
+    for _name, s in (agents or {}).items():
+        raeume[s.room] = {"erwartet": [s.user, CREDS["owner_id"]], "api": _api_von(s)}
 
     def _lauf():
         try:
-            def api(pfad, method="GET", body=None):
-                return _owner_api(CREDS["homeserver"], owner.creds["access_token"],
-                                  pfad, method=method, body=body)
+            api = _api_von(owner)          # Geräte + Registrierung: einmal, nicht pro Raum
             raumwaechter.tick(api, raeume, melden=owner.send_message, log=log)
         except Exception as e:
             log(f"Raum-Wächter fehlgeschlagen: {e}")

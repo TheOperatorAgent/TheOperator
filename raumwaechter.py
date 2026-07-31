@@ -179,10 +179,22 @@ def _registrierung_offen(api):
 
 
 def erheben(api, raeume, bekannte_geraete):
-    """Momentaufnahme einsammeln. raeume = {room_id: erwartete_mitglieder}."""
+    """Momentaufnahme einsammeln.
+
+    ``raeume`` ist ``{room_id: erwartete_mitglieder}`` — oder, wenn ein Raum einen
+    EIGENEN Zugang braucht, ``{room_id: {"erwartet": [...], "api": callable}}``.
+
+    Warum das nötig ist: Agenten-Räume gehören eigenen Bot-Konten. Der Owner-Token kann
+    sie gar nicht lesen — ein Versuch damit liefert 403 und der Wächter würde für jeden
+    Agenten-Raum schweigen, ohne dass jemand merkt, dass er nichts prüft.
+    """
     zustand = {"raeume": {}, "geraete": None, "bekannte_geraete": bekannte_geraete}
-    for room_id, erwartet in (raeume or {}).items():
-        zustand["raeume"][room_id] = _raum_zustand(api, room_id, erwartet)
+    for room_id, wert in (raeume or {}).items():
+        if isinstance(wert, dict):
+            zustand["raeume"][room_id] = _raum_zustand(
+                wert.get("api") or api, room_id, wert.get("erwartet") or ())
+        else:
+            zustand["raeume"][room_id] = _raum_zustand(api, room_id, wert)
     try:
         zustand["geraete"] = sorted(d.get("device_id") for d
                                     in (api("/_matrix/client/v3/devices") or {}).get("devices", [])
@@ -193,7 +205,15 @@ def erheben(api, raeume, bekannte_geraete):
     return zustand
 
 
-def heilen(api, befunde):
+def _api_fuer(raeume, room_id, api):
+    """Der Zugang, mit dem dieser Raum gelesen/geschrieben wird (siehe erheben())."""
+    wert = (raeume or {}).get(room_id)
+    if isinstance(wert, dict) and wert.get("api"):
+        return wert["api"]
+    return api
+
+
+def heilen(api, befunde, raeume=None):
     """Nur Raum-Einstellungen zurücksetzen. Gibt (geheilt, gescheitert) zurück.
 
     Realistischer Ausfall: In einem Owner-DM, den Element auf Nutzer-Seite angelegt hat,
@@ -205,8 +225,9 @@ def heilen(api, befunde):
         if b.get("art") != "einstellung":
             continue
         raum = urllib.parse.quote(b["raum"])
+        raum_api = _api_fuer(raeume, b["raum"], api)
         try:
-            api(f"/_matrix/client/v3/rooms/{raum}/state/{b['typ']}/",
+            raum_api(f"/_matrix/client/v3/rooms/{raum}/state/{b['typ']}/",
                 method="PUT", body={b["schluessel"]: b["soll"]})
             geheilt.append(b)
         except Exception as e:
@@ -236,7 +257,7 @@ def tick(api, raeume, melden=lambda _t: None, log=print, jetzt=None):
     elif zustand.get("geraete") is not None:
         st["geraete"] = sorted(set(bekannt) | set(zustand["geraete"]))
 
-    geheilt, gescheitert = heilen(api, befunde)
+    geheilt, gescheitert = heilen(api, befunde, raeume)
     for b in geheilt:
         log(f"[Raum-Wächter] repariert: {b['typ']} in {b['raum']} → {b['soll']}")
 
@@ -248,9 +269,9 @@ def tick(api, raeume, melden=lambda _t: None, log=print, jetzt=None):
             texte.append("(Diese Einstellung konnte ich nicht selbst zurücksetzen — mir "
                          "fehlen die Rechte im Raum. 👉 Bitte in Element nachsehen.)")
         melden("\n\n".join(texte))
-    elif not offen:
-        for b in geheilt:
-            log("[Raum-Wächter] Selbstheilung erfolgreich, keine Meldung nötig")
+    elif geheilt:
+        log(f"[Raum-Wächter] {len(geheilt)} Einstellung(en) selbst repariert — "
+            "keine Meldung nötig, es ist ja wieder in Ordnung")
     st["fingerabdruck"] = fp
     st["geprueft_at"] = jetzt
     _write(st)

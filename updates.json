@@ -1,10 +1,9 @@
 {
- "version": "1.24.0",
+ "version": "1.24.1",
  "date": "2026-07-31",
  "highlights": [
-  "🚪 Neu: Ein Wächter prüft alle 30 Minuten die vier Türen zu deinem Chat — ist außer dir und deinem Operator jemand im Raum? Darf jemand ohne Konto mitlesen? Hat sich ein fremdes Gerät angemeldet? Kann sich auf deinem Server plötzlich jeder registrieren? Raum-Einstellungen richtet er selbst wieder gerade; bei allem, wo es um Personen geht, fragt er dich — er wirft niemanden von sich aus hinaus.",
-  "🙋 Wenn dein Operator auf eine Freigabe wartet und du »ja« ins Dashboard tippst, sagt er dir jetzt, dass die Antwort in den Chat gehört. Vorher verschwand sie wirkungslos und die Aufgabe lief in eine Zeitüberschreitung — ohne dass jemand merkte, warum.",
-  "🔒 Neue Agenten-Räume sind ab dem ersten Moment dicht: kein Gastzugang, keine Einsicht in frühere Nachrichten, Eintritt nur auf Einladung.",
-  "📄 Der Datenschutz-Tab erklärt jetzt auch das Chat-Fenster im Dashboard: Es zeigt nur, gespeichert wird dort nichts."
+  "🩹 Wichtige Korrektur zu 1.24.0: Der neue Raum-Wächter brachte den Operator beim Start zum Absturz — wer 1.24.0 installiert hat, sollte sofort aktualisieren. Ursache und Lehre stehen im Repo (#98).",
+  "🚪 Der Wächter prüft alle 30 Minuten die vier Türen zu deinem Chat und richtet Raum-Einstellungen selbst wieder gerade. Bei allem, wo es um Personen geht, fragt er dich.",
+  "🙋 Ein »ja« im Dashboard, während dein Operator auf eine Freigabe wartet, verpufft nicht mehr stillschweigend — er sagt dir, dass die Antwort in den Chat gehört."
  ]
 }
