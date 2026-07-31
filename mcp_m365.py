@@ -97,7 +97,10 @@ def _beschneiden():
 
 DIENST_DE = {"mail": "Mail", "calendar": "Kalender", "onedrive": "OneDrive",
              "sharepoint": "SharePoint", "planner": "Planner", "teams": "Teams",
-             "status": "Status & Berichte"}
+             "status": "Status & Berichte",
+             # #119 Breite
+             "excel": "Excel-Tabellen", "onenote": "OneNote", "kontakte": "Kontakte",
+             "praesenz": "Erreichbarkeit", "organisation": "Organisation"}
 
 # Graph-Zustand -> Klartext + Ampel (#117). Microsoft liefert englische CamelCase-Werte.
 ZUSTAND_DE = {
@@ -733,6 +736,366 @@ def m365_nutzung(tage: int = 7) -> str:
     out = [f"{f}: {letzte[f]} aktive Nutzer" for f in felder if (letzte.get(f) or "").strip()]
     return (f"Zeitraum {zeitraum}, Stand {letzte.get('Report Date', '?')}\n"
             + ("\n".join(out) or "(an diesem Tag keine Aktivität gemeldet)"))
+
+
+# ============================================================ #119 Breite ==
+# Acht Dienstgruppen nach dem bestehenden Muster: Regler prüfen (`require`), Aufruf über
+# `g()`, Pseudonyme auflösen (`_rid`), Aufruf ins Audit. Nichts davon ist neu erfunden —
+# neu ist nur, wie viel der Operator im Büro-Alltag beantworten kann, ohne »kann ich
+# nicht« zu sagen.
+#
+# Erst jetzt gebaut, nach dem Lade-nach-Bedarf (#121): Ohne das würden diese Werkzeuge den
+# Prompt aller Nutzer aufblähen, auch derer, die sie nie einschalten.
+
+
+# ---------------------------------------------------------------- Excel --
+def _wb(c, datei):
+    """Pfad zur Workbook-API einer Datei im OneDrive des Nutzers."""
+    u = user(c)
+    return f"/users/{u}/drive/root:/{urllib.parse.quote(_rid(datei))}:/workbook"
+
+
+@werkzeug("excel", "read")
+def excel_blaetter(datei: str) -> str:
+    """Welche Tabellenblätter hat diese Excel-Datei? (Pfad im OneDrive, z.B. 'Zahlen.xlsx')"""
+    c = conn(); require(c, "excel", "read")
+    res = g(c, "GET", _wb(c, datei) + "/worksheets?$select=name,position")
+    audit("excel_blaetter", datei)
+    return "\n".join(f"{b['position'] + 1}. {b['name']}" for b in res.get("value", [])) \
+        or "(keine Blätter)"
+
+
+@werkzeug("excel", "read")
+def excel_lesen(datei: str, blatt: str, bereich: str = "") -> str:
+    """Zellen einer Excel-Datei lesen. bereich z.B. 'A1:D20'; leer = ganzer belegter Bereich."""
+    c = conn(); require(c, "excel", "read")
+    blatt_q = urllib.parse.quote(_rid(blatt))
+    pfad = (f"/worksheets('{blatt_q}')/range(address='{urllib.parse.quote(bereich)}')"
+            if bereich else f"/worksheets('{blatt_q}')/usedRange")
+    res = g(c, "GET", _wb(c, datei) + pfad + "?$select=address,values")
+    audit("excel_lesen", f"{datei}!{blatt}{'!' + bereich if bereich else ''}")
+    zeilen = res.get("values") or []
+    if not zeilen:
+        return "(Bereich ist leer)"
+    return (f"Bereich {res.get('address', '')}\n"
+            + "\n".join(" | ".join("" if z is None else str(z) for z in reihe)
+                        for reihe in zeilen[:200]))
+
+
+@werkzeug("excel", "write")
+def excel_schreiben(datei: str, blatt: str, bereich: str, werte_json: str) -> str:
+    """Zellen einer Excel-Datei überschreiben. werte_json ist eine Liste von Zeilen,
+    z.B. '[["Name","Betrag"],["Miete",850]]'. Der Bereich muss dieselbe Größe haben."""
+    c = conn(); require(c, "excel", "write")
+    try:
+        werte = json.loads(werte_json)
+        assert isinstance(werte, list) and werte and all(isinstance(r, list) for r in werte)
+    except Exception:
+        return ("werte_json muss eine Liste von Zeilen sein, z.B. "
+                '[["Name","Betrag"],["Miete",850]]')
+    blatt_q = urllib.parse.quote(_rid(blatt))
+    g(c, "PATCH", _wb(c, datei)
+      + f"/worksheets('{blatt_q}')/range(address='{urllib.parse.quote(bereich)}')",
+      {"values": [[_rid(z) if isinstance(z, str) else z for z in reihe] for reihe in werte]})
+    audit("excel_schreiben", f"{datei}!{blatt}!{bereich}")
+    return f"{len(werte)} Zeile(n) in {bereich} geschrieben."
+
+
+# ---------------------------------------------------------------- OneNote --
+@werkzeug("onenote", "read")
+def onenote_struktur() -> str:
+    """Notizbücher und ihre Abschnitte auflisten."""
+    c = conn(); require(c, "onenote", "read"); u = user(c)
+    out = []
+    for nb in g(c, "GET", f"/users/{u}/onenote/notebooks?$select=id,displayName").get("value", []):
+        out.append(f"📓 {nb['displayName']}")
+        try:
+            for ab in g(c, "GET", f"/users/{u}/onenote/notebooks/{nb['id']}/sections"
+                                  "?$select=id,displayName").get("value", []):
+                out.append(f"   └ {ab['displayName']} [{ab['id']}]")
+        except RuntimeError:
+            out.append("   └ (Abschnitte nicht lesbar)")
+    audit("onenote_struktur", "")
+    return "\n".join(out) or "(keine Notizbücher)"
+
+
+@werkzeug("onenote", "read")
+def onenote_seiten(abschnitt_id: str, anzahl: int = 20) -> str:
+    """Seiten eines OneNote-Abschnitts auflisten (Kennung aus onenote_struktur)."""
+    c = conn(); require(c, "onenote", "read"); u = user(c)
+    res = g(c, "GET", f"/users/{u}/onenote/sections/{_rid(abschnitt_id)}/pages"
+                      f"?$top={max(1, min(anzahl, 50))}&$select=id,title,lastModifiedDateTime")
+    audit("onenote_seiten", abschnitt_id)
+    return "\n".join(f"[{s['id']}] {s.get('title') or '(ohne Titel)'} "
+                     f"({s['lastModifiedDateTime'][:10]})"
+                     for s in res.get("value", [])) or "(keine Seiten)"
+
+
+@werkzeug("onenote", "write")
+def onenote_notiz(abschnitt_id: str, titel: str, text: str) -> str:
+    """Eine neue OneNote-Seite anlegen (einfacher Text, kein Layout)."""
+    c = conn(); require(c, "onenote", "write"); u = user(c)
+    # OneNote nimmt ausschließlich HTML entgegen — Text escapen, sonst wird aus einem
+    # »<« im Nutzertext stilles Markup und der Rest der Notiz verschwindet.
+    def esc(t):
+        return (str(t).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+    html = (f"<!DOCTYPE html><html><head><title>{esc(_rid(titel))}</title></head>"
+            f"<body><p>{esc(_rid(text)).replace(chr(10), '</p><p>')}</p></body></html>")
+    r = requests.post(GRAPH + f"/users/{u}/onenote/sections/{_rid(abschnitt_id)}/pages",
+                      headers={"Authorization": "Bearer " + token(c),
+                               "Content-Type": "text/html"},
+                      data=html.encode("utf-8"), timeout=60)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Graph {r.status_code}: {r.text[:300]}")
+    audit("onenote_notiz", titel)
+    return f"Notiz »{titel}« angelegt."
+
+
+# ---------------------------------------------------------------- Kontakte --
+@werkzeug("kontakte", "read")
+def kontakte_suchen(text: str, anzahl: int = 15) -> str:
+    """Im Adressbuch nach einem Namen oder einer Firma suchen."""
+    c = conn(); require(c, "kontakte", "read"); u = user(c)
+    res = g(c, "GET", f"/users/{u}/contacts?$search=\"{urllib.parse.quote(_rid(text))}\""
+                      f"&$top={max(1, min(anzahl, 50))}"
+                      "&$select=id,displayName,emailAddresses,companyName,mobilePhone")
+    audit("kontakte_suchen", text)
+    out = []
+    for k in res.get("value", []):
+        mails = ", ".join(a.get("address", "") for a in k.get("emailAddresses", []))
+        out.append(f"[{k['id'][-12:]}] {k.get('displayName', '')}"
+                   + (f" · {k['companyName']}" if k.get("companyName") else "")
+                   + (f" · {mails}" if mails else "")
+                   + (f" · {k['mobilePhone']}" if k.get("mobilePhone") else ""))
+    return "\n".join(out) or "(nichts gefunden)"
+
+
+@werkzeug("kontakte", "write")
+def kontakte_anlegen(name: str, email: str = "", firma: str = "", telefon: str = "") -> str:
+    """Einen neuen Kontakt im Adressbuch anlegen."""
+    c = conn(); require(c, "kontakte", "write"); u = user(c)
+    body = {"displayName": _rid(name)}
+    if email:
+        body["emailAddresses"] = [{"address": _rid(email), "name": _rid(name)}]
+    if firma:
+        body["companyName"] = _rid(firma)
+    if telefon:
+        body["mobilePhone"] = _rid(telefon)
+    g(c, "POST", f"/users/{u}/contacts", body)
+    audit("kontakte_anlegen", name)
+    return f"Kontakt »{name}« angelegt."
+
+
+# ---------------------------------------------------------------- Planner-Aufgaben --
+@werkzeug("planner", "read")
+def planner_aufgaben(plan_id: str, offene_zuerst: bool = True) -> str:
+    """Aufgaben eines Planner-Plans auflisten (Plan-Kennung aus planner_plans)."""
+    c = conn(); require(c, "planner", "read")
+    res = g(c, "GET", f"/planner/plans/{_rid(plan_id)}/tasks")
+    audit("planner_aufgaben", plan_id)
+    aufgaben = res.get("value", [])
+    if offene_zuerst:
+        aufgaben.sort(key=lambda t: (t.get("percentComplete", 0) == 100,
+                                     t.get("dueDateTime") or "9999"))
+    out = []
+    for t in aufgaben[:50]:
+        fertig = t.get("percentComplete", 0)
+        zeichen = "✅" if fertig == 100 else ("🔄" if fertig else "⬜")
+        faellig = f" · fällig {t['dueDateTime'][:10]}" if t.get("dueDateTime") else ""
+        out.append(f"{zeichen} [{t['id']}] {t.get('title', '')}{faellig}")
+    return "\n".join(out) or "(keine Aufgaben in diesem Plan)"
+
+
+@werkzeug("planner", "write")
+def planner_aufgabe_anlegen(plan_id: str, titel: str, faellig_iso: str = "") -> str:
+    """Eine neue Aufgabe in einem Planner-Plan anlegen."""
+    c = conn(); require(c, "planner", "write")
+    body = {"planId": _rid(plan_id), "title": _rid(titel)}
+    if faellig_iso:
+        body["dueDateTime"] = faellig_iso if faellig_iso.endswith("Z") else faellig_iso + "Z"
+    r = g(c, "POST", "/planner/tasks", body)
+    audit("planner_aufgabe_anlegen", titel)
+    return f"Aufgabe »{titel}« angelegt [{r.get('id', '')}]."
+
+
+@werkzeug("planner", "write")
+def planner_aufgabe_abschliessen(aufgabe_id: str) -> str:
+    """Eine Planner-Aufgabe auf erledigt setzen."""
+    c = conn(); require(c, "planner", "write")
+    # Planner verlangt bei jedem PATCH den aktuellen ETag als If-Match — ohne ihn
+    # antwortet Graph mit 412. Deshalb erst lesen, dann schreiben.
+    aid = _rid(aufgabe_id)
+    akt = g(c, "GET", f"/planner/tasks/{aid}")
+    r = requests.patch(GRAPH + f"/planner/tasks/{aid}",
+                       headers={"Authorization": "Bearer " + token(c),
+                                "If-Match": akt.get("@odata.etag", "*"),
+                                "Content-Type": "application/json"},
+                       json={"percentComplete": 100}, timeout=60)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Graph {r.status_code}: {r.text[:300]}")
+    audit("planner_aufgabe_abschliessen", aufgabe_id)
+    return f"Aufgabe »{akt.get('title', aufgabe_id)}« ist erledigt."
+
+
+# ---------------------------------------------------------------- SharePoint-Listen --
+@werkzeug("sharepoint", "read")
+def sharepoint_listen(site_id: str) -> str:
+    """Listen einer SharePoint-Site auflisten (Site-Kennung aus sharepoint_search)."""
+    c = conn(); require(c, "sharepoint", "read")
+    res = g(c, "GET", f"/sites/{_rid(site_id)}/lists?$select=id,displayName,webUrl")
+    audit("sharepoint_listen", site_id)
+    return "\n".join(f"[{l['id']}] {l['displayName']}" for l in res.get("value", [])) \
+        or "(keine Listen)"
+
+
+@werkzeug("sharepoint", "read")
+def sharepoint_eintraege(site_id: str, liste_id: str, anzahl: int = 20) -> str:
+    """Einträge einer SharePoint-Liste lesen."""
+    c = conn(); require(c, "sharepoint", "read")
+    res = g(c, "GET", f"/sites/{_rid(site_id)}/lists/{_rid(liste_id)}/items"
+                      f"?$expand=fields&$top={max(1, min(anzahl, 100))}")
+    audit("sharepoint_eintraege", f"{site_id}/{liste_id}")
+    out = []
+    for e in res.get("value", []):
+        felder = {k: v for k, v in (e.get("fields") or {}).items()
+                  if not k.startswith("@") and k not in ("id", "ContentType")}
+        out.append(f"[{e['id']}] " + " · ".join(f"{k}: {v}" for k, v in list(felder.items())[:6]))
+    return "\n".join(out) or "(Liste ist leer)"
+
+
+@werkzeug("sharepoint", "write")
+def sharepoint_eintrag_anlegen(site_id: str, liste_id: str, felder_json: str) -> str:
+    """Einen Eintrag in einer SharePoint-Liste anlegen.
+    felder_json z.B. '{"Title":"Neue Anfrage","Status":"offen"}'."""
+    c = conn(); require(c, "sharepoint", "write")
+    try:
+        felder = json.loads(felder_json)
+        assert isinstance(felder, dict) and felder
+    except Exception:
+        return 'felder_json muss ein Objekt sein, z.B. {"Title":"Neue Anfrage"}'
+    r = g(c, "POST", f"/sites/{_rid(site_id)}/lists/{_rid(liste_id)}/items",
+          {"fields": {k: (_rid(v) if isinstance(v, str) else v) for k, v in felder.items()}})
+    audit("sharepoint_eintrag_anlegen", f"{site_id}/{liste_id}")
+    return f"Eintrag angelegt [{r.get('id', '')}]."
+
+
+# ---------------------------------------------------------------- Erreichbarkeit --
+@werkzeug("praesenz", "read")
+def erreichbarkeit(personen: str) -> str:
+    """Ist jemand gerade erreichbar? Mehrere Personen per Komma trennen (E-Mail-Adressen)."""
+    c = conn(); require(c, "praesenz", "read")
+    adressen = [a.strip() for a in _rid(personen).split(",") if a.strip()]
+    if not adressen:
+        return "Keine Person angegeben."
+    # Presence braucht Nutzer-IDs, keine Adressen — erst auflösen.
+    ids, namen = [], {}
+    for a in adressen[:20]:
+        try:
+            u = g(c, "GET", f"/users/{urllib.parse.quote(a)}?$select=id,displayName")
+            ids.append(u["id"]); namen[u["id"]] = u.get("displayName") or a
+        except RuntimeError:
+            namen[a] = a
+    if not ids:
+        return "Niemanden davon gefunden."
+    res = g(c, "POST", "/communications/getPresencesByUserId", {"ids": ids})
+    audit("erreichbarkeit", personen)
+    ampel = {"Available": "🟢", "AvailableIdle": "🟢", "Away": "🟡", "BeRightBack": "🟡",
+             "Busy": "🔴", "BusyIdle": "🔴", "DoNotDisturb": "⛔", "Offline": "⚪",
+             "PresenceUnknown": "⚪"}
+    return "\n".join(
+        f"{ampel.get(p.get('availability'), '⚪')} {namen.get(p.get('id'), p.get('id'))}: "
+        f"{p.get('activity') or p.get('availability')}"
+        for p in res.get("value", [])) or "(kein Status verfügbar)"
+
+
+# ---------------------------------------------------------------- Organisation --
+@werkzeug("organisation", "read")
+def personen_suchen(text: str, anzahl: int = 15) -> str:
+    """Personen im Unternehmen suchen (Name, Abteilung, Position)."""
+    c = conn(); require(c, "organisation", "read")
+    res = g(c, "GET", "/users?$search=\"displayName:" + urllib.parse.quote(_rid(text))
+            + f"\"&$top={max(1, min(anzahl, 50))}"
+            "&$select=id,displayName,mail,jobTitle,department")
+    audit("personen_suchen", text)
+    return "\n".join(
+        f"{p.get('displayName', '')}"
+        + (f" · {p['jobTitle']}" if p.get("jobTitle") else "")
+        + (f" · {p['department']}" if p.get("department") else "")
+        + (f" · {p['mail']}" if p.get("mail") else "")
+        for p in res.get("value", [])) or "(niemanden gefunden)"
+
+
+@werkzeug("organisation", "read")
+def organigramm(person: str = "") -> str:
+    """Wer ist die/der Vorgesetzte, wer berichtet direkt? Leer = der eigene Benutzer."""
+    c = conn(); require(c, "organisation", "read")
+    wen = _rid(person) or user(c)
+    q = urllib.parse.quote(wen)
+    out = []
+    try:
+        chef = g(c, "GET", f"/users/{q}/manager?$select=displayName,jobTitle,mail")
+        out.append(f"Vorgesetzt: {chef.get('displayName', '')}"
+                   + (f" ({chef['jobTitle']})" if chef.get("jobTitle") else ""))
+    except RuntimeError:
+        out.append("Vorgesetzt: (niemand eingetragen)")
+    try:
+        team = g(c, "GET", f"/users/{q}/directReports?$select=displayName,jobTitle")
+        leute = team.get("value", [])
+        out.append(f"Direkte Berichte ({len(leute)}):" if leute else "Direkte Berichte: keine")
+        out += [f"  · {p.get('displayName', '')}"
+                + (f" ({p['jobTitle']})" if p.get("jobTitle") else "") for p in leute[:30]]
+    except RuntimeError:
+        out.append("Direkte Berichte: (nicht lesbar)")
+    audit("organigramm", wen)
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------- OneDrive+ --
+@werkzeug("onedrive", "read")
+def datei_lesen(pfad: str, max_zeichen: int = 6000) -> str:
+    """Den Textinhalt einer Datei aus OneDrive lesen (txt, csv, md, json …)."""
+    c = conn(); require(c, "onedrive", "read"); u = user(c)
+    r = requests.get(GRAPH + f"/users/{u}/drive/root:/{urllib.parse.quote(_rid(pfad))}:/content",
+                     headers={"Authorization": "Bearer " + token(c)}, timeout=60)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Graph {r.status_code}: {r.text[:200]}")
+    audit("datei_lesen", pfad)
+    try:
+        text = r.content.decode("utf-8")
+    except UnicodeDecodeError:
+        return (f"»{pfad}« ist keine Textdatei ({len(r.content)} Bytes). "
+                "Für Word/PDF bitte den Anhang-Weg im Chat nutzen.")
+    grenze = max(500, min(max_zeichen, 20000))
+    return text[:grenze] + ("\n… (gekürzt)" if len(text) > grenze else "")
+
+
+@werkzeug("onedrive", "write")
+def datei_schreiben(pfad: str, inhalt: str) -> str:
+    """Eine Textdatei in OneDrive anlegen oder überschreiben."""
+    c = conn(); require(c, "onedrive", "write"); u = user(c)
+    r = requests.put(GRAPH + f"/users/{u}/drive/root:/{urllib.parse.quote(_rid(pfad))}:/content",
+                     headers={"Authorization": "Bearer " + token(c),
+                              "Content-Type": "text/plain; charset=utf-8"},
+                     data=_rid(inhalt).encode("utf-8"), timeout=60)
+    if r.status_code >= 400:
+        raise RuntimeError(f"Graph {r.status_code}: {r.text[:300]}")
+    audit("datei_schreiben", pfad)
+    return f"»{pfad}« gespeichert ({len(inhalt)} Zeichen)."
+
+
+@werkzeug("onedrive", "write")
+def datei_freigabe(pfad: str, schreibrecht: bool = False) -> str:
+    """Einen Link zum Teilen einer OneDrive-Datei erzeugen.
+
+    Bewusst NUR »organization«: Ein anonymer Link wäre für jeden im Internet offen, der
+    ihn hat — das ist eine Veröffentlichung und keine Freigabe, und sie soll nicht als
+    Nebenwirkung einer Chat-Nachricht entstehen."""
+    c = conn(); require(c, "onedrive", "write"); u = user(c)
+    r = g(c, "POST", f"/users/{u}/drive/root:/{urllib.parse.quote(_rid(pfad))}:/createLink",
+          {"type": "edit" if schreibrecht else "view", "scope": "organization"})
+    audit("datei_freigabe", pfad)
+    return (f"Link ({'bearbeiten' if schreibrecht else 'nur ansehen'}, nur für Leute in "
+            f"deiner Organisation):\n{(r.get('link') or {}).get('webUrl', '(kein Link)')}")
 
 
 @mcp.tool()

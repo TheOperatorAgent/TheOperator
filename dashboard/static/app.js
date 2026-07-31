@@ -854,9 +854,14 @@ const M365_SERVICES = [
   ["sharepoint", "SharePoint", ""], ["planner", "Planner", ""],
   ["teams", "Teams", "Nur Basisdaten (Teams/Kanäle). Nachrichten lesen = von Microsoft geschützte API, Senden app-seitig nicht möglich."],
   ["status", "Status & Berichte", "Läuft Microsoft? Störungen, Meldungen aus dem Message Center, Lizenzen, Nutzung. Reines Nachschauen — hier gibt es nichts zu verändern."],
+  ["excel", "Excel-Tabellen", "Tabellenblätter lesen und Zellen füllen. Getrennt von »OneDrive«, damit Bearbeiten bewusst eingeschaltet wird."],
+  ["onenote", "OneNote", "Notizbücher durchsehen und Notizen anlegen."],
+  ["kontakte", "Kontakte", "Im Adressbuch suchen und Kontakte anlegen."],
+  ["praesenz", "Erreichbarkeit", "Ist jemand gerade am Platz, beschäftigt oder offline? Nur nachschauen — den Status anderer setzt man nicht von außen."],
+  ["organisation", "Organisation", "Personen im Unternehmen finden, wer ist wessen Vorgesetzte. Reines Nachschlagen — Konten ändert dein Operator nie."],
 ];
 // Dienste ohne sinnvollen Schreib-Regler (spiegelt m365_setup.NUR_LESEN)
-const M365_NUR_LESEN = ["teams", "status"];
+const M365_NUR_LESEN = ["teams", "status", "praesenz", "organisation"];
 async function loadM365() {
   const s = await api("GET", "/api/m365/status");
   const c = $("#m365-content");

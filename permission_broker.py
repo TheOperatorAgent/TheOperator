@@ -108,6 +108,41 @@ RISKY_TOOLS = {
     "mcp__n8n__workflow_activate": "einen Automations-Workflow scharf schalten",
     "mcp__n8n__webhook_trigger": "einen Webhook auslösen",
 }
+
+# ------------------------------------- Fremd-Werkzeuge: fail-closed statt Aufzählung --
+# Bis 1.25.0 war RISKY_TOOLS eine ABSCHLUSSLISTE mit fünf Einträgen. Alles, was danach
+# dazukam, lief ohne Rückfrage — beim Bau von #119 aufgefallen: `kalender_absagen`,
+# `kalender_verschieben`, `mail_antworten` und `mail_weiterleiten` (alle seit 1.16.0
+# ausgeliefert) konnten Termine absagen und Mails weiterleiten, ohne je zu fragen.
+#
+# Eine Positivliste kann mit einem wachsenden Werkzeugkasten nicht Schritt halten. Also
+# umgedreht: Von den Integrationen unten sind nur die HIER GENANNTEN als harmlos bekannt;
+# jedes andere Werkzeug fragt nach. Ein vergessener Eintrag kostet dann eine überflüssige
+# Rückfrage — vorher kostete er eine stillschweigend ausgeführte Aktion.
+#
+# Nicht enthalten: `mcp__learn__*` (Microsofts Dokumentations-Server, reine Lesequelle
+# ohne Bezug zu Nutzerdaten) — bewusst ausgenommen, sonst fragt jede Doku-Suche nach.
+BESTAETIGUNGSPFLICHTIGE_MCP = ("mcp__m365__", "mcp__n8n__")
+MCP_LESEND = {
+    # Microsoft 365 — alles, was ausschließlich liest
+    "mcp__m365__mail_list", "mcp__m365__mail_read", "mcp__m365__mail_attachments",
+    "mcp__m365__mail_suchen", "mcp__m365__mail_ordner",
+    "mcp__m365__calendar_list", "mcp__m365__kalender_freibelegt",
+    "mcp__m365__files_list", "mcp__m365__datei_lesen",
+    "mcp__m365__sharepoint_search", "mcp__m365__sharepoint_listen",
+    "mcp__m365__sharepoint_eintraege",
+    "mcp__m365__planner_plans", "mcp__m365__planner_aufgaben",
+    "mcp__m365__teams_list",
+    "mcp__m365__m365_status", "mcp__m365__m365_stoerungen", "mcp__m365__m365_meldungen",
+    "mcp__m365__m365_lizenzen", "mcp__m365__m365_nutzung", "mcp__m365__m365_hilfe",
+    "mcp__m365__excel_blaetter", "mcp__m365__excel_lesen",
+    "mcp__m365__onenote_struktur", "mcp__m365__onenote_seiten",
+    "mcp__m365__kontakte_suchen",
+    "mcp__m365__erreichbarkeit", "mcp__m365__personen_suchen", "mcp__m365__organigramm",
+    # n8n — nur nachsehen
+    "mcp__n8n__workflows_list", "mcp__n8n__workflow_get",
+    "mcp__n8n__executions_list", "mcp__n8n__execution_get", "mcp__n8n__health",
+}
 SAFE_TOOLS = {"Read", "Glob", "Grep", "WebSearch", "Skill", "Agent", "TodoWrite"}
 
 # ---------------------------------------------------------------- Allowlist (#104-B) --
@@ -425,6 +460,13 @@ def classify(tool, tool_input):
     tool_input = tool_input or {}
     if tool in RISKY_TOOLS:
         return True, RISKY_TOOLS[tool]
+    # Fail-closed für die angebundenen Dienste: Was nicht ausdrücklich als lesend bekannt
+    # ist, wird bestätigt. Siehe MCP_LESEND — die alte Positivliste hinkte dem
+    # Werkzeugkasten hinterher, und zwar zulasten der Zusage.
+    if tool.startswith(BESTAETIGUNGSPFLICHTIGE_MCP) and tool not in MCP_LESEND:
+        was = tool.split("__")[-1].replace("_", " ")
+        dienst = "Microsoft 365" if "__m365__" in tool else "n8n"
+        return True, f"in {dienst} etwas verändern: »{was}«"
     if tool in WEB_TOOLS:
         # #82: Adressen ins eigene Netz gar nicht erst anbieten — direkt ablehnen.
         try:

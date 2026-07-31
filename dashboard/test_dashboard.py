@@ -5206,3 +5206,108 @@ def test_m365_werkzeugliste_schrumpft_messbar():
     aus = bytes_fuer({})
     assert aus < lesen < alles, f"aus={aus} lesen={lesen} alles={alles}"
     assert lesen <= alles * 0.75, f"»Nur lesen« spart zu wenig ({lesen}/{alles})"
+
+
+# ------------------------------------------- Microsoft-Breite (#119) --
+
+def test_neue_dienste_haben_regler_und_werkzeuge():
+    """#119: Acht Dienstgruppen, damit der Operator im Buero-Alltag nicht dauernd
+    »kann ich nicht« sagt."""
+    import m365_setup as ms
+    m = _m365()
+    for dienst in ("excel", "onenote", "kontakte", "praesenz", "organisation"):
+        assert dienst in ms.PERMISSION_MAP, f"{dienst} fehlt in der Rechte-Matrix"
+        assert dienst in m.DIENST_DE, f"{dienst} hat keinen deutschen Namen"
+        assert any(d == dienst for d, _ in m._BEDARF.values()), \
+            f"{dienst} hat einen Regler, aber kein Werkzeug"
+    # Der Frontend-Regler muss es auch geben, sonst ist der Dienst unerreichbar.
+    js = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/app.js"),
+              encoding="utf-8").read()
+    liste = js.split("const M365_SERVICES")[1].split("];")[0]
+    for dienst in ms.PERMISSION_MAP:
+        assert f'"{dienst}"' in liste, f"{dienst} fehlt im Dashboard-Regler"
+
+
+def test_profile_nehmen_neue_dienste_von_selbst_auf():
+    """Der Grund, warum die Matrizen erzeugt und nicht abgetippt sind: Nach #119 sind
+    fuenf Dienste dazugekommen — ohne dass jemand die Profile angefasst hat."""
+    import m365_setup as ms
+    m = _m365()
+    zahlen = {pid: len(m.aktive_werkzeuge(p["matrix"])) for pid, p in ms.PROFILE.items()}
+    assert zahlen["lesen"] < zahlen["buero"] < zahlen["alles"], zahlen
+    assert zahlen["alles"] == len(m._BEDARF), "»Alles« laesst Werkzeuge liegen"
+    for pid, p in ms.PROFILE.items():
+        assert set(p["matrix"]) == set(ms.PERMISSION_MAP), f"{pid} kennt einen Dienst nicht"
+
+
+def test_nur_lesen_dienste_sind_ueberall_konsistent():
+    """Praesenz und Organisation sind bewusst nur lesbar: den Status anderer Leute setzt
+    man nicht von aussen, und Nutzerkonten aendert ein Assistent nicht."""
+    import m365_setup as ms
+    m = _m365()
+    assert {"praesenz", "organisation"} <= set(ms.NUR_LESEN)
+    for dienst in ms.NUR_LESEN:
+        assert not any(d == dienst and mod == "write" for d, mod in m._BEDARF.values()), \
+            f"{dienst} hat ein Schreib-Werkzeug, obwohl er als nur-lesend gilt"
+    js = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/app.js"),
+              encoding="utf-8").read()
+    zeile = js.split("const M365_NUR_LESEN =")[1].split(";")[0]
+    for dienst in ms.NUR_LESEN:
+        assert f'"{dienst}"' in zeile, f"{dienst} ist im Dashboard schreibbar geschaltet"
+
+
+def test_freigabelink_ist_nie_anonym():
+    """Ein anonymer Link ist fuer JEDEN im Internet offen, der ihn hat — das ist eine
+    Veroeffentlichung, keine Freigabe. Sie darf nicht als Nebenwirkung einer
+    Chat-Nachricht entstehen."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/mcp_m365.py"), encoding="utf-8").read()
+    teil = _m365_funktion(src, "datei_freigabe")
+    assert '"scope": "organization"' in teil
+    assert "anonymous" not in teil
+
+
+def test_neue_schreibwerkzeuge_brauchen_bestaetigung():
+    """Alles, was nach aussen wirkt oder Daten veraendert, muss durch den Broker.
+    Sonst waere die Zusage »ohne dein Ja passiert nichts« mit #119 ausgehoehlt."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    m = _m365()
+    schreibend = sorted(n for n, (_d, mod) in m._BEDARF.items() if mod == "write")
+    assert schreibend, "keine Schreibwerkzeuge gefunden — Test greift ins Leere"
+    ungeschuetzt = [n for n in schreibend
+                    if pb.classify("mcp__m365__" + n, {})[0] is not True]
+    assert not ungeschuetzt, ("Diese Schreib-Werkzeuge laufen ohne Rueckfrage: "
+                              + ", ".join(ungeschuetzt))
+
+
+def test_lesende_mcp_liste_deckt_sich_mit_den_werkzeugen():
+    """Die Liste der als harmlos bekannten Werkzeuge darf weder Geister enthalten noch
+    ein echtes Lese-Werkzeug vergessen — sonst nervt der Operator grundlos."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    m = _m365()
+    echt_lesend = {"mcp__m365__" + n for n, (_d, mod) in m._BEDARF.items() if mod == "read"}
+    echt_lesend.add("mcp__m365__m365_hilfe")
+    gelistet = {t for t in pb.MCP_LESEND if t.startswith("mcp__m365__")}
+    assert gelistet - echt_lesend == set(), \
+        f"kennt Werkzeuge, die es nicht gibt: {gelistet - echt_lesend}"
+    assert echt_lesend - gelistet == set(), \
+        f"lesende Werkzeuge fehlen (unnoetige Rueckfragen): {echt_lesend - gelistet}"
+
+
+def test_unbekanntes_m365_werkzeug_fragt_nach():
+    """Der Kern der Umstellung: Ein Werkzeug, das nach diesem Release dazukommt, ist
+    bestaetigungspflichtig, bis jemand es ausdruecklich als lesend einstuft. Vorher war
+    es umgekehrt — und genau daran sind vier Werkzeuge durchgerutscht."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    riskant, text = pb.classify("mcp__m365__gibt_es_noch_gar_nicht", {})
+    assert riskant is True and "Microsoft 365" in text
+    assert pb.classify("mcp__n8n__irgendwas_neues", {})[0] is True
+    # Lesen bleibt frei — sonst waere jede Mail-Anzeige eine Rueckfrage.
+    assert pb.classify("mcp__m365__mail_list", {})[0] is False
+    # Die Doku-Suche ist bewusst ausgenommen.
+    assert pb.classify("mcp__learn__microsoft_docs_search", {})[0] is False

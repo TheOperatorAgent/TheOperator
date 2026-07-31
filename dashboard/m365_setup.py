@@ -54,6 +54,18 @@ PERMISSION_MAP = {
     # hat ein eigenes Recht (30.07. am 403 gemerkt, dann in der Doku nachgelesen).
     "status":     {"read": ["ServiceHealth.Read.All", "ServiceMessage.Read.All",
                             "Reports.Read.All", "Organization.Read.All"], "write": []},
+    # ---- #119 Breite: damit der Operator im Büro-Alltag nicht dauernd »kann ich nicht« sagt.
+    # Excel läuft über die Workbook-API und braucht dieselben Datei-Rechte wie OneDrive —
+    # eigener Regler trotzdem, damit »Tabellen bearbeiten« bewusst eingeschaltet wird und
+    # nicht als Nebenwirkung von »Dateien« mitkommt.
+    "excel":      {"read": ["Files.Read.All"],      "write": ["Files.ReadWrite.All"]},
+    "onenote":    {"read": ["Notes.Read.All"],      "write": ["Notes.ReadWrite.All"]},
+    "kontakte":   {"read": ["Contacts.Read"],       "write": ["Contacts.ReadWrite"]},
+    # Präsenz ist nur lesbar — den Status anderer Leute setzt man nicht von außen.
+    "praesenz":   {"read": ["Presence.Read.All"],   "write": []},
+    # Organisation: Vorgesetzte, direkte Berichte, Personen suchen. Bewusst nur lesend —
+    # Nutzerkonten anzulegen oder zu ändern gehört nicht in einen Assistenten.
+    "organisation": {"read": ["User.Read.All"],     "write": []},
 }
 
 # Dienste ohne sinnvollen Schreib-Regler (das Dashboard sperrt den Schalter)

@@ -1,10 +1,10 @@
 {
- "version": "1.25.0",
+ "version": "1.26.0",
  "date": "2026-07-31",
  "highlights": [
-  "⚡ Microsoft 365 macht deinen Operator nicht mehr langsamer als nötig: Er lädt nur noch die Werkzeuge der Dienste, die du im Dashboard eingeschaltet hast. Bei »Nur lesen« sind das 17 statt 23 — und je mehr Dienste dazukommen, desto mehr spart das.",
-  "🎚️ Drei Voreinstellungen für die Microsoft-Rechte: »Nur lesen« (empfohlen zum Anfangen), »Büro-Alltag« (Mails schreiben, Termine anlegen, Aufgaben pflegen) und »Alles«. Ein Klick setzt die Häkchen, danach kannst du einzeln nachjustieren.",
-  "🛡️ »Büro-Alltag« lässt Dateien in OneDrive und SharePoint bewusst schreibgeschützt — dort hätte dein Operator sonst Zugriff auf alle Dateien der Firma.",
-  "💬 Ist Microsoft 365 nicht verbunden oder ein Dienst aus, sagt dein Operator das jetzt im Klartext, statt das Werkzeug einfach nicht zu finden."
+  "🔐 Wichtige Korrektur: Einige Aktionen liefen ohne deine Freigabe. Termine absagen, Termine verschieben, Mails beantworten und weiterleiten gab es seit 1.16.0 — die Nachfrage dazu fehlte. Ab jetzt gilt umgekehrt: Alles, was in Microsoft 365 oder n8n etwas verändert, fragt dich, auch wenn es neu dazukommt.",
+  "📊 Neu: Excel-Tabellen lesen und füllen, OneNote-Notizen anlegen, im Adressbuch suchen, Planner-Aufgaben verwalten, SharePoint-Listen bearbeiten, Erreichbarkeit von Kolleginnen und Kollegen sehen, Personen und Vorgesetzte im Unternehmen finden, Dateien in OneDrive lesen, schreiben und teilen.",
+  "🔗 Freigabe-Links gelten immer nur innerhalb deiner Organisation — nie anonym im Internet.",
+  "🎚️ Die drei Voreinstellungen haben die neuen Dienste von selbst aufgenommen: »Nur lesen« 28 Werkzeuge, »Büro-Alltag« 36, »Alles« 42."
  ]
 }
