@@ -1,10 +1,9 @@
 {
- "version": "1.26.0",
+ "version": "1.26.1",
  "date": "2026-07-31",
  "highlights": [
-  "🔐 Wichtige Korrektur: Einige Aktionen liefen ohne deine Freigabe. Termine absagen, Termine verschieben, Mails beantworten und weiterleiten gab es seit 1.16.0 — die Nachfrage dazu fehlte. Ab jetzt gilt umgekehrt: Alles, was in Microsoft 365 oder n8n etwas verändert, fragt dich, auch wenn es neu dazukommt.",
-  "📊 Neu: Excel-Tabellen lesen und füllen, OneNote-Notizen anlegen, im Adressbuch suchen, Planner-Aufgaben verwalten, SharePoint-Listen bearbeiten, Erreichbarkeit von Kolleginnen und Kollegen sehen, Personen und Vorgesetzte im Unternehmen finden, Dateien in OneDrive lesen, schreiben und teilen.",
-  "🔗 Freigabe-Links gelten immer nur innerhalb deiner Organisation — nie anonym im Internet.",
-  "🎚️ Die drei Voreinstellungen haben die neuen Dienste von selbst aufgenommen: »Nur lesen« 28 Werkzeuge, »Büro-Alltag« 36, »Alles« 42."
+  "🏢 Drei neue Microsoft-Karten unter »System«: der Enterprise-Server von Microsoft (Vorschau, nur lesend), Work IQ — bewusst gesperrt mit Begründung, weil es dafür eine Copilot-Lizenz braucht, die wir nicht umgehen können — und ein Zugang für private outlook.com-Konten, fest auf Lesen begrenzt.",
+  "ℹ️ Jede Karte sagt jetzt vorne weg, was sie NICHT kann, statt beim Klicken zu scheitern.",
+  "🔎 Bei den Microsoft-Rechten steht jetzt offen, dass Microsoft sie für den gesamten Tenant vergibt und dein Operator sich freiwillig auf ein Postfach beschränkt — samt Weg, das serverseitig zu erzwingen."
  ]
 }

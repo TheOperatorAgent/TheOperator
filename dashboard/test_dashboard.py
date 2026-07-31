@@ -1179,13 +1179,21 @@ def _catalog():
 def test_mcp_catalog_has_expected_integrations():
     ids = {c["id"] for c in _catalog().public_catalog()}
     assert {"notion", "homeassistant", "obsidian", "calendar", "learn"} <= ids
-    # »learn« ist der einzige Eintrag ohne Eingabefelder — er braucht weder Konto noch
-    # Schlüssel und ist deshalb ab Werk verdrahtet (#120). Jeder ANDERE Eintrag muss
-    # sagen, was er vom Nutzer braucht, sonst wäre die Karte nicht bedienbar.
-    ohne_felder = {"learn"}
+    assert {"ms_enterprise", "ms_workiq", "ms_privat"} <= ids, "Microsoft-Rest (#120) fehlt"
+    # Regel: Eine Karte muss sagen, was sie vom Nutzer braucht — sonst ist sie nicht
+    # bedienbar. Ausnahmen sind Einträge, die GAR NICHTS brauchen:
+    #   learn         — öffentliche Doku, kein Konto, kein Schlüssel (ab Werk verdrahtet)
+    #   ms_enterprise — Anmeldung übernimmt mcp-remote im Browser
+    #   ms_privat     — dito, Microsoft-Anmeldung beim ersten Start
+    #   ms_workiq     — gesperrt (Copilot-Lizenz), es gibt nichts einzugeben
+    ohne_felder = {"learn", "ms_enterprise", "ms_privat", "ms_workiq"}
     for c in _catalog().public_catalog():
         assert c["label"] and c["homepage"].startswith("http")
         assert bool(c["fields"]) is (c["id"] not in ohne_felder), c["id"]
+        # Wer keine Felder hat, muss stattdessen erklären, warum nichts nötig ist —
+        # sonst wirkt die Karte kaputt.
+        if not c["fields"]:
+            assert c.get("setup") or c.get("gesperrt"), c["id"]
 
 
 def test_mcp_catalog_build_notion():
@@ -5311,3 +5319,53 @@ def test_unbekanntes_m365_werkzeug_fragt_nach():
     assert pb.classify("mcp__m365__mail_list", {})[0] is False
     # Die Doku-Suche ist bewusst ausgenommen.
     assert pb.classify("mcp__learn__microsoft_docs_search", {})[0] is False
+
+
+# --------------------------------- Microsoft-Rest im MCP-Katalog (#120) --
+
+def test_workiq_ist_gesperrt_und_begruendet():
+    """#120: Ohne Copilot-Lizenz liefert Work IQ nichts. Die Karte beim Klick scheitern
+    zu lassen waere schlechter — der Nutzer sucht den Fehler dann bei sich."""
+    import mcp_catalog as k
+    karte = k.get("ms_workiq")
+    assert karte and karte.get("gesperrt"), "keine Begruendung an der Karte"
+    assert "Copilot-Lizenz" in karte["gesperrt"]
+    assert "Grenze von Microsoft" in karte["gesperrt"], "sagt nicht, dass es nicht an uns liegt"
+    import pytest
+    with pytest.raises(ValueError):
+        k.build_entry("ms_workiq", {})
+    js = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/app.js"),
+              encoding="utf-8").read()
+    assert "c.gesperrt" in js, "das Dashboard zeigt die Sperre gar nicht"
+    assert "Nicht verfügbar" in js, "der Knopf ist trotzdem klickbar"
+
+
+def test_privatkonto_ist_fest_auf_lesen_begrenzt():
+    """Ein Privatkonto hat keine Firmen-Verwaltung im Ruecken. Der Umfang wird HIER
+    festgelegt, nicht dem fremden Server ueberlassen."""
+    import mcp_catalog as k
+    e = k.build_entry("ms_privat", {})
+    assert "--read-only" in e["args"], "der fremde Server duerfte schreiben"
+    assert "--preset" in e["args"] and "mail,calendar,files" in e["args"]
+    assert k.get("ms_privat")["grenze"], "die Grenze steht nirgends"
+
+
+def test_enterprise_karte_nennt_ihre_grenzen_vorne():
+    """Public Preview, nur lesend, 100 Anfragen/Minute, nur normale Cloud — das gehoert
+    an die Karte, nicht ins Kleingedruckte."""
+    import mcp_catalog as k
+    g = k.get("ms_enterprise")["grenze"]
+    for wort in ("Vorschau", "LESEND", "100 Anfragen", "Cloud"):
+        assert wort in g, f"»{wort}« fehlt in der Grenze"
+
+
+def test_dashboard_nennt_die_tenantweite_grenze(): 
+    """#14: Microsoft vergibt Application-Rechte fuer den GESAMTEN Tenant. Unser Code
+    beschraenkt sich freiwillig auf ein Postfach — das ist eine Selbstbeschraenkung, keine
+    erzwungene Grenze. Wer das nicht weiss, haelt es faelschlich fuer sicher."""
+    js = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/app.js"),
+              encoding="utf-8").read()
+    teil = js.split("Berechtigungen je Dienst")[1][:3000]
+    assert "gesamten" in teil and "freiwillig" in teil, "die Grenze steht nicht da"
+    assert "Application Access Policy" in teil, "der Weg zum Erzwingen fehlt"
+    assert "nicht für OneDrive" in teil, "die Grenze der Policy selbst fehlt"

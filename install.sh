@@ -24,7 +24,7 @@ WORKSPACE="${OPERATOR_WORKSPACE:-$HOME/Operator}"
 STATE_FILE="$BOT_DIR/.install-state.json"
 # #131: Der Installer nennt seine eigene Fassung. Bei zwei Auslieferungswegen
 # (GitHub sofort, operator.bayern per Handupload) ist Drift sonst unsichtbar.
-INSTALLER_VERSION="1.26.0"
+INSTALLER_VERSION="1.26.1"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main}"
 

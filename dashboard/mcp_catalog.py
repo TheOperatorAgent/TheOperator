@@ -68,6 +68,48 @@ CATALOG = [
             {"key": "pass", "label": "Passwort / App-Passwort", "secret": True},
         ],
     },
+    # ---------------------------------------------------------- #120: Microsoft-Rest --
+    {
+        "id": "ms_enterprise", "emoji": "🏢", "label": "Microsoft 365 Enterprise (Vorschau)",
+        "desc": "Microsofts eigener Server für Unternehmensdaten. Ergänzt unsere Anbindung "
+                "um Suche über SharePoint und Teams-Inhalte.",
+        "homepage": "https://learn.microsoft.com/en-us/microsoft-365/enterprise/mcp",
+        "setup": "Nur Anmeldung mit deinem Geschäftskonto — kein Schlüssel nötig.",
+        # Ehrlich vorne dran statt im Kleingedruckten: Wer das einschaltet, soll vorher
+        # wissen, was er NICHT bekommt.
+        "grenze": "Öffentliche Vorschau von Microsoft. Ausschließlich LESEND, höchstens "
+                  "100 Anfragen pro Minute, und nur in der normalen Microsoft-Cloud "
+                  "(nicht in Behörden- oder China-Umgebungen). Schreiben geht über "
+                  "unsere eigene Anbindung, nicht hierüber.",
+        "fields": [],
+    },
+    {
+        "id": "ms_workiq", "emoji": "🧠", "label": "Microsoft Work IQ",
+        "desc": "Microsofts Wissens-Ebene über deine Arbeit: Wer arbeitet woran, welche "
+                "Dokumente gehören zusammen, was war zuletzt wichtig.",
+        "homepage": "https://learn.microsoft.com/en-us/microsoft-365-copilot/extensibility/",
+        "setup": "Braucht eine Microsoft-365-Copilot-Lizenz pro Person und eine "
+                 "App-Registrierung durch die IT-Abteilung.",
+        # Der Grund, warum diese Karte gesperrt ausgeliefert wird: Sie beim Klick
+        # scheitern zu lassen wäre schlechter — der Nutzer sucht dann den Fehler bei sich.
+        "gesperrt": "Ohne Microsoft-365-Copilot-Lizenz liefert diese Schnittstelle nichts — "
+                    "das ist eine Grenze von Microsoft, keine Einstellung bei dir. Wir "
+                    "können sie nicht umgehen. Alles andere, was dein Operator mit "
+                    "Microsoft 365 kann, funktioniert ohne diese Lizenz.",
+        "fields": [],
+    },
+    {
+        "id": "ms_privat", "emoji": "🏡", "label": "Microsoft Privatkonto (outlook.com)",
+        "desc": "Mail, Kalender und Dateien eines PRIVATEN Microsoft-Kontos — für alle, "
+                "die kein Geschäftskonto haben.",
+        "homepage": "https://github.com/softeria/ms-365-mcp-server",
+        "setup": "Beim ersten Start meldest du dich einmal bei Microsoft an. "
+                 "Node.js wird benötigt.",
+        "grenze": "Bewusst nur LESEND ausgeliefert (Mail, Kalender, Dateien). Ein "
+                  "Privatkonto hat keine Firmen-Verwaltung im Rücken — dort etwas "
+                  "verändern zu lassen, wäre ohne Sicherheitsnetz.",
+        "fields": [],
+    },
 ]
 
 _BY_ID = {c["id"]: c for c in CATALOG}
@@ -103,6 +145,25 @@ def build_entry(cid, fields):
 
     if cid == "learn":
         return dict(LEARN_ENTRY)
+
+    if cid == "ms_enterprise":
+        # Microsofts gehosteter Server, Anmeldung übernimmt mcp-remote im Browser.
+        return {"command": "npx", "args": ["-y", "mcp-remote",
+                                           "https://mcp.microsoft.com/enterprise/mcp"]}
+
+    if cid == "ms_workiq":
+        # Absichtlich nicht baubar: ohne Copilot-Lizenz liefert die Schnittstelle nichts.
+        # Ein Eintrag, der beim Start scheitert, sähe für den Nutzer wie ein Fehler bei
+        # ihm aus — und würde bei jedem Chat-Lauf Zeit kosten.
+        raise ValueError(_BY_ID["ms_workiq"]["gesperrt"])
+
+    if cid == "ms_privat":
+        # --read-only und ein fester Preset: Der Umfang wird HIER festgelegt und nicht
+        # dem Server überlassen. Fällt der Schalter weg, könnte ein Privatkonto plötzlich
+        # beschrieben werden, ohne dass jemand zugestimmt hat.
+        return {"command": "npx", "args": ["-y", "@softeria/ms-365-mcp-server",
+                                           "--read-only",
+                                           "--preset", "mail,calendar,files"]}
 
     if cid == "notion":
         need("token")

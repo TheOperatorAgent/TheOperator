@@ -1,5 +1,5 @@
 {
- "version": "1.26.0",
+ "version": "1.26.1",
  "files": [
   {
    "src": "listener.py",
@@ -259,7 +259,7 @@
   {
    "src": "dashboard/mcp_catalog.py",
    "dst": "dashboard/mcp_catalog.py",
-   "sha256": "28693185dbf388319a51bf5595bad26058d4094483f7c4dc8c4bb09e8c67e2d4"
+   "sha256": "307ddb8a79d6d8bb7f22f302bf7f27ca478b90236070f9bdc78aeea7d65aa275"
   },
   {
    "src": "dashboard/static/index.html",
@@ -269,7 +269,7 @@
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "02f2368acf0fd24ed3a6f57d8d9c247cc701cfb2e91c6096788421dd8a937001"
+   "sha256": "a7de46b0ec16ae1a31f65d615f9feabd54de32f821e9324eb4b7c29511b59299"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -289,7 +289,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "acef448c3973160e815171b20f8788735d99b01e7bf551b3619bbde1ae1db7a8"
+   "sha256": "55f4221aa0e36b70cbfc65ccc26728d31f6510eb1ead635badc007cdb5cd2bed"
   },
   {
    "src": "dienst_start.py",
@@ -309,7 +309,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "42e0d052d8e0ef6ef1627c68a698b2573b08bb7a0df7a8fcd9ecd21374dd32b0"
+   "sha256": "49f1d21b4a58bb291a0f26074c4e457ec0a3799c383eba626b24f24bc92acace"
   },
   {
    "src": "dashboard/test_petra.py",

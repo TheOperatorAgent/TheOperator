@@ -939,6 +939,15 @@ async function loadM365() {
       <p class="hint" style="margin-top:8px">Zur Sicherheit startet alles AUS.
       „Schreiben" erlaubt automatisch auch „Lesen". Schaltest du einen Regler wieder AUS,
       wird das Recht bei Microsoft <strong>wirklich entzogen</strong> — nicht nur versteckt.</p>
+      <p class="hint" style="margin-top:10px;border-left:3px solid var(--amber,#d29922);padding-left:8px">
+        <strong>Eine Grenze, die du kennen solltest (#14):</strong> Microsoft vergibt diese
+        Rechte für den <em>gesamten</em> Tenant, nicht für ein einzelnes Postfach. Dein
+        Operator beschränkt sich freiwillig auf »${esc(s.primary_user || "den oben gewählten Benutzer")}«
+        — technisch könnte die App aber alle Postfächer erreichen. Wer das serverseitig
+        erzwingen will, richtet in Exchange eine
+        <em>Application Access Policy</em> ein; das geht nur per PowerShell und nur für
+        Exchange (nicht für OneDrive, SharePoint, Planner oder Teams).
+        <a href="https://learn.microsoft.com/en-us/graph/auth-limit-mailbox-access" target="_blank" rel="noopener">Anleitung ↗</a></p>
     </div>`;
   M365_PROFILE = s.profile || [];
   loadM365Zustand();
@@ -1533,13 +1542,18 @@ async function loadSystem() {
       <strong>${c.emoji} ${esc(c.label)}</strong>
       <a href="${esc(c.homepage)}" target="_blank" rel="noopener" class="small">Doku ↗</a>
       <p class="small" style="margin:4px 0">${esc(c.desc)}</p>
+      ${c.gesperrt ? `<p class="hint" style="margin:4px 0;border-left:3px solid var(--amber,#d29922);padding-left:8px">
+        🔒 ${esc(c.gesperrt)}</p>` : ""}
+      ${c.grenze ? `<p class="hint" style="margin:4px 0"><strong>Was du wissen solltest:</strong> ${esc(c.grenze)}</p>` : ""}
       <p class="hint" style="margin:4px 0">${esc(c.setup)}</p>
       <div style="display:grid;gap:6px;margin:8px 0">
         ${c.fields.map((fl) => `<div><label class="small">${esc(fl.label)}</label>
           <input id="cat-${c.id}-${fl.key}" type="${fl.secret ? 'password' : 'text'}"
                  ${fl.secret ? 'autocomplete="new-password"' : ''} value="${esc(fl.default || '')}"></div>`).join("")}
       </div>
-      <button class="primary" onclick="addCatalogMcp('${c.id}')">Einrichten</button>
+      ${c.gesperrt
+        ? `<button disabled title="${esc(c.gesperrt)}">Nicht verfügbar</button>`
+        : `<button class="primary" onclick="addCatalogMcp('${c.id}')">Einrichten</button>`}
       <span id="cat-${c.id}-status" class="small"></span>
     </div>`).join("");
   const listHtml = m.servers.map((s) => `
