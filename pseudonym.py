@@ -137,6 +137,19 @@ def _active_entities(mode: str) -> set:
         return set(STRUCTURED)
     if mode == "strict":
         return STRUCTURED | NAMED | EXTRA_STRICT
+    if mode == "werkzeug":
+        # #88: Ergebnisse von Werkzeugen (Dateien, Befehlsausgaben, Webseiten) sind viel
+        # maschinennäher als Chattext — voller Pfade, Bezeichner und Kommandonamen. Ort
+        # und Organisation liefern hier fast nur Fehlalarme, und ein Fehlalarm schreibt
+        # still einen Dateipfad um: Der Agent arbeitet danach mit dem falschen Pfad
+        # weiter, ohne dass es jemand merkt.
+        #
+        # Belegt aus dem Betrieb: #107 machte aus »FERTIG« einen Firmennamen,
+        # #102 aus »Satelitenmodus« das Städtchen »Dinkelsbühl«.
+        #
+        # Personennamen bleiben an — genau ihretwegen gibt es diesen Durchlauf. Der
+        # Vorfilter (pii_vorfilter) reicht ohnehin nur prosaartige Zeilen herein.
+        return STRUCTURED | {"PERSON"}
     return STRUCTURED | NAMED  # "standard" (Default): sicher & genau
 
 

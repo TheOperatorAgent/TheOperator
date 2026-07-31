@@ -1,10 +1,10 @@
 {
- "version": "1.26.1",
+ "version": "1.27.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "7bb675b729508f43c7344be6cbf6dd727bbcf9e5ac3ec2edcff41432c580c468"
+   "sha256": "3787b0fa8e4302896b2b141343f25afcd17f7c76d687a5a8d2b732614c3003b3"
   },
   {
    "src": "matrix_room.py",
@@ -50,6 +50,11 @@
    "src": "redact.py",
    "dst": "redact.py",
    "sha256": "8a0d7bc045d267f21997fc8e321002ccdf6240ecc14b0ee39cc5c9c797368fea"
+  },
+  {
+   "src": "pii_vorfilter.py",
+   "dst": "pii_vorfilter.py",
+   "sha256": "01ab1aa03a12aff8d3e5b426ea79ec6addb061768363a58be132dd4dc796db8a"
   },
   {
    "src": "reid.py",
@@ -204,7 +209,7 @@
   {
    "src": "pseudonym.py",
    "dst": "pseudonym.py",
-   "sha256": "7cba7587dd73b7be791eab2feae7d8a95c882032dd863bbaa26b60018a5ea7fc"
+   "sha256": "c324cc613c96dfb019af5e0a15bd65ac8248e94e98c28ce83df05bacb4a0ac44"
   },
   {
    "src": "pseudonym_daemon.py",
@@ -219,7 +224,7 @@
   {
    "src": "llm_runner.py",
    "dst": "llm_runner.py",
-   "sha256": "be632b90a3cd6e99918ca2b55b5384705a62826acf4483b446c248f9d4059bc8"
+   "sha256": "d321ceea6e7cd383ed9c477e3ce23ce412c7f224af7ed6a8b350b305add3dd65"
   },
   {
    "src": "mail_watch.py",
@@ -289,7 +294,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "55f4221aa0e36b70cbfc65ccc26728d31f6510eb1ead635badc007cdb5cd2bed"
+   "sha256": "7ef1ea58fece676ff7345f6edac427e671daf20f0d7499ef2e42ada241d4fe24"
   },
   {
    "src": "dienst_start.py",
@@ -309,7 +314,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "49f1d21b4a58bb291a0f26074c4e457ec0a3799c383eba626b24f24bc92acace"
+   "sha256": "05e6844ed9bc7a6d54215b4b26ade3c42a9e81261ba85d78c2466bfbf4c45f8e"
   },
   {
    "src": "dashboard/test_petra.py",

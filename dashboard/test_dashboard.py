@@ -1930,12 +1930,15 @@ def test_tool_result_egress_sanitized():
     mapping = {"s2r": {"Ingeburg Krause": "Petra Muster", "Ingeburg": "Petra"}}
     roh = ("grep-Ausgabe: Petra Muster <petra@firma.de>\n"
            "api_key = sk-ant-abcdefabcdefabcdefabcdefabcdef12")
-    sauber = lr._sanitize_result(roh, mapping)
+    # Seit #88 kommt zusätzlich zurück, welche Paare NEU entstanden sind — der Listener
+    # braucht sie, um beim Antworten wieder echte Namen einzusetzen.
+    sauber, _neue = lr._sanitize_result(roh, mapping)
     assert "Petra Muster" not in sauber          # echte PII raus …
     assert "Ingeburg Krause" in sauber           # … konsistentes Surrogat drin
     assert "sk-ant-" not in sauber               # Secret maskiert
     # fail-open: ohne Map bleibt der Text (nur Secret-Maskierung)
-    assert "REDACTED" in lr._sanitize_result("key = sk-ant-abcdefabcdefabcdefabcdefabcdef12", {})
+    ohne, _ = lr._sanitize_result("key = sk-ant-abcdefabcdefabcdefabcdefabcdef12", {})
+    assert "REDACTED" in ohne
 
 
 # ---------------------------------------------------------------- #59 Claude-Login --
@@ -5369,3 +5372,177 @@ def test_dashboard_nennt_die_tenantweite_grenze():
     assert "gesamten" in teil and "freiwillig" in teil, "die Grenze steht nicht da"
     assert "Application Access Policy" in teil, "der Weg zum Erzwingen fehlt"
     assert "nicht für OneDrive" in teil, "die Grenze der Policy selbst fehlt"
+
+
+# ------------------------- PII in Werkzeug-Ergebnissen (#88) --
+
+def _vf():
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import pii_vorfilter
+    return pii_vorfilter
+
+
+def test_vorfilter_entfernt_strukturiertes_ohne_modell():
+    """Mail, Telefon, IBAN, Karte, IP sind Muster — dafuer braucht niemand ein
+    Sprachmodell. Diese Stufe laeuft IMMER, auch wenn der Presidio-Dienst aus ist."""
+    vf = _vf()
+    text = ("Sehr geehrte Frau Zimmermann, melden Sie sich unter k.zimmermann@kunde.de "
+            "oder 0821 4455-12. IBAN DE02120300000000202051, Server 192.168.178.53.")
+    sauber, n = vf.strukturiert_entfernen(text)
+    assert n >= 4
+    for geheim in ("k.zimmermann@kunde.de", "0821 4455-12",
+                   "DE02120300000000202051", "192.168.178.53"):
+        assert geheim not in sauber, f"{geheim} steht noch drin"
+    # Der Nutzer soll sehen, WAS entfernt wurde — nicht nur, dass etwas fehlt.
+    for marke in ("[Mail entfernt]", "[Telefon entfernt]", "[IBAN entfernt]", "[IP entfernt]"):
+        assert marke in sauber
+
+
+def test_vorfilter_haelt_datum_und_version_fuer_keine_rufnummer():
+    """Die teuerste Sorte Fehlalarm: In JEDER Logzeile steht ein Zeitstempel. Waere der
+    eine Rufnummer, wuerde jedes Werkzeug-Ergebnis unbrauchbar — und der Agent arbeitete
+    mit zerschossenen Daten weiter, ohne dass es jemand merkt."""
+    vf = _vf()
+    for harmlos in ("2026-07-31", "31.07.2026", "07/31/2026", "1.26.1", "Version 1.24.0",
+                    "Zeile 42", "12:30 Uhr", "Seite 10/11", "100 Anfragen",
+                    "[2026-07-31 18:02:41] Listener gestartet",
+                    "drwxr-xr-x 5 michi staff 160 Jul 31 18:02 ordner",
+                    "commit 3891a1e vom 2026-07-30"):
+        _r, n = vf.strukturiert_entfernen(harmlos)
+        assert n == 0, f"Fehlalarm bei {harmlos!r}"
+    for echt in ("0821 4455-12.", "+49 821 445512", "(0821) 44 55 12", "0170 1234567",
+                 "Tel. 0821/445512", "Ruf 089 12 34 56 an."):
+        _r, n = vf.strukturiert_entfernen(echt)
+        assert n == 1, f"Rufnummer nicht erkannt: {echt!r}"
+
+
+def test_vorfilter_schickt_maschinenausgabe_nicht_zur_namenspruefung():
+    """Der ganze Zweck: Ein Verzeichnislisting oder JSON enthaelt keine Personennamen.
+    Die teure Pruefung dort laufen zu lassen kostet Zeit UND produziert Fehlalarme
+    (#107: »FERTIG« wurde zum Firmennamen, #102: »Satelitenmodus« zu »Dinkelsbühl«)."""
+    vf = _vf()
+    import json as _j
+    maschine = {
+        "ls": "\n".join(f"drwxr-xr-x 5 michi staff 160 Jul 31 18:0{i%10} ordner_{i}"
+                        for i in range(40)),
+        "json": _j.dumps({f"key_{i}": {"wert": i, "aktiv": True} for i in range(80)}, indent=1),
+        "code": "\n".join(f"def funktion_{i}(argument):\n    return argument * {i}"
+                          for i in range(30)),
+    }
+    for name, text in maschine.items():
+        idx, _ = vf.zeilen_pruefen(text)
+        assert idx == [], f"{name}: {len(idx)} Zeilen gingen unnoetig zur Namenspruefung"
+    prosa = ("Sehr geehrte Frau Zimmermann,\n\nHerr Weber aus der Buchhaltung meldet sich.\n"
+             "Mit freundlichen Grüßen\nAnna Schuster\n") * 5
+    idx, _ = vf.zeilen_pruefen(prosa)
+    assert idx, "Prosa mit Namen wurde nicht zur Pruefung geschickt"
+
+
+def test_zu_langes_ergebnis_wird_verworfen_nicht_durchgereicht():
+    """Entscheidung Michi, 31.07.2026: Was nicht mehr geprueft werden kann, wird ENTFERNT.
+    Ungeprueften Text durchzulassen waere die bequeme, aber falsche Wahl — dann stuende
+    »dein Filter davor« auf der Website und waere bei grossen Dateien unwahr."""
+    vf = _vf()
+    lang = "\n".join(f"Sehr geehrte Frau Nummer{i}, Herr Weber meldet sich bei Ihnen."
+                     for i in range(400))
+    idx, verworfen_ab = vf.zeilen_pruefen(lang, max_zeichen=800)
+    assert verworfen_ab is not None, "kein Budget-Ende erkannt"
+    assert verworfen_ab < 400
+    assert all(i < verworfen_ab for i in idx)
+
+
+def test_neue_pii_kommt_beim_nutzer_wieder_echt_an():
+    """Der gefaehrlichste Einzelfall an #88 — und der Grund, warum der Rueckweg gebaut ist.
+
+    Erzeugt Presidio beim Bereinigen eines Werkzeug-Ergebnisses ein NEUES Surrogat, kennt
+    der Listener es nicht. Beim Antworten wuerde er es stehen lassen, und der Nutzer laese
+    einen erfundenen Namen — und hielte ihn fuer echt. Schlimmer als gar keine
+    Pseudonymisierung, weil es unbemerkt falsch ist."""
+    runner = open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"),
+                  encoding="utf-8").read()
+    assert '"neue_pii": neue_pii' in runner, "der Runner reicht neue Paare nicht nach oben"
+    assert "neue_pii.update(neue)" in runner
+    lis = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"), encoding="utf-8").read()
+    teil = lis.split('neue_pii = out.get("neue_pii")')[1].split("\n        rc,")[0]
+    assert 'mapping.setdefault("s2r", {}).update(neue_pii)' in teil
+    # Der Merge MUSS vor jeder Verwendung von mapping stehen — sonst kommt er zu spat.
+    assert lis.index('neue_pii = out.get("neue_pii")') < lis.index("reidentify(raw, mapping)")
+
+
+def test_pii_rueckfall_ist_sichtbar_nicht_still():
+    """Vorher schluckte ein `except: pass` jeden Fehler und schickte den Volltext weiter.
+    Eine stille Verschlechterung im Datenschutz ist schlimmer als eine laute."""
+    runner = open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"),
+                  encoding="utf-8").read()
+    teil = runner.split("def _sanitize_result")[1].split("\ndef ")[0]
+    assert "vermerk.append" in teil, "Fehler werden nicht vermerkt"
+    assert teil.count("vermerk.append") >= 4, "nicht alle Rueckfall-Stufen melden sich"
+    for fall in ("nicht erreichbar", "Zeitbudget", "ungeprüft entfernt"):
+        assert fall in teil, f"Rueckfall »{fall}« fehlt"
+
+
+def test_werkzeug_modus_laesst_ort_und_firma_aus():
+    """Werkzeug-Ausgaben sind maschinennah. Ein Fehlalarm schreibt still einen Dateipfad
+    um, und der Agent arbeitet danach falsch weiter — das faengt kein Test."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import pseudonym
+    aktiv = pseudonym._active_entities("werkzeug")
+    assert "PERSON" in aktiv, "Namen sind der Grund fuer diesen Durchlauf"
+    assert "LOCATION" not in aktiv and "ORGANIZATION" not in aktiv
+    assert pseudonym.STRUCTURED <= aktiv
+
+
+def test_pii_budget_begrenzt_die_teuren_runden():
+    runner = open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"),
+                  encoding="utf-8").read()
+    assert "PII_MAX_RUNDEN" in runner and "PII_MAX_ZEICHEN" in runner
+    teil = runner.split("def _sanitize_result")[1].split("\ndef ")[0]
+    assert '_PII_BUDGET["runden"] >= PII_MAX_RUNDEN' in teil, "Budget wird nie geprueft"
+
+
+def test_pii_vorfilter_ist_stdlib_only():
+    import ast as _ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pii_vorfilter.py"),
+               encoding="utf-8").read()
+    mods = set()
+    for k in _ast.walk(_ast.parse(src)):
+        if isinstance(k, _ast.Import):
+            mods.update(a.name.split(".")[0] for a in k.names)
+        elif isinstance(k, _ast.ImportFrom) and k.module:
+            mods.add(k.module.split(".")[0])
+    assert mods <= {"re"}, f"nicht stdlib: {mods}"
+
+
+def test_signaturzeile_wird_geprueft():
+    """Beim ersten Live-Lauf blieb »Katrin Zimmermann« als Signaturzeile stehen — die
+    Drei-Wort-Schwelle des Vorfilters griff nicht. Ausgerechnet dort steht in einer Mail
+    aber garantiert ein Name."""
+    vf = _vf()
+    for zeile in ("Katrin Zimmermann", "Anna Schuster", "Mit freundlichen Grüßen"):
+        pass
+    assert vf.namensverdacht("Katrin Zimmermann"), "Signaturzeile wird nicht geprueft"
+    assert vf.namensverdacht("Anna Schuster")
+    # Maschinennahe Kurzzeilen bleiben draussen — sonst kostet jede Logzeile Zeit.
+    for maschine in ("total 48", "drwxr-xr-x 5", "-rw-r--r--", "HTTP 200 OK",
+                     "{}", "[]", "true", "id: 4711"):
+        assert not vf.namensverdacht(maschine), f"Fehlalarm bei {maschine!r}"
+
+
+def test_surrogate_werden_nicht_zweimal_pseudonymisiert():
+    """Ein Kettenfehler, den der bestehende Egress-Test (#83) beim Bau von #88 aufgedeckt
+    hat: Stufe 3 setzt »Ingeburg Krause« als Surrogat ein, Stufe 4 schickt die Zeile an
+    Presidio — und das hielt das Surrogat fuer einen echten Namen und ersetzte es NOCHMAL.
+
+    Der Listener bekaeme dann ein Paar »Birte Dietz → Ingeburg Krause« und uebersetzte
+    beim Antworten ein Surrogat in ein anderes Surrogat. Der Nutzer laese nie wieder den
+    echten Namen — und wuerde es nicht merken."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"),
+               encoding="utf-8").read()
+    teil = src.split("def _presidio")[1].split("\ndef ")[0]
+    assert '"allow": list(schon_ersetzt)' in teil, "bereits gesetzte Surrogate sind nicht geschuetzt"
+    aufruf = src.split("def _sanitize_result")[1].split("\ndef ")[0]
+    assert "_presidio([zeilen[i] for i in indizes], conv, schon)" in aufruf, \
+        "die Schutzliste wird gar nicht uebergeben"
+    assert 'schon = list((pii_map or {}).get("s2r", {}).keys())' in aufruf

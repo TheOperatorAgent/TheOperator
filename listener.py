@@ -1207,6 +1207,10 @@ class BotSession(threading.Thread):
             # bekannte PII → dieselben Surrogate wie im Prompt), bevor das Fremd-Modell sie sieht.
             if isinstance(mapping, dict) and mapping.get("s2r"):
                 req_d["pii_map"] = {"s2r": mapping["s2r"]}
+            # #88: Gesprächskennung mitgeben, damit ein Name, den der Agent in einer Datei
+            # findet, DASSELBE Surrogat bekommt wie derselbe Name im Prompt. Ohne das wäre
+            # »Weber« im Prompt jemand anderes als »Weber« in der gelesenen Mail.
+            req_d["conversation"] = f"{self.bot_name}:{self.room}"
         req = json.dumps(req_d)
         start = time.time()
         try:
@@ -1221,6 +1225,15 @@ class BotSession(threading.Thread):
             out = json.loads(r.stdout)
         except ValueError:
             out = {"error": (r.stderr or r.stdout or "unbekannter Fehler")[-200:]}
+        # #88: Surrogate, die ERST beim Bereinigen von Werkzeug-Ergebnissen entstanden sind.
+        # Ohne diesen Schritt kennt reidentify() sie nicht und lässt sie stehen — der Nutzer
+        # läse dann einen erfundenen Namen und hielte ihn für echt. Das ist der gefährlichste
+        # Einzelfall an #88, deshalb steht es VOR jeder Verwendung von `mapping`.
+        neue_pii = out.get("neue_pii") or {}
+        if neue_pii and isinstance(mapping, dict):
+            mapping.setdefault("s2r", {}).update(neue_pii)
+            log(f"[{self.bot_name}] {len(neue_pii)} neue Angabe(n) aus Werkzeug-Ergebnissen "
+                "ersetzt und für die Antwort zurückübersetzt")
         if "text" in out:
             raw, foot = out["text"], ""     # raw bleibt vorerst im Surrogat-Raum
             if verify and verify_loop:       # A1 (#46): zweites Modell prüft, bevor gesendet wird

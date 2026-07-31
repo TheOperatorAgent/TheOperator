@@ -24,7 +24,7 @@ $DashDir = Join-Path $BotDir "dashboard"
 $Workspace = if ($env:OPERATOR_WORKSPACE) { $env:OPERATOR_WORKSPACE } else { Join-Path $HOME "Operator" }
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 # #131: Der Installer nennt seine eigene Fassung (siehe install.sh).
-$InstallerVersion = "1.26.1"
+$InstallerVersion = "1.27.0"
 $RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
 
@@ -453,7 +453,7 @@ else {
 # ----------------------------------------------------------- Phase 5: DATEIEN
 Bold "Phase 5/7 - Dateien einrichten"
 New-Item -ItemType Directory -Force -Path $BotDir, "$Workspace\.claude\agents", "$Workspace\.claude\skills", "$BotDir\connections", "$BotDir\secrets" | Out-Null
-$core = @("listener.py","send.py","memory.py","skills.py","sessions.py","cron_runner.py","redact.py","reid.py",
+$core = @("listener.py","send.py","memory.py","skills.py","sessions.py","cron_runner.py","redact.py","reid.py","pii_vorfilter.py",
           "migrate_tokens.py","vaultwarden.py","platform_compat.py","secretstore.py","servicemgr.py","providers.py","matrix_room.py","dock_fenster.py","update_verify.py","update_pubkey.txt","sandbox.py", "claude_health.py", "raumwaechter.py", "throttle.py", "retention.py", "permission_broker.py", "claude_tool_hook.py", "net_guard.py","persona.py","triggers.py","verify_loop.py","embeddings.py","skillguard.py","updater.py","audit_log.py")
 foreach ($f in $core) { Fetch-File $f (Join-Path $BotDir $f); Ok "$f" }
 try { Fetch-File "VERSION" (Join-Path $BotDir "VERSION") } catch {}   # Self-Update #64

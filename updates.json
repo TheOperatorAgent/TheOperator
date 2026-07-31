@@ -1,9 +1,10 @@
 {
- "version": "1.26.1",
+ "version": "1.27.0",
  "date": "2026-07-31",
  "highlights": [
-  "🏢 Drei neue Microsoft-Karten unter »System«: der Enterprise-Server von Microsoft (Vorschau, nur lesend), Work IQ — bewusst gesperrt mit Begründung, weil es dafür eine Copilot-Lizenz braucht, die wir nicht umgehen können — und ein Zugang für private outlook.com-Konten, fest auf Lesen begrenzt.",
-  "ℹ️ Jede Karte sagt jetzt vorne weg, was sie NICHT kann, statt beim Klicken zu scheitern.",
-  "🔎 Bei den Microsoft-Rechten steht jetzt offen, dass Microsoft sie für den gesamten Tenant vergibt und dein Operator sich freiwillig auf ein Postfach beschränkt — samt Weg, das serverseitig zu erzwingen."
+  "🛡️ Der Datenschutzfilter greift jetzt auch für das, was deine Agenten LESEN. Bisher wurde nur deine Nachricht gefiltert — Namen aus einer Mail oder Datei, die ein Agent öffnet, gingen im Klartext an ein fremdes Sprachmodell. Ab jetzt werden auch dort Mail-Adressen, Telefonnummern, Kontodaten und Namen ersetzt.",
+  "🔁 Und du bekommst trotzdem die echten Namen zu lesen: Was der Filter ersetzt, wird für deine Antwort wieder zurückübersetzt. Ein Name aus einer gelesenen Mail bekommt denselben Platzhalter wie derselbe Name in deiner Nachricht.",
+  "⚡ Ohne spürbare Verzögerung: Verzeichnislisten, Programmcode und Protokolle gehen gar nicht erst zur teuren Prüfung — nur echter Fließtext. Gemessen: rund 0,2 Sekunden für eine typische Mail.",
+  "🗣️ Ist die Prüfung mal nicht möglich, sagt dein Operator es, statt es zu verschweigen. Und was zu lang für eine vollständige Prüfung ist, wird entfernt statt ungeprüft weitergegeben."
  ]
 }

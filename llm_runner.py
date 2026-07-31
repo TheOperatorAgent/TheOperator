@@ -52,20 +52,95 @@ TOOLS_SPEC = [
 ]
 
 
-def _sanitize_result(text: str, pii_map: dict) -> str:
-    """#83 Egress-Schutz: Tool-Ergebnisse (Shell/Dateien/Browser) kommen aus der ECHTEN
-    Welt und würden sonst roh ans Fremd-Modell gehen — am pseudonymisierten Prompt vorbei.
-    1. Secrets maskieren (redact: bekannte Werte + Muster) — NIE Klartext-Secrets ans Modell.
-    2. Bekannte PII durch DIESELBEN Surrogate ersetzen wie im Prompt (konsistent, s2r-Map
-       invertiert, längster Realwert zuerst). Grenze (dokumentiert): NEUE, der Map unbekannte
-       PII aus Tool-Ausgaben wird hier nicht erkannt — das bleibt Teil von #83 (Presidio-Pass)."""
+# ---------------------------------------------------- Werkzeug-Ergebnisse (#88) --
+# Budget je Nachricht. Ohne Grenze könnte eine einzige große Datei die Antwortzeit
+# verdoppeln — auf einem Raspberry Pi noch deutlicher. Ein Operator, der datensparsam,
+# aber träge ist, wird abgeschaltet; dann ist niemandem gedient (EINFACHHEIT.md).
+PII_MAX_RUNDEN = 8          # so oft darf pro Nachricht der Presidio-Dienst gefragt werden
+PII_MAX_ZEICHEN = 8000      # so viel Text darf dabei höchstens geprüft werden
+_PII_BUDGET = {"runden": 0}
+
+
+def _presidio(zeilen, conv, schon_ersetzt=()):
+    """Zeilen an den laufenden Pseudonymisierungs-Dienst geben.
+    Rückgabe (zeilen', neue_paare) oder (None, {}) wenn er nicht erreichbar ist.
+
+    `schon_ersetzt` sind die Surrogate, die Stufe 3 bereits eingesetzt hat. Ohne sie
+    entsteht ein Kettenfehler, den der bestehende Egress-Test (#83) aufgedeckt hat:
+    Presidio hält ein Surrogat wie »Ingeburg Krause« für einen echten Namen und ersetzt
+    es ein ZWEITES Mal. Der Listener bekäme dann ein Paar »Birte Dietz → Ingeburg Krause«,
+    übersetzte beim Antworten also ein Surrogat in ein anderes Surrogat zurück — und der
+    Nutzer läse nie wieder den echten Namen.
+    """
+    import platform_compat
+    req = json.dumps({"texts": zeilen, "conversation": conv, "mode": "werkzeug",
+                      "mapping": {}, "allow": list(schon_ersetzt)})
+    try:
+        sock, token = platform_compat.ipc_connect(timeout=20)
+    except Exception:
+        return None, {}
+    try:
+        if token:
+            d = json.loads(req); d["token"] = token; req = json.dumps(d)
+        sock.settimeout(20)
+        sock.sendall(req.encode() + b"\n")
+        roh = b""
+        while not roh.endswith(b"\n"):
+            teil = sock.recv(65536)
+            if not teil:
+                break
+            roh += teil
+    except Exception:
+        return None, {}
+    finally:
+        try:
+            sock.close()
+        except Exception:
+            pass
+    try:
+        out = json.loads(roh.decode())
+    except ValueError:
+        return None, {}
+    if "error" in out:
+        return None, {}
+    return out.get("texts"), (out.get("mapping") or {}).get("s2r", {})
+
+
+def _sanitize_result(text: str, pii_map: dict, conv: str = "", actions=None):
+    """#83/#88 Egress-Schutz: Werkzeug-Ergebnisse (Shell, Dateien, Browser) kommen aus der
+    ECHTEN Welt und gingen sonst roh ans Fremd-Modell — am pseudonymisierten Prompt vorbei.
+
+    Vier Stufen, in dieser Reihenfolge:
+      1. **Secrets maskieren** (redact) — Klartext-Geheimnisse sehen Fremdmodelle nie.
+      2. **Strukturiertes entfernen** (Mail, Telefon, IBAN, Karte, IP) per Muster, ohne
+         Netz und ohne Modell. Läuft IMMER, auch wenn der Dienst gerade aus ist.
+      3. **Bekannte PII** durch dieselben Surrogate ersetzen wie im Prompt — sonst wäre
+         »Weber« im Prompt jemand anderes als »Weber« in der gelesenen Datei.
+      4. **Unbekannte Namen** über den Presidio-Dienst — das ist #88. Nur für Zeilen, die
+         der Vorfilter für Fließtext hält, und nur im Rahmen des Budgets.
+
+    Rückgabe: (text, neue_paare). **Die neuen Paare sind der wichtigste Teil.** Erzeugt
+    Presidio hier ein Surrogat, kennt der Listener es nicht — und übersetzt es beim
+    Antworten nicht zurück. Der Nutzer läse dann einen erfundenen Namen und hielte ihn für
+    echt. Deshalb reicht der Runner sie nach oben durch.
+
+    Ein Fehler in Stufe 4 ist ein SICHTBARER Rückfall (Vermerk in `actions`), kein stiller:
+    Vorher schluckte ein `except: pass` das Problem und schickte den Volltext weiter."""
     if not text:
-        return text
+        return text, {}
+    vermerk = actions if actions is not None else []
     try:
         import redact
         text = redact.redact(text)
     except Exception:
         pass
+    try:
+        import pii_vorfilter
+        text, _n = pii_vorfilter.strukturiert_entfernen(text)
+    except Exception as e:
+        vermerk.append({"tool": "datenschutz", "warnung":
+                        f"Musterprüfung nicht möglich ({e}) — Ergebnis nur teilweise geprüft"})
+    neu = {}
     try:
         s2r = (pii_map or {}).get("s2r", {})
         for surrogat, real in sorted(s2r.items(), key=lambda kv: len(kv[1] or ""), reverse=True):
@@ -73,7 +148,44 @@ def _sanitize_result(text: str, pii_map: dict) -> str:
                 text = text.replace(real, surrogat)
     except Exception:
         pass
-    return text
+
+    # ---- Stufe 4: unbekannte Namen (#88)
+    try:
+        import pii_vorfilter
+        zeilen = text.splitlines()
+        indizes, verworfen_ab = pii_vorfilter.zeilen_pruefen(text, PII_MAX_ZEICHEN)
+        if verworfen_ab is not None:
+            # Michis Entscheidung 31.07.: Was nicht mehr geprüft werden kann, wird
+            # VERWORFEN — nicht ungeprüft durchgereicht. Sichtbar, nicht heimlich.
+            zeilen = zeilen[:verworfen_ab] + ["[… gekürzt, ungeprüft entfernt]"]
+            indizes = [i for i in indizes if i < verworfen_ab]
+            vermerk.append({"tool": "datenschutz", "warnung":
+                            "Ergebnis war zu lang für die vollständige Prüfung — der Rest "
+                            "wurde entfernt statt ungeprüft weitergegeben."})
+        if indizes:
+            if _PII_BUDGET["runden"] >= PII_MAX_RUNDEN:
+                vermerk.append({"tool": "datenschutz", "warnung":
+                                "Namensprüfung für dieses Ergebnis übersprungen (Zeitbudget) "
+                                "— Mail, Telefon und Kontodaten wurden trotzdem entfernt."})
+            else:
+                _PII_BUDGET["runden"] += 1
+                # Bereits eingesetzte Surrogate ausnehmen (siehe _presidio).
+                schon = list((pii_map or {}).get("s2r", {}).keys())
+                geprueft, paare = _presidio([zeilen[i] for i in indizes], conv, schon)
+                if geprueft is None:
+                    vermerk.append({"tool": "datenschutz", "warnung":
+                                    "Datenschutz-Dienst nicht erreichbar — Namen in diesem "
+                                    "Ergebnis konnten nicht ersetzt werden."})
+                else:
+                    for i, zeile in zip(indizes, geprueft):
+                        zeilen[i] = zeile
+                    neu = paare or {}
+        text = "\n".join(zeilen)
+    except Exception as e:
+        vermerk.append({"tool": "datenschutz", "warnung":
+                        f"Namensprüfung fehlgeschlagen ({e}) — Ergebnis nur mit "
+                        "Musterprüfung weitergegeben."})
+    return text, neu
 
 
 def _jail(workdir: str, path: str) -> str:
@@ -293,6 +405,8 @@ def main() -> int:
     use_browser = bool(req.get("browser"))
     workdir = req.get("workdir") or ""
     pii_map = req.get("pii_map") or {}     # #83: Surrogat-Map für Tool-Ergebnis-Bereinigung
+    conv = req.get("conversation") or ""   # #88: damit ein Name in einer gelesenen Datei
+    neue_pii = {}                          #      dasselbe Surrogat bekommt wie im Prompt
 
     # Ollama spricht OpenAI-kompatibel unter /v1; Dummy-Key, da das SDK einen verlangt.
     if provider == "ollama":
@@ -343,19 +457,25 @@ def main() -> int:
                                 res = _browse_tool(tc.function.name, targs, bstate, actions)
                             else:
                                 res = _exec_tool(tc.function.name, targs, workdir, actions)
-                            # #83: Tool-Ergebnis bereinigen, BEVOR es das Fremd-Modell sieht
-                            res = _sanitize_result(res, pii_map)
+                            # #83/#88: bereinigen, BEVOR es das Fremd-Modell sieht
+                            res, neue = _sanitize_result(res, pii_map, conv, actions)
+                            if neue:
+                                # Nach oben durchreichen: Der Listener muss diese Paare
+                                # kennen, sonst übersetzt er das Surrogat beim Antworten
+                                # nicht zurück und der Nutzer liest einen erfundenen Namen.
+                                neue_pii.update(neue)
+                                pii_map.setdefault("s2r", {}).update(neue)
                             messages.append({"role": "tool", "tool_call_id": tc.id, "content": res})
                         continue
                     text = (msg.content or "").strip()
                     if text:
-                        print(json.dumps({"text": text, "actions": actions}))
+                        print(json.dumps({"text": text, "actions": actions, "neue_pii": neue_pii}))
                         return 0
                     break
             finally:
                 _browser_close(bstate)
             print(json.dumps({"error": "Werkzeug-Limit erreicht — bitte die Aufgabe kleiner "
-                              "stellen.", "actions": actions}))
+                              "stellen.", "actions": actions, "neue_pii": neue_pii}))
             return 1
 
         # ---------- Text-Modus (ohne Werkzeuge) ----------
