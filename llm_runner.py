@@ -528,6 +528,51 @@ def _browse_tool(name, args, state, actions):
         return "Browser-Fehler: " + m[:200]
 
 
+# ------------------------------------------------- MCP fuer Fremdmodelle (#140) --
+def _mcp_verbinden():
+    """Server aus derselben .mcp.json starten, die auch der Claude-Weg benutzt.
+
+    Faellt still aus, wenn nichts konfiguriert ist — ein Agent ohne Microsoft-Anbindung
+    soll arbeiten koennen, nicht scheitern.
+    """
+    try:
+        import platform_compat as _pc
+        import mcp_client
+        pfad = os.path.join(_pc.workspace(), ".mcp.json")
+        if not os.path.exists(pfad) or os.path.getsize(pfad) < 20:
+            return None
+        v = mcp_client.Verbindung.aus_datei(pfad)
+        return v if v.server else None
+    except Exception as e:
+        print(f"llm_runner: MCP nicht verfuegbar: {e}", file=sys.stderr)
+        return None
+
+
+def _mcp_umgebung():
+    """Was die Schleuse zum Urteilen braucht. Die Liste der lesenden Werkzeuge kommt
+    aus dem Broker — eine zweite Liste waere eine zweite Wahrheit."""
+    try:
+        import permission_broker as pb
+        return {"stufe": pb.stufe(), "lesende_werkzeuge": pb.MCP_LESEND,
+                "immer_erlaubt": pb.MCP_LESEND}
+    except Exception:
+        return {"stufe": "streng"}      # fail-closed: im Zweifel alles bestaetigen
+
+
+def _mcp_tool(mcp, name, argumente, actions):
+    if not mcp:
+        return "Diese Anbindung ist gerade nicht verfuegbar."
+    antwort = mcp.aufrufen(name, argumente, _mcp_umgebung(), herkunft="fremdmodell")
+    actions.append({"tool": name, "ok": "ergebnis" in antwort})
+    if antwort.get("bestaetigung_noetig"):
+        # Fremd-Agenten haben keinen Draht zum Chat des Besitzers. Statt heimlich
+        # auszufuehren wird ehrlich abgelehnt — und der Agent kann es dem Nutzer sagen.
+        return ("Dieser Schritt braucht die Zustimmung des Besitzers und wurde deshalb "
+                f"nicht ausgefuehrt ({antwort.get('grund','')}). Sag dem Nutzer freundlich "
+                "Bescheid und mach ohne diesen Schritt weiter.")
+    return str(antwort.get("ergebnis") or antwort.get("fehler") or "")
+
+
 def main() -> int:
     try:
         req = json.load(sys.stdin)
@@ -579,6 +624,13 @@ def main() -> int:
             if use_tools and workdir:
                 os.makedirs(workdir, exist_ok=True)
             tools_active = (TOOLS_SPEC if (use_tools and workdir) else []) + (browser_werkzeuge() if use_browser else [])
+            # #140: Microsoft 365, n8n und die Doku-Suche haengen bis 1.30.0 am Programm
+            # »claude« — ein Agent auf Ollama oder OpenAI konnte rechnen und schreiben,
+            # aber nicht in den Kalender sehen. Mit dem eigenen MCP-Client geht das jetzt,
+            # und zwar durch dieselbe Schleuse wie alles andere.
+            mcp = _mcp_verbinden()
+            if mcp:
+                tools_active += mcp.werkzeuge()
             actions, bstate = [], {}
             try:
                 for _ in range(MAX_STEPS):
@@ -596,7 +648,9 @@ def main() -> int:
                                 targs = json.loads(tc.function.arguments or "{}")
                             except ValueError:
                                 targs = {}
-                            if tc.function.name in browser_namen():
+                            if tc.function.name.startswith("mcp__"):
+                                res = _mcp_tool(mcp, tc.function.name, targs, actions)
+                            elif tc.function.name in browser_namen():
                                 res = _browse_tool(tc.function.name, targs, bstate, actions)
                             else:
                                 res = _exec_tool(tc.function.name, targs, workdir, actions)
@@ -617,6 +671,8 @@ def main() -> int:
                     break
             finally:
                 _browser_close(bstate)
+                if mcp:
+                    mcp.schliessen()
             print(json.dumps({"error": "Werkzeug-Limit erreicht — bitte die Aufgabe kleiner "
                               "stellen.", "actions": actions, "neue_pii": neue_pii}))
             return 1

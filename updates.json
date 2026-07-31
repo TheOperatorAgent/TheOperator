@@ -1,10 +1,9 @@
 {
- "version": "1.30.0",
+ "version": "1.31.0",
  "date": "2026-08-01",
  "highlights": [
-  "🔐 Sicherheits-Update: Zusätzliche MCP-Server, die du selbst einträgst, fragen jetzt vor jeder verändernden Aktion nach. Bisher galt das nur für Microsoft 365 und n8n — alles andere lief ungefragt durch.",
-  "📂 Neu: ein Käfig auch fürs Lesen. Dateien außerhalb deines Arbeitsordners werden nicht mehr stillschweigend gelesen. Zugangsdaten, Schlüssel und der Gesprächsverlauf sind ab sofort überall geschützt — auch dort, wo der Ordner sonst erlaubt ist.",
-  "🧪 Beides ist gemessen, nicht behauptet: Ein neuer Prüfstand stellt dem Operator acht Aufgaben, die er ablehnen MUSS. Vorher bestand er fünf davon, jetzt alle acht.",
-  "🙂 Deine Alltagsarbeit bleibt unbehelligt: Lesen, Suchen und Schreiben im Arbeitsordner sowie ein Blick ins eigene Protokoll fragen weiterhin nie nach."
+  "🔌 Deine eigenen Agenten können jetzt Outlook, n8n und die Microsoft-Dokumentation bedienen — auch die, die nicht auf Claude laufen. Bisher blieb ihnen das verschlossen: Sie konnten schreiben und rechnen, aber nicht in deinen Kalender sehen.",
+  "🛡️ Dabei gilt derselbe Schutz wie überall: Was verändert oder verschickt, wird nicht ausgeführt, sondern ehrlich zurückgemeldet. Ein Agent, der nicht fragen kann, tut es einfach nicht.",
+  "🔧 Ein hängender oder fehlerhafter Zusatz-Server bremst den Operator nicht mehr aus. Nach drei erfolglosen Versuchen wird er abgemeldet, der Rest arbeitet weiter."
  ]
 }

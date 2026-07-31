@@ -1,5 +1,5 @@
 {
- "version": "1.30.0",
+ "version": "1.31.0",
  "files": [
   {
    "src": "listener.py",
@@ -224,7 +224,12 @@
   {
    "src": "llm_runner.py",
    "dst": "llm_runner.py",
-   "sha256": "48a495d33b8fa5c964215dbaa499a002aff6cd0ee852e9e5be0bcf669e8889ba"
+   "sha256": "28572359498f5bd693df174acf9d1775f58d77b6f06a87edd132ff6397777faa"
+  },
+  {
+   "src": "mcp_client.py",
+   "dst": "mcp_client.py",
+   "sha256": "95184ebe49c8defa494f6c19a111275a895c0a5346d9a0d6b9fa9166b31b8995"
   },
   {
    "src": "mail_watch.py",
@@ -294,7 +299,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "59ed8e11070a3db06654dc5a21ddccd8ca160b8040544b800ff19253ddefb978"
+   "sha256": "b4808e6e33fef47c318b7a15f93484ea3656ce673ddde651b5cc4375087f3739"
   },
   {
    "src": "dienst_start.py",
@@ -319,7 +324,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "4a580f1652b8c8658424b86e2b3f1aef8dd3d1c77a0c3880cc8f329c784cfbbe"
+   "sha256": "1fbe833dc0e71e2e038dc0d4fb7bd7f02c043b319688959a16ec5302ef313239"
   },
   {
    "src": "dashboard/test_petra.py",
