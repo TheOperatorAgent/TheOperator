@@ -261,7 +261,62 @@ BROWSER_TOOLS = [
                        "Seite zurück. Keine Formular-Absendung.",
         "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]}}},
 ]
+
+# ---------------------------------------------------- Web-AKTIONEN (#80, opt-in) --
+# Auf operator.bayern steht als Sicherheitszusage: »Browser-Agent kann keine Formulare
+# absenden«. Diese Werkzeuge sind deshalb NICHT im Grundzustand dabei — sie kommen nur
+# dazu, wenn der Nutzer sie im Dashboard ausdrücklich einschaltet. Damit bleibt die Zusage
+# für jede Installation wahr, die nichts umgestellt hat, und wer mehr will, entscheidet
+# das sichtbar selbst.
+#
+# Zwei getrennte Werkzeuge statt eines »fill_and_submit«: Ausfüllen ist harmlos und
+# umkehrbar (nichts hat den Rechner verlassen), Absenden ist es nicht. Wären beide eins,
+# müsste jedes Tippen bestätigt werden — und wer zehnmal hintereinander gefragt wird,
+# klickt beim elften Mal blind auf »ja«. Die Trennung IST die Sicherheit.
+BROWSER_AKTIONS_TOOLS = [
+    {"type": "function", "function": {"name": "fill_field",
+        "description": "Füllt ein Formularfeld auf der offenen Seite (Beschriftung oder Platzhalter). "
+                       "Sendet NICHTS ab. Passwort- und Zahlungsfelder sind gesperrt.",
+        "parameters": {"type": "object", "properties": {
+            "feld": {"type": "string"}, "wert": {"type": "string"}},
+            "required": ["feld", "wert"]}}},
+    {"type": "function", "function": {"name": "submit_form",
+        "description": "Sendet das Formular ab (Knopf per Beschriftung). Der Nutzer wird vorher "
+                       "im Chat gefragt und muss zustimmen.",
+        "parameters": {"type": "object", "properties": {"knopf": {"type": "string"}},
+                       "required": ["knopf"]}}},
+]
 BROWSER_TOOL_NAMES = {"open_page", "click_link"}
+BROWSER_AKTIONS_NAMEN = {"fill_field", "submit_form"}
+
+
+def web_aktionen_erlaubt():
+    """Hat der Nutzer Web-Aktionen ausdrücklich eingeschaltet? Standard: nein.
+
+    Fail-closed bei kaputter Konfiguration — eine unlesbare Datei darf nie dazu führen,
+    dass der Agent plötzlich Formulare abschicken kann."""
+    try:
+        with open(os.path.join(BOT_DIR, "dashboard.json"), encoding="utf-8") as f:
+            return json.load(f).get("browser_aktionen") is True
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
+def browser_werkzeuge():
+    """Der Werkzeugsatz fürs Surfen — lesend, plus Aktionen nur bei Freigabe."""
+    return BROWSER_TOOLS + (BROWSER_AKTIONS_TOOLS if web_aktionen_erlaubt() else [])
+
+
+def browser_namen():
+    return BROWSER_TOOL_NAMES | (BROWSER_AKTIONS_NAMEN if web_aktionen_erlaubt() else set())
+
+# Felder, die der Agent NIE ausfüllt — auch nicht mit Bestätigung. Ein Passwort oder eine
+# Kartennummer gehört nicht durch ein Sprachmodell, egal wie die Frage lautet. Wer so
+# etwas eintragen will, tut es selbst im eigenen Browser.
+GESPERRTE_FELDER = re.compile(
+    r"passwo|password|kennwort|pin\b|cvv|cvc|kreditkart|credit.?card|card.?number|"
+    r"kartennummer|iban|bic|konto|sozialversicher|steuer.?id|ausweis|personalausweis",
+    re.IGNORECASE)
 
 
 def _system_chromium():
@@ -355,6 +410,63 @@ def _page_summary(page):
             + ("\n\n[Klickbar] " + " · ".join(links) if links else ""))
 
 
+def _feld_finden(page, beschriftung):
+    """Ein Formularfeld über Beschriftung, Platzhalter oder Namen finden."""
+    for suche in (lambda: page.get_by_label(beschriftung, exact=False).first,
+                  lambda: page.get_by_placeholder(beschriftung, exact=False).first,
+                  lambda: page.locator(f"[name='{beschriftung}'], #{beschriftung}").first):
+        try:
+            el = suche()
+            if el and el.count() if hasattr(el, "count") else el:
+                el.wait_for(state="visible", timeout=3000)
+                return el
+        except Exception:
+            continue
+    return None
+
+
+def _erlaubte_domains():
+    """Optionale Einschränkung: Auf welchen Seiten darf überhaupt abgesendet werden?
+    Leer = keine Einschränkung (dann entscheidet allein die Rückfrage im Chat)."""
+    try:
+        with open(os.path.join(BOT_DIR, "dashboard.json"), encoding="utf-8") as f:
+            werte = json.load(f).get("browser_absenden_domains") or []
+        return [str(d).strip().lower() for d in werte if str(d).strip()]
+    except (OSError, ValueError, AttributeError):
+        return []
+
+
+def _absenden_erlaubt(page, knopf, actions):
+    """#80: Absenden ist der Punkt ohne Wiederkehr — eine verschickte Anfrage holt niemand
+    zurück. Deshalb hier dieselbe Bestätigung wie bei jeder anderen Aktion nach außen.
+
+    Rückgabe (True, "") oder (False, Klartext-Begründung).
+
+    fail-closed: Ist der Broker nicht erreichbar, wird NICHT abgesendet. Lieber eine
+    Aufgabe, die liegen bleibt, als ein Formular, das jemand nie freigegeben hat."""
+    url = page.url
+    erlaubte = _erlaubte_domains()
+    if erlaubte and not any(d in url.lower() for d in erlaubte):
+        actions.append(f"🚫 Absenden gesperrt (Domain): {url[:90]}")
+        return False, (f"Auf dieser Seite darf ich nichts absenden — sie steht nicht auf "
+                       f"deiner Liste erlaubter Adressen. 👉 Im Dashboard unter »System« "
+                       f"ergänzen, falls das so sein soll.")
+    try:
+        sys.path.insert(0, BOT_DIR)
+        import permission_broker as pb
+    except Exception as e:
+        actions.append(f"🚫 Absenden abgebrochen (Broker fehlt: {e})")
+        return False, ("Ich konnte dich nicht um Erlaubnis fragen und habe deshalb NICHTS "
+                       "abgeschickt. 👉 Bitte kurz den Listener-Dienst prüfen (Tab System).")
+    beschreibung = (f"auf »{page.title()[:60]}« ({url[:90]}) das Formular abschicken "
+                    f"— Knopf »{knopf}«")
+    fp = pb.fingerprint("browser_submit", {"url": url, "knopf": knopf})
+    if not pb.ask_owner(beschreibung, fp):
+        actions.append(f"🚫 Absenden abgelehnt: {url[:90]}")
+        return False, "Du hast nicht zugestimmt — ich habe nichts abgeschickt."
+    return True, ""
+
+
 def _browse_tool(name, args, state, actions):
     try:
         page = _browser_page(state)
@@ -369,6 +481,37 @@ def _browse_tool(name, args, state, actions):
             actions.append("🌐 open " + url[:120])
             page.goto(url, wait_until="domcontentloaded")
             return _page_summary(page)
+        if name == "fill_field":
+            feld, wert = str(args.get("feld", "")).strip(), str(args.get("wert", ""))
+            if GESPERRTE_FELDER.search(feld):
+                actions.append(f"🚫 Feld gesperrt: {feld[:60]}")
+                return (f"Das Feld »{feld}« sieht nach einem Passwort oder einer Zahlungsangabe "
+                        "aus. So etwas trage ich nicht ein — auch nicht, wenn du es mir sagst. "
+                        "👉 Bitte im eigenen Browser selbst ausfüllen.")
+            ziel = _feld_finden(page, feld)
+            if ziel is None:
+                return f"Ein Feld »{feld}« finde ich auf dieser Seite nicht."
+            # Zweiter Riegel: Auch wenn die Beschriftung harmlos klingt — ein
+            # Passwort-Eingabefeld bleibt ein Passwort-Eingabefeld.
+            if (ziel.get_attribute("type") or "").lower() == "password":
+                actions.append(f"🚫 Passwortfeld gesperrt: {feld[:60]}")
+                return ("Das ist ein Passwortfeld. Da trage ich nichts ein. "
+                        "👉 Bitte selbst im Browser eingeben.")
+            ziel.fill(wert, timeout=15000)
+            # Der Wert steht NICHT im Protokoll: Formularinhalte sind Nutzerdaten (#18).
+            actions.append(f"⌨️ ausgefüllt: {feld[:60]} ({len(wert)} Zeichen)")
+            return f"»{feld}« ausgefüllt."
+
+        if name == "submit_form":
+            knopf = str(args.get("knopf", "")).strip() or "Absenden"
+            erlaubt, grund = _absenden_erlaubt(page, knopf, actions)
+            if not erlaubt:
+                return grund
+            page.get_by_role("button", name=knopf).first.click(timeout=15000)
+            page.wait_for_load_state("domcontentloaded", timeout=20000)
+            actions.append(f"📤 abgesendet: {knopf[:60]} auf {page.url[:90]}")
+            return "Abgeschickt.\n\n" + _page_summary(page)
+
         if name == "click_link":
             t = str(args.get("text", "")).strip()
             actions.append("🖱️ click »" + t[:60] + "«")
@@ -435,7 +578,7 @@ def main() -> int:
         if (use_tools and workdir) or use_browser:
             if use_tools and workdir:
                 os.makedirs(workdir, exist_ok=True)
-            tools_active = (TOOLS_SPEC if (use_tools and workdir) else []) + (BROWSER_TOOLS if use_browser else [])
+            tools_active = (TOOLS_SPEC if (use_tools and workdir) else []) + (browser_werkzeuge() if use_browser else [])
             actions, bstate = [], {}
             try:
                 for _ in range(MAX_STEPS):
@@ -453,7 +596,7 @@ def main() -> int:
                                 targs = json.loads(tc.function.arguments or "{}")
                             except ValueError:
                                 targs = {}
-                            if tc.function.name in BROWSER_TOOL_NAMES:
+                            if tc.function.name in browser_namen():
                                 res = _browse_tool(tc.function.name, targs, bstate, actions)
                             else:
                                 res = _exec_tool(tc.function.name, targs, workdir, actions)

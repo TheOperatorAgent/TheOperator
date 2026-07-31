@@ -1,10 +1,10 @@
 {
- "version": "1.27.0",
+ "version": "1.28.0",
  "date": "2026-07-31",
  "highlights": [
-  "🛡️ Der Datenschutzfilter greift jetzt auch für das, was deine Agenten LESEN. Bisher wurde nur deine Nachricht gefiltert — Namen aus einer Mail oder Datei, die ein Agent öffnet, gingen im Klartext an ein fremdes Sprachmodell. Ab jetzt werden auch dort Mail-Adressen, Telefonnummern, Kontodaten und Namen ersetzt.",
-  "🔁 Und du bekommst trotzdem die echten Namen zu lesen: Was der Filter ersetzt, wird für deine Antwort wieder zurückübersetzt. Ein Name aus einer gelesenen Mail bekommt denselben Platzhalter wie derselbe Name in deiner Nachricht.",
-  "⚡ Ohne spürbare Verzögerung: Verzeichnislisten, Programmcode und Protokolle gehen gar nicht erst zur teuren Prüfung — nur echter Fließtext. Gemessen: rund 0,2 Sekunden für eine typische Mail.",
-  "🗣️ Ist die Prüfung mal nicht möglich, sagt dein Operator es, statt es zu verschweigen. Und was zu lang für eine vollständige Prüfung ist, wird entfernt statt ungeprüft weitergegeben."
+  "🌐 Dein Surf-Agent kann jetzt auch Formulare ausfüllen und abschicken — aber nur, wenn du das ausdrücklich einschaltest. Ab Werk bleibt er wie bisher: er liest und klickt Links, mehr nicht. Und vor jedem Absenden fragt er dich im Chat.",
+  "🔒 Passwörter, Kartennummern, IBAN und Ausweisdaten trägt er nie ein — auch dann nicht, wenn du es ihm sagst. Solche Felder gibst du selbst im eigenen Browser ein.",
+  "📣 Neu: ein Marketing-Agent. Er schreibt Ankündigungen und Website-Texte aus dem, was wirklich gebaut wurde — er erfindet nichts und verschweigt keine Grenzen. Im Dashboard unter »Agenten« veröffentlichbar.",
+  "🚀 Der Website-Upload kann jetzt ohne Passworteingabe laufen, wenn ein Schlüssel hinterlegt ist. Damit hinkt operator.bayern nicht mehr hinter den Releases her."
  ]
 }

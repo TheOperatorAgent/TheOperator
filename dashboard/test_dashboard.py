@@ -970,6 +970,11 @@ def test_browser_tools_are_readonly():
     assert names == lr.BROWSER_TOOL_NAMES
     # Sicherheits-Garantie: KEIN Formular-Absenden/Ausfüllen/Upload im v1-Werkzeugsatz
     assert not (names & {"submit", "fill", "type", "post", "download", "upload", "press"})
+    # #80 hat Web-Aktionen ergänzt — sie sind AUSDRÜCKLICH nicht im Grundzustand dabei.
+    # Auf operator.bayern steht »Browser-Agent kann keine Formulare absenden«; für jede
+    # Installation, die nichts umgestellt hat, muss dieser Satz wahr bleiben.
+    assert lr.web_aktionen_erlaubt() is False, "Web-Aktionen sind ab Werk eingeschaltet"
+    assert {t["function"]["name"] for t in lr.browser_werkzeuge()} == names
 
 
 def test_persona_is_stdlib_only():
@@ -5546,3 +5551,148 @@ def test_surrogate_werden_nicht_zweimal_pseudonymisiert():
     assert "_presidio([zeilen[i] for i in indizes], conv, schon)" in aufruf, \
         "die Schutzliste wird gar nicht uebergeben"
     assert 'schon = list((pii_map or {}).get("s2r", {}).keys())' in aufruf
+
+
+# ------------------------------------------- Marketing-Agent (#136) --
+
+def test_marketing_agent_darf_nichts_erfinden():
+    """#136: Ein Marketing-Text, der etwas behauptet, was nicht stimmt, kostet genau die
+    Karte, mit der der Operator wirbt (»Nicht versprochen. Sichtbar.«). Die Leitplanken
+    stehen deshalb im Agenten-Prompt und nicht in einer Absichtserklaerung."""
+    import pytest
+    pfad = "/tmp/_diff_op/agents/marketing.md"
+    if not os.path.exists(pfad):
+        pytest.skip("Auslieferungs-Repo nicht ausgecheckt")
+    md = open(pfad, encoding="utf-8").read()
+    assert "erfindet keine" in md.lower() or "erfindest nichts" in md.lower()
+    for regel in ("Grenzen gehören in den Text", "Petra", "Nicht versprochen. Sichtbar."):
+        assert regel in md, f"Leitplanke fehlt: {regel}"
+    # Er liefert Text, er veroeffentlicht nicht — das entscheidet der Mensch.
+    assert "veröffentlichst nichts" in md
+    kopf = md.split("---")[1]
+    assert "tools:" in kopf
+    werkzeuge = [t.strip() for t in kopf.split("tools:")[1].split("\n")[0].split(",")]
+    for schreibend in ("Write", "Edit", "Bash"):
+        assert schreibend not in werkzeuge, f"{schreibend} gibt ihm Schreibzugriff"
+
+
+def test_deploy_nutzt_schluessel_wenn_vorhanden():
+    """#135: operator.bayern hinkte am 31.07. vier Fassungen hinterher, obwohl gepusht
+    war. Ein Upload, den ein Mensch anstossen muss, bleibt irgendwann liegen."""
+    import pytest
+    pfad = "/tmp/operator-site/deploy-strato.command"
+    if not os.path.exists(pfad):
+        pytest.skip("Website-Repo nicht ausgecheckt")
+    sh = open(pfad, encoding="utf-8").read()
+    assert "operator_bayern_deploy" in sh, "kennt den Schluessel-Weg nicht"
+    assert "BatchMode=yes" in sh, "wuerde trotzdem nach dem Passwort fragen"
+    # Der Passwort-Weg muss erhalten bleiben — sonst steht Michi ohne Schluessel da.
+    assert "SFTP-Kennwort" in sh, "Rueckfall auf Passwort entfernt"
+    # Kein gespeichertes Passwort: ein Schluessel ist einzeln widerrufbar.
+    for verboten in ("sshpass", "SFTP_PASSWORD", "expect "):
+        assert verboten not in sh, f"{verboten} umgeht die bewusste Passwort-Entscheidung"
+
+
+# ------------------------------------ Browser-Aktionen (#80) --
+
+def _lr_src():
+    return open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"),
+                encoding="utf-8").read()
+
+
+def test_absenden_braucht_immer_die_zustimmung():
+    """#80: Eine verschickte Anfrage holt niemand zurueck. Deshalb dieselbe Bestaetigung
+    wie bei jeder anderen Aktion nach aussen — und fail-closed, wenn nicht gefragt werden
+    kann. Lieber eine liegengebliebene Aufgabe als ein Formular ohne Freigabe."""
+    src = _lr_src()
+    teil = src.split("def _absenden_erlaubt")[1].split("\ndef ")[0]
+    assert "pb.ask_owner(" in teil, "es wird gar nicht gefragt"
+    assert "return False" in teil.split("import permission_broker")[1].split("beschreibung")[0], \
+        "ohne Broker wuerde trotzdem abgeschickt"
+    # Der Nutzer muss sehen, WO und WAS abgeschickt wird — nicht nur »darf ich?«.
+    assert "page.title()" in teil and "url" in teil
+    aufruf = src.split('if name == "submit_form"')[1].split('if name == "click_link"')[0]
+    assert "_absenden_erlaubt" in aufruf
+    assert aufruf.index("_absenden_erlaubt") < aufruf.index("click(")
+
+
+def test_passwort_und_zahlungsfelder_sind_gesperrt():
+    """Ein Passwort oder eine Kartennummer gehoert nicht durch ein Sprachmodell — egal wie
+    die Frage lautet. Das ist keine Rueckfrage, sondern eine harte Grenze."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "lr_t80", os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"))
+    lr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lr)
+    for gesperrt in ("Passwort", "password", "Kennwort", "PIN", "CVV", "Kreditkarte",
+                     "card number", "Kartennummer", "IBAN", "BIC", "Steuer-ID",
+                     "Personalausweis"):
+        assert lr.GESPERRTE_FELDER.search(gesperrt), f"{gesperrt} ist nicht gesperrt"
+    for harmlos in ("Vorname", "Nachname", "Betreff", "Nachricht", "Firma", "Strasse"):
+        assert not lr.GESPERRTE_FELDER.search(harmlos), f"Fehlalarm bei {harmlos}"
+    # Zweiter Riegel: Auch bei harmloser Beschriftung bleibt ein type=password gesperrt.
+    teil = _lr_src().split('if name == "fill_field"')[1].split('if name == "submit_form"')[0]
+    assert 'get_attribute("type")' in teil and "password" in teil
+
+
+def test_ausfuellen_fragt_nicht_nach_absenden_schon():
+    """Waeren beide ein Werkzeug, muesste jedes Tippen bestaetigt werden — und wer zehnmal
+    gefragt wird, klickt beim elften Mal blind auf »ja«. Die Trennung IST die Sicherheit."""
+    src = _lr_src()
+    fuellen = src.split('if name == "fill_field"')[1].split('if name == "submit_form"')[0]
+    assert "ask_owner" not in fuellen, "Ausfuellen fragt nach — das nutzt die Rueckfrage ab"
+    assert "_absenden_erlaubt" not in fuellen
+    namen = src.split("BROWSER_AKTIONS_NAMEN = ")[1].split("\n")[0]
+    assert "fill_field" in namen and "submit_form" in namen
+
+
+def test_formularinhalte_stehen_nicht_im_protokoll():
+    """#18 Datenhygiene: Was jemand in ein Formular tippt, sind Nutzerdaten. Im Protokoll
+    steht, DASS ausgefuellt wurde und wie viel — nicht was."""
+    teil = _lr_src().split('if name == "fill_field"')[1].split('if name == "submit_form"')[0]
+    protokoll = [z for z in teil.splitlines() if "actions.append" in z]
+    assert protokoll, "es wird gar nichts protokolliert"
+    assert not any("{wert" in z for z in protokoll), "der eingetippte Wert landet im Log"
+    assert any("len(wert)" in z for z in protokoll), "die Laenge fehlt als Nachweis"
+
+
+def test_erlaubte_domains_sind_optional_aber_wirksam():
+    """Eine leere Liste heisst »keine Einschraenkung« — sonst waere das Feature nach dem
+    Update fuer alle tot. Ist sie gesetzt, gilt sie."""
+    src = _lr_src()
+    teil = src.split("def _erlaubte_domains")[1].split("\ndef ")[0]
+    assert "browser_absenden_domains" in teil
+    assert "return []" in teil, "ohne Konfiguration wuerde alles blockiert"
+    pruef = src.split("def _absenden_erlaubt")[1].split("\ndef ")[0]
+    assert "if erlaubte and not any(" in pruef, "die Liste wird nicht ausgewertet"
+
+
+def test_web_aktionen_sind_opt_in_und_fail_closed(tmp_path, monkeypatch):
+    """Die Website verspricht »Browser-Agent kann keine Formulare absenden«. Diese Zusage
+    bleibt wahr, solange niemand sie bewusst aufhebt — und eine kaputte Konfigurationsdatei
+    darf sie nie versehentlich aufheben."""
+    import importlib.util
+    import json as _j
+    spec = importlib.util.spec_from_file_location(
+        "lr_optin", os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"))
+    lr = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lr)
+    monkeypatch.setattr(lr, "BOT_DIR", str(tmp_path))
+    cfg = tmp_path / "dashboard.json"
+
+    cfg.write_text("{}")                              # nichts gesetzt
+    assert lr.web_aktionen_erlaubt() is False
+    cfg.write_text(_j.dumps({"browser_aktionen": False}))
+    assert lr.web_aktionen_erlaubt() is False
+    cfg.write_text("{kaputt")                         # unlesbar → fail-closed
+    assert lr.web_aktionen_erlaubt() is False
+    cfg.write_text(_j.dumps({"browser_aktionen": "ja"}))   # nur echtes True zählt
+    assert lr.web_aktionen_erlaubt() is False
+
+    cfg.write_text(_j.dumps({"browser_aktionen": True}))
+    assert lr.web_aktionen_erlaubt() is True
+    namen = {t["function"]["name"] for t in lr.browser_werkzeuge()}
+    assert {"fill_field", "submit_form"} <= namen
+    assert lr.browser_namen() == namen
