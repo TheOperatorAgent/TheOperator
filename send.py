@@ -1,6 +1,17 @@
 #!/usr/bin/env python3
 """Sendet eine Nachricht als Bot in den konfigurierten Matrix-Raum.
-Aufruf: python3 send.py "Text"   (oder Text über stdin)"""
+
+Aufruf: python3 send.py [--bot NAME] [--quelle WOHER] [--meta JSON] "Text"
+        (oder Text über stdin)
+
+#132: Was hier rausgeht, landet ANSCHLIESSEND im Verlauf (sessions.db). Vorher
+existierten proaktive Meldungen nur im Matrix-Raum — für den Operator waren sie nie
+passiert. Michi bekam eine Mail-Zusammenfassung gepusht, fragte sieben Minuten später
+»hast du den termin schon zugesagt?«, und der Operator wusste nicht, wovon die Rede war.
+
+Das Protokollieren sitzt bewusst HIER und nicht in mail_watch.py/cron_runner.py/
+triggers.py: send.py ist der eine Weg, den alle proaktiven Kanäle benutzen. Damit kann
+kein künftiger Kanal es vergessen."""
 import json
 import os
 import sys
@@ -19,9 +30,16 @@ def keychain_token(account, fallback):
 
 args = sys.argv[1:]
 bot = None
-if args and args[0] == "--bot":
-    bot = args[1]
-    args = args[2:]
+quelle = ""          # #132: wer hat das ausgelöst? (mail_watch, cron, trigger, …)
+meta_roh = ""        # #132: Kennungen (Mail-ID, Termin-ID, Absender) als JSON
+while args and args[0] in ("--bot", "--quelle", "--meta"):
+    schalter, wert, args = args[0], (args[1] if len(args) > 1 else ""), args[2:]
+    if schalter == "--bot":
+        bot = wert
+    elif schalter == "--quelle":
+        quelle = wert
+    else:
+        meta_roh = wert
 
 creds = json.load(open(os.path.expanduser("~/.claude/matrix-bot/credentials.json")))
 if bot:
@@ -62,4 +80,15 @@ req = urllib.request.Request(
         "Content-Type": "application/json",
     },
 )
-print(json.load(urllib.request.urlopen(req, timeout=15))["event_id"])
+event_id = json.load(urllib.request.urlopen(req, timeout=15))["event_id"]
+print(event_id)
+
+# #132: Erst jetzt protokollieren — was nicht rausging, gehört auch nicht in den Verlauf.
+# Fail-open: Ein Fehler hier darf eine bereits zugestellte Nachricht nicht zum Fehlschlag
+# machen. Der Verlauf ist Komfort, die Zustellung ist die Aufgabe.
+try:
+    import sessions
+    meta = json.loads(meta_roh) if meta_roh else None
+    sessions.record_proaktiv(bot or "owner", quelle or "operator", text, meta)
+except Exception:
+    pass

@@ -34,6 +34,39 @@ REPLIES_FILE = os.path.join(BOT_DIR, "run", "broker_replies.json")
 WAIT_SECONDS = 180          # so lange wartet der Broker auf deine Antwort
 POLL_SECONDS = 3
 
+# ---------------------------------------------------------------- Rückfrage-Stufen (#127) --
+# Michi, 30.07.: »dieses fragen nervt … bitte deaktiviere es«. Ganz abschalten geht
+# nicht — »OHNE DEIN JA PASSIERT NICHTS« ist Sicherheitskarte 1 auf der Website, und
+# ein Schalter, der die Zusage still aufhebt, macht aus dem Versprechen eine Lüge.
+#
+# Der Kompromiss: drei Stufen, die NUR die unterste Regel betreffen (fail-closed für
+# unbekannte Befehle). Was in JEDER Stufe fragt und nie abwählbar ist:
+#   * die Sperrliste DESTRUCTIVE_CMD (löschen, sudo, formatieren, Skript aus dem Netz …)
+#   * Schreibzugriff in den eigenen Programmordner (Update-Quelle, Signaturschlüssel,
+#     der Broker selbst — wer hier schreibt, hebelt ALLES aus)
+#   * Schreiben außerhalb des Arbeitsordners
+#   * Adressen im eigenen Heimnetz (die werden gar nicht erst gefragt, sondern gesperrt)
+STUFEN = ("streng", "normal", "locker")
+STUFEN_TEXT = {
+    "streng": "Fragt zusätzlich vor jedem Abruf einer Webseite. Für sehr sensible Rechner.",
+    "normal": "Fragt bei riskanten Befehlen und bei allem, was ich nicht als harmlos kenne. "
+              "Empfohlen.",
+    "locker": "Fragt nur noch bei wirklich gefährlichen Befehlen und bei Zugriffen auf meine "
+              "eigenen Sicherheitsdateien. Unbekannte, aber harmlos aussehende Befehle laufen "
+              "durch — schneller, aber du siehst weniger.",
+}
+
+
+def stufe():
+    """Aktuelle Rückfrage-Stufe aus dashboard.json. Unbekannter Wert → »normal«:
+    ein Tippfehler in der Konfiguration darf nie zur schwächsten Einstellung führen."""
+    try:
+        with open(os.path.join(BOT_DIR, "dashboard.json"), encoding="utf-8") as f:
+            wert = str(json.load(f).get("rueckfragen", "normal")).strip().lower()
+    except (OSError, ValueError, AttributeError):
+        return "normal"
+    return wert if wert in STUFEN else "normal"
+
 # ---------------------------------------------------------------- Risiko-Einstufung --
 # Bewusst eng gefasst: Nur was wirklich Schaden anrichten oder nach außen wirken kann.
 # Alles andere läuft ohne Nachfrage — sonst nervt der Operator (Petra-Test).
@@ -364,6 +397,10 @@ def classify(tool, tool_input):
                 return BLOCK, f"Adresse gesperrt: {grund}"
         except Exception:
             pass
+        # Stufe »streng«: auch erlaubte Adressen bestätigen lassen. Wer den Operator auf
+        # einem Rechner mit sensiblen Daten betreibt, will jeden Abruf sehen.
+        if stufe() == "streng":
+            return True, f"eine Webseite abrufen: {_shorten(tool_input.get('url', ''), 80)}"
         return False, ""
     if tool in SAFE_TOOLS:
         return False, ""
@@ -380,6 +417,11 @@ def classify(tool, tool_input):
         # #104-B: fail-closed — was nicht als harmlos bekannt ist, fragt nach.
         # Vorher galt »im Zweifel nicht fragen«; eine Sperrliste gegen einen
         # generativen Prozess ist aber strukturell zu schwach (Security-Review 29.07.).
+        # In Stufe »locker« entfällt GENAU diese Regel — und nur sie. Die Sperrliste
+        # oben und der Selbstschutz davor haben bereits gegriffen; was hier ankommt,
+        # ist unbekannt, aber nicht als gefährlich erkannt.
+        if stufe() == "locker":
+            return False, ""
         fremd = unbekannte_befehle(cmd)
         if fremd:
             return True, (f"einen Befehl ausführen, den ich nicht als harmlos kenne "

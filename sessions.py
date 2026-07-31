@@ -81,6 +81,56 @@ def search(text, n=20):
         "ORDER BY s.id DESC LIMIT ?", (q, n)).fetchall())
 
 
+# #132: Alle Arten, auf die der Operator VON SICH AUS schreibt. »event« kommt aus der
+# Ereignis-Queue (#47, Mail-Watch), »cron« aus Automationen (#4), »proaktiv« aus einem
+# direkten send.py-Aufruf ohne vorherigen Lauf.
+PROAKTIV_ARTEN = ("event", "cron", "proaktiv")
+PROAKTIV = "proaktiv"
+
+
+def record_proaktiv(bot, quelle, text, meta=None):
+    """#132: Eine Meldung, die der Operator VON SICH AUS geschickt hat, in den Verlauf
+    schreiben.
+
+    Warum das nötig ist: Michi bekam um 13:03 eine Mail-Zusammenfassung gepusht und
+    fragte um 13:10 »hast du den termin schon zugesagt?«. Der Operator hatte dafür
+    keinen Kontext — seine eigene Meldung stand nirgends. `sessions.db` wurde bis dahin
+    ausschließlich als Reaktion auf eingehende Nachrichten geschrieben; Mail-Watch,
+    Automationen und Auslöser sendeten am Verlauf vorbei.
+
+    `kind` ist bewusst NICHT »chat«: `recent_dialog()` filtert darauf, und eine Mailflut
+    am Morgen würde sonst den echten Dialog aus dem Sechser-Fenster verdrängen.
+    `meta` trägt die Kennungen (Mail-ID, Termin-ID, Absender) mit, damit auf »sag zu«
+    gehandelt werden kann, ohne erst wieder zu suchen."""
+    kopf = f"(Ich habe von mir aus geschrieben — ausgelöst durch: {quelle})"
+    if meta:
+        try:
+            kopf += "\n" + json.dumps(meta, ensure_ascii=False, sort_keys=True)[:800]
+        except (TypeError, ValueError):
+            pass
+    record(bot, kopf, text, 0, 0, kind=PROAKTIV)
+
+
+def recent_proaktiv(bot, n=3, max_age_h=12):
+    """Die letzten Meldungen, die der Operator von sich aus geschickt hat.
+
+    Der eigentliche Fehler hinter #132: Diese Läufe wurden schon immer protokolliert —
+    als `kind='event'` bzw. `'cron'`. Nur gelesen hat sie niemand: `recent_dialog()`
+    filtert hart auf `kind='chat'`, und der Prompt kannte keine andere Quelle. Michis
+    Mail-Meldung von 13:03 stand also in der Datenbank, während der Operator um 13:10
+    antwortete »keinen blassen Schimmer, welchen Termin du meinst«.
+
+    Eigenes, kleines Kontingent statt Aufnahme ins Dialogfenster: eine Mailflut am
+    Morgen soll den echten Dialog nicht aus den letzten sechs Runden verdrängen."""
+    since = time.time() - max_age_h * 3600
+    platzhalter = ",".join("?" * len(PROAKTIV_ARTEN))
+    rows = db().execute(
+        f"SELECT ts, messages, result FROM sessions WHERE bot=? AND kind IN ({platzhalter}) "
+        "AND epoch > ? AND rc = 0 ORDER BY id DESC LIMIT ?",
+        (bot, *PROAKTIV_ARTEN, since, n)).fetchall()
+    return [(t, m, r) for t, m, r in reversed(rows)]
+
+
 def recent_dialog(bot, n=6, max_age_h=24):
     """Letzte n Chat-Runden dieses Bots (aufsteigend) für Gesprächskontext."""
     since = time.time() - max_age_h * 3600

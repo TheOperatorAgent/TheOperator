@@ -1711,6 +1711,39 @@ async def api_pii_put(request: Request):
     return {"ok": True}
 
 
+@app.get("/api/rueckfragen")
+def api_rueckfragen():
+    """#127: Wie oft der Operator vor einer Aktion nachfragt. Drei Stufen —
+    abschalten ist bewusst nicht dabei (siehe PUT)."""
+    import permission_broker as pb
+    return {"stufe": pb.stufe(),
+            "stufen": [{"id": s, "text": pb.STUFEN_TEXT[s]} for s in pb.STUFEN]}
+
+
+@app.put("/api/rueckfragen")
+async def api_rueckfragen_put(request: Request):
+    """Michi wollte die Rückfragen ganz abschalten. Das geht nicht: »OHNE DEIN JA
+    PASSIERT NICHTS« ist Sicherheitskarte 1 auf der Website, und ein Schalter, der
+    diese Zusage still aufhebt, macht aus dem Versprechen eine Lüge. Stattdessen
+    drei Stufen — und in jeder bleiben Sperrliste und Selbstschutz aktiv."""
+    import permission_broker as pb
+    b = await request.json()
+    wunsch = str(b.get("stufe", "")).strip().lower()
+    if wunsch not in pb.STUFEN:
+        return err("rueckfragen",
+                   "Diese Einstellung kenne ich nicht. 👉 Wähle »streng«, »normal« "
+                   "oder »locker«. Ganz abschalten geht nicht — dann könnte der "
+                   "Operator ohne dein Ja gefährliche Befehle ausführen.")
+    DASH_CFG["rueckfragen"] = wunsch
+    p = os.path.join(BOT_DIR, "dashboard.json")
+    fd = os.open(p + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(DASH_CFG, f, indent=1)
+    os.replace(p + ".tmp", p)
+    audit("dashboard", "rueckfragen.stufe", wunsch)
+    return {"ok": True, "stufe": wunsch, "text": pb.STUFEN_TEXT[wunsch]}
+
+
 # ---------------------------------------------------------------- Skills --
 @app.get("/api/skills")
 def api_skills():

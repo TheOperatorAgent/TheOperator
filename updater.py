@@ -95,7 +95,28 @@ def check():
     latest = str(info.get("version", cur))
     return {"current": cur, "latest": latest,
             "update_available": _parse(latest) > _parse(cur),
-            "highlights": info.get("highlights", []), "date": info.get("date", "")}
+            "highlights": info.get("highlights", []), "date": info.get("date", ""),
+            # #128: Manche Änderungen erreicht das Ein-Klick-Update strukturell nicht.
+            "installer_noetig": bool(info.get("installer_noetig")),
+            "installer_grund": str(info.get("installer_grund", "")),
+            "befehl": _installer_befehl()}
+
+
+def _installer_befehl():
+    """#128: Der Befehl, den der Nutzer einfügen soll — HART kodiert auf die offizielle
+    Adresse, niemals aus repo_raw.txt abgeleitet.
+
+    Sonst zeigte das Dashboard eine aus einer Datei gelesene Adresse als Befehl zum
+    Einfügen in eine Shell — wer die Datei schreiben kann, könnte dem Nutzer damit
+    beliebigen Code unterschieben. Genau die Klasse Fund, die schon
+    test_updater_hat_keinen_privaten_fallback abdeckt."""
+    try:
+        import platform_compat
+        windows = platform_compat.IS_WIN
+    except Exception:
+        windows = os.name == "nt"
+    return ("irm https://operator.bayern/install.ps1 | iex" if windows
+            else "curl -fsSL https://operator.bayern/install.sh | bash")
 
 
 PUBKEY_FILE = os.path.join(BOT_DIR, "update_pubkey.txt")
@@ -152,6 +173,21 @@ def apply(restart=True, log=print):
     ok, grund = _signatur_pruefen(manifest_bytes, log)
     if not ok:
         return False, grund
+    # #128: Änderungen an den DIENST-DEFINITIONEN (Aufrufzeile, Umgebungsvariablen,
+    # Task-Scheduler-Eintrag) schreibt nur der Installer — der Updater tauscht Dateien.
+    # Genau dort steckten die kritischen Windows-Fixes 1.18.3 (PYTHONUTF8) und 1.18.5
+    # (pythonw): Ein Kunde klickt »Aktualisieren«, bekommt neue Dateien, und sein
+    # Problem bleibt — ohne jeden Hinweis. Deshalb: hier hart abbrechen, VOR jedem
+    # Download, und den Nutzer auf den Installer schicken.
+    #
+    # Das Flag steht bewusst im SIGNIERTEN Manifest, nicht (nur) in updates.json:
+    # updates.json ist unsigniert; wer sie manipulieren kann, könnte das Flag sonst
+    # entfernen und ein wirkungsloses Datei-Update durchdrücken.
+    if manifest.get("installer_noetig"):
+        grund = str(manifest.get("installer_grund") or
+                    "Diese Fassung ändert, wie dein Operator gestartet wird.")
+        return False, (f"{grund}\n👉 Dafür reicht das Ein-Klick-Update nicht — bitte einmal "
+                       f"diesen Befehl ausführen:\n{_installer_befehl()}")
     signiert = os.path.exists(PUBKEY_FILE)
     # #103: kein Downgrade — eine alte (verwundbare) Version darf nicht als "Update" kommen.
     ziel = str(manifest.get("version", "0"))

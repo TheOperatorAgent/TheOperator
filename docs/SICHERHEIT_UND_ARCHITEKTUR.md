@@ -182,10 +182,33 @@ nichts.
 
 ---
 
-## 8. Verwandte Dokumente
+## 8. Die Grenzen der Microsoft-Anbindung (ehrlich, #122)
+
+Der Operator holt so viel aus Microsoft 365 heraus, wie ohne Copilot-Lizenz geht. Manches
+geht aber grundsätzlich nicht — nicht weil wir es nicht gebaut haben, sondern weil Microsoft
+es so festlegt. Diese Tabelle ist die verbindliche Antwort auf »warum kann er das nicht?«.
+
+| Was | Warum es nicht (oder nur eingeschränkt) geht | Was stattdessen möglich ist |
+|---|---|---|
+| **Work IQ / Copilot-Wissen** | Braucht zwingend eine **Copilot-Lizenz** pro Nutzer. Ohne sie liefert die Schnittstelle nichts — es gibt keinen Umweg. | Die Karte im Dashboard bleibt sichtbar, aber **gesperrt und begründet**, statt beim Klick zu scheitern. |
+| **Teams-Chatinhalte (app-only)** | Ist eine **Protected API**: Microsoft gibt sie nur nach Antrag **pro Kunde** frei. | Teams-Basisdaten (Teams, Kanäle) gehen ohne Antrag. Inhalte nur über die delegierte Spur. |
+| **Microsoft To Do** | Existiert **ausschließlich** delegiert — app-only kennt die Schnittstelle nicht. | Über die persönliche Anmeldung (Device-Code, #116). |
+| **`/search/query` (Microsoft Search)** | Ebenfalls nur delegiert. | Mail-Suche über `mail_suchen` (`$search` auf dem Postfach) deckt den Alltagsfall ab. |
+| **Enterprise-MCP von Microsoft** | **Public Preview**, ausschließlich lesend, 100 Anfragen/Minute, nur Public Cloud (kein GovCloud, kein China). | Als optionale Karte nutzbar — mit dieser Einschränkung im Text, nicht im Kleingedruckten. |
+| **Privatkonten (outlook.com, hotmail)** | Haben **keinen Tenant**. Der app-only-Weg braucht aber genau den. | Privat-Modus über einen eigenen, lesenden MCP-Server mit persönlicher Anmeldung. |
+| **Alle Werkzeuge gleichzeitig** | Jedes Werkzeug kostet Platz im Prompt. Bei ~45 Werkzeugen wird jede Antwort spürbar langsamer (real erlebt Anfang Juli). | Drei Voreinstellungen + **Lade-nach-Bedarf**: Es werden nur die Werkzeuge der Dienste geladen, die im Dashboard an sind. |
+| **Exchange-Rechte serverseitig eng ziehen** | Eine **Application Access Policy** wirkt nur für Exchange — nicht für OneDrive, SharePoint, Planner oder Teams. | Der Code begrenzt sich zusätzlich freiwillig auf das eigene Postfach. Die Policy ist trotzdem empfohlen (#14). |
+
+**Der Positionierungssatz dazu:** *Scout-Funktionen ohne Copilot-Lizenz — auf deinem Rechner,
+mit deinem Datenschutzfilter davor.* Was Microsoft hinter einer Lizenz verschließt, können wir
+nicht aufschließen; alles andere holen wir.
+
+---
+
+## 9. Verwandte Dokumente
 
 - `SICHERHEIT.md` — Detail-Sicherheitskonzept (Tresor, Pseudonymisierung, Audit)
 - `ARCHITEKTUR.md` — technische Gesamtarchitektur
 - `EINFACHHEIT.md` — Leitbild Barrierefreiheit & einfache Sprache (Petra-Test)
 
-*Stand: Version 1.5.0. Dieses Dokument wird mit jedem sicherheitsrelevanten Feature gepflegt.*
+*Stand: Version 1.23.1. Dieses Dokument wird mit jedem sicherheitsrelevanten Feature gepflegt.*

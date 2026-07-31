@@ -4519,3 +4519,200 @@ def test_website_kopie_der_installer_ist_die_oeffentliche_fassung():
         assert a == b, (f"operator-site/public/{datei} weicht vom oeffentlichen Spiegel ab "
                         "— ein Deploy wuerde alten Code an Kunden ausliefern. "
                         "👉 Release-Skript erneut laufen lassen, dann deploy-strato.command")
+
+
+# ---------------------------------------------- Updater erreicht Dienste nicht (#128) --
+
+def _dienstdefinition_fingerabdruck():
+    """Der Rumpf beider Dienst-Registrierungen, normalisiert und gehasht. Genau diese
+    Stellen schreibt der Updater NIE — er tauscht nur Manifest-Dateien aus."""
+    import hashlib
+    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    rumpf_sh = sh.split("install_service() {")[1].split("\n}\n")[0]
+    ps1 = open("/tmp/_diff_op/install.ps1", encoding="utf-8").read()
+    rumpf_ps1 = ps1.split("function Install-Service(")[1].split("\n}\n")[0]
+    roh = "\n".join(z.strip() for z in (rumpf_sh + rumpf_ps1).splitlines()
+                    if z.strip() and not z.strip().startswith("#"))
+    return hashlib.sha256(roh.encode()).hexdigest()[:16]
+
+
+# Beim Ändern: Wert hier neu setzen UND entscheiden, ob dieses Release
+# installer_noetig braucht. Genau das ist der Zweck dieses Tests.
+DIENSTDEFINITION_STAND = "757cd8c1bccdebba"
+
+
+def test_dienstdefinitionen_verlangen_den_installer():
+    """#128 — der Test, der den ganzen Mechanismus trägt.
+
+    Der Updater tauscht Manifest-Dateien und startet Dienste neu. Die DIENST-DEFINITION
+    (Aufrufzeile, Umgebungsvariablen, Task-Scheduler-Eintrag) schreibt aber nur der
+    Installer. Dort steckten die kritischen Windows-Fixes 1.18.3 (`PYTHONUTF8`) und
+    1.18.5 (`pythonw`): Ein Kunde klickt »Aktualisieren«, bekommt neue Dateien — und
+    sein Problem bleibt, ohne jeden Hinweis.
+
+    Ändert jemand die Dienstdefinition, wird dieser Test rot und erzwingt eine bewusste
+    Entscheidung, statt sich auf Erinnerung zu verlassen."""
+    import pytest
+    if not os.path.exists("/tmp/_diff_op/install.sh"):
+        pytest.skip("Auslieferungs-Repo nicht ausgecheckt")
+    jetzt = _dienstdefinition_fingerabdruck()
+    assert jetzt == DIENSTDEFINITION_STAND, (
+        f"Die Dienst-Definition hat sich geaendert ({jetzt}). Das Ein-Klick-Update "
+        "erreicht sie NICHT. 👉 Entweder installer_noetig:true fuer dieses Release "
+        "setzen (manifest.json UND updates.json), oder — falls die Aenderung "
+        "wirkungslos ist — DIENSTDEFINITION_STAND hier auf den neuen Wert setzen.")
+
+
+def test_installer_flag_blockiert_das_ein_klick_update():
+    """Vor jedem Download abbrechen, nicht mittendrin: eine halb aktualisierte
+    Installation waere schlimmer als eine alte."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import updater
+    src = open(os.path.expanduser("~/.claude/matrix-bot/updater.py"), encoding="utf-8").read()
+    rumpf = src.split("def apply(")[1]
+    vorher = rumpf.split('if manifest.get("installer_noetig")')[0]
+    assert "installer_noetig" in rumpf, "apply() kennt das Flag nicht"
+    assert "_fetch(src" not in vorher, "es wird schon heruntergeladen, bevor geprueft wird"
+    assert "staged" not in vorher, "Dateien werden vorbereitet, bevor geprueft wird"
+    # Das Flag muss aus dem SIGNIERTEN Manifest kommen, nicht aus updates.json:
+    # sonst koennte es jemand einfach entfernen und ein wirkungsloses Update durchdruecken.
+    assert 'manifest.get("installer_noetig")' in rumpf, \
+        "Flag wird nicht aus dem signierten Manifest gelesen"
+
+
+def test_installer_befehl_ist_die_offizielle_adresse():
+    """Das Dashboard zeigt diesen Befehl zum Einfuegen in eine Shell. Er darf niemals
+    aus einer Datei stammen, die jemand schreiben kann (repo_raw.txt) — sonst laesst
+    sich einem Nutzer beliebiger Code unterschieben."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import updater
+    befehl = updater._installer_befehl()
+    assert "operator.bayern" in befehl
+    assert "192.168." not in befehl and "127.0.0.1" not in befehl
+    # Nur den ausgefuehrten Code pruefen — der Docstring erklaert das Verbot ja gerade.
+    import ast as _ast
+    for knoten in _ast.walk(_ast.parse(open(
+            os.path.expanduser("~/.claude/matrix-bot/updater.py"), encoding="utf-8").read())):
+        if isinstance(knoten, _ast.FunctionDef) and knoten.name == "_installer_befehl":
+            rumpf = knoten.body[1:] if (knoten.body and isinstance(knoten.body[0], _ast.Expr)
+                                        ) else knoten.body
+            code = "\n".join(_ast.dump(k) for k in rumpf)
+            assert "REPO_RAW" not in code and "repo_raw" not in code, \
+                "der Befehl wird aus einer beschreibbaren Datei abgeleitet"
+            break
+    else:
+        assert False, "_installer_befehl nicht gefunden"
+
+
+def test_update_banner_zeigt_befehl_statt_knopf():
+    js = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/app.js"),
+              encoding="utf-8").read()
+    zweig = js.split("if (u.installer_noetig)")[1].split("b.innerHTML = `\n    <div")[0]
+    assert "applyUpdate" not in zweig, "der Ein-Klick-Knopf ist in diesem Fall noch da"
+    assert "u.befehl" in zweig, "der Befehl wird nicht angezeigt"
+
+
+def test_rueckfragen_stufen_lassen_sich_nie_ganz_abschalten():
+    """#127: Michi wollte die Rückfragen deaktivieren. »OHNE DEIN JA PASSIERT NICHTS«
+    ist Sicherheitskarte 1 auf der Website — ein Schalter, der das still aufhebt, macht
+    aus dem Versprechen eine Luege. Drei Stufen ja, Aus nein."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import importlib
+    import permission_broker as pb
+    importlib.reload(pb)
+    assert set(pb.STUFEN) == {"streng", "normal", "locker"}
+    assert "aus" not in pb.STUFEN
+
+    import json as _j
+    bot = os.path.expanduser("~/.claude/matrix-bot")
+    cfg_pfad = os.path.join(bot, "dashboard.json")
+    original = open(cfg_pfad, encoding="utf-8").read()
+    try:
+        cfg = _j.loads(original)
+        for stufe in ("streng", "normal", "locker"):
+            cfg["rueckfragen"] = stufe
+            open(cfg_pfad, "w", encoding="utf-8").write(_j.dumps(cfg))
+            assert pb.stufe() == stufe
+            # Diese drei fragen in JEDER Stufe — sonst waere die Zusage wertlos.
+            r1, _ = pb.classify("Bash", {"command": "rm -rf ~/wichtig"})
+            r2, _ = pb.classify("Bash", {"command": f"echo x > {bot}/repo_raw.txt"})
+            r3, _ = pb.classify("Write", {"file_path": "/etc/hosts"})
+            assert r1 is True, f"Stufe {stufe}: Loeschen fragt nicht nach"
+            assert r2 is True, f"Stufe {stufe}: Selbstschutz greift nicht"
+            assert r3 is True, f"Stufe {stufe}: Schreiben ausserhalb fragt nicht nach"
+        # Unterschied zwischen den Stufen: nur die fail-closed-Regel fuer Unbekanntes.
+        cfg["rueckfragen"] = "normal"
+        open(cfg_pfad, "w", encoding="utf-8").write(_j.dumps(cfg))
+        assert pb.classify("Bash", {"command": "zzunbekannt --tu-was"})[0] is True
+        cfg["rueckfragen"] = "locker"
+        open(cfg_pfad, "w", encoding="utf-8").write(_j.dumps(cfg))
+        assert pb.classify("Bash", {"command": "zzunbekannt --tu-was"})[0] is False
+        # Tippfehler in der Konfiguration darf nie zur schwaechsten Stufe fuehren.
+        cfg["rueckfragen"] = "voellig-egal"
+        open(cfg_pfad, "w", encoding="utf-8").write(_j.dumps(cfg))
+        assert pb.stufe() == "normal", "unbekannter Wert faellt nicht auf normal zurueck"
+    finally:
+        open(cfg_pfad, "w", encoding="utf-8").write(original)
+
+
+# --------------------------------- Kontext für proaktive Meldungen (#132) --
+
+def test_proaktive_meldungen_landen_im_prompt():
+    """#132 — realer Fall (Michi, 31.07.): Um 13:03 schob der Operator eine
+    Mail-Zusammenfassung in den Chat, um 13:10 fragte Michi »hast du den termin schon
+    zugesagt?« und bekam »keinen blassen Schimmer, welchen Termin du meinst«.
+
+    Die Meldung STAND in sessions.db — als kind='event'. Gelesen hat sie niemand:
+    recent_dialog() filtert hart auf kind='chat', und der Prompt kannte keine andere
+    Quelle. Es war also kein Speicher-, sondern ein Lesefehler."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import sessions
+    assert set(sessions.PROAKTIV_ARTEN) >= {"event", "cron"}, \
+        "Ereignis- und Automations-Laeufe gelten nicht als proaktiv — genau der Bug"
+    quelle = open(os.path.expanduser("~/.claude/matrix-bot/sessions.py"),
+                  encoding="utf-8").read()
+    teil = quelle.split("def recent_proaktiv")[1].split("\ndef ")[0]
+    assert "PROAKTIV_ARTEN" in teil, "recent_proaktiv fragt nicht alle Arten ab"
+    code = "\n".join(z for z in teil.splitlines() if not z.strip().startswith("#"))
+    code = code.split('"""')[-1]          # Docstring erklaert den Bug — kein Code
+    assert "kind='chat'" not in code
+
+    lis = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"), encoding="utf-8").read()
+    assert "def proaktiv_block" in lis
+    assert "self.proaktiv_block()" in lis, "der Block wird nie in den Prompt gehaengt"
+    block = lis.split("def proaktiv_block")[1].split("\n    def ")[0]
+    # Der Operator darf auf »hast du das gemacht?« nicht raten.
+    assert "Niemals raten" in block
+    assert "nur gemeldet" in block.lower()
+
+
+def test_proaktiv_block_bleibt_kurz():
+    """Erster Versuch war 5245 Zeichen fuer drei Meldungen: Der gespeicherte
+    Ereignis-Prompt enthaelt eine lange Werkzeug-Anweisung ans Modell, die im Rueckblick
+    nur Ballast ist. Gebraucht wird der Anlass samt Kennungen, nicht die Anleitung."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import listener
+    kopf = ('- [Proaktives Ereignis von »X«] Neue Mail von Y: »Betreff«\n'
+            'Details: {"mail_id": "AAA", "from": "y@example.com"}\n'
+            'Deine Anweisung für dieses Ereignis: ' + "bla " * 200)
+    kurz = listener.BotSession._anlass_kurz(kopf)
+    assert "Deine Anweisung" not in kurz, "die Werkzeug-Anleitung landet weiter im Prompt"
+    assert "mail_id" in kurz, "die Kennung fehlt — dann kann auf »sag zu« nicht gehandelt werden"
+    assert len(kurz) <= 400
+
+
+def test_send_py_protokolliert_was_es_verschickt():
+    """send.py ist der eine Weg, den alle proaktiven Kanaele benutzen. Sitzt das
+    Protokollieren hier, kann kein kuenftiger Kanal es vergessen."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/send.py"), encoding="utf-8").read()
+    assert "record_proaktiv" in src
+    # Erst senden, dann protokollieren — was nicht rausging, gehoert nicht in den Verlauf.
+    assert src.index("urlopen(req") < src.index("record_proaktiv")
+    # Fail-open: ein Protokollfehler darf eine zugestellte Nachricht nie zum Fehler machen.
+    nach = src.split("record_proaktiv")[1]
+    assert "except Exception" in nach

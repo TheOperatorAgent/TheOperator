@@ -1,9 +1,10 @@
 {
- "version": "1.23.0",
+ "version": "1.23.1",
  "date": "2026-07-31",
  "highlights": [
-  "🔎 Neu in der Übersicht: »Meine Installation prüfen«. Wir behaupten einiges über deinen Operator — dass der Surf-Agent nichts anklicken kann, dass niemand in dein Heimnetz kommt, dass keine Gesprächsinhalte im Protokoll landen. Ab jetzt liegen die Prüfungen bei dir auf der Platte und laufen auf Knopfdruck gegen deine Installation. Du musst uns nicht glauben.",
-  "🏷️ Der Installer und »operator pruefen« sagen jetzt, welche Fassung wirklich läuft — inklusive Prüfsumme jeder einzelnen Datei. Ein steckengebliebenes Update fällt damit beim ersten Blick auf statt nach drei Fehlversuchen.",
-  "🧪 Unter der Haube: Unsere eigenen Prüfungen arbeiten auf einer Kopie statt am laufenden System. Das beseitigt einen seltenen Fehlalarm und stellt sicher, dass ein Testlauf deiner Installation nichts anhaben kann."
+  "🧠 Dein Operator kennt jetzt seine eigenen Meldungen. Wenn er dir von sich aus etwas schickt — eine neue Mail, eine Terminanfrage — und du danach fragst »hast du das schon zugesagt?«, weiß er, wovon du sprichst. Und er sagt ehrlich, dass er es nur gemeldet und noch nichts erledigt hat, statt zu raten.",
+  "🙋 Du bestimmst, wie oft nachgefragt wird: »Streng«, »Normal« oder »Locker« im Tab Datenschutz. Vor gefährlichen Befehlen und vor Zugriffen auf seine eigenen Sicherheitsdateien fragt er in jeder Stufe — das bleibt.",
+  "🔧 Updates, die mehr brauchen als neue Dateien, sagen das jetzt. Bisher konnte »Aktualisieren« neue Dateien bringen und das eigentliche Problem bestehen lassen, ohne Hinweis. Jetzt zeigt das Dashboard in dem Fall den Installationsbefehl statt eines Knopfes, der nicht hilft.",
+  "📄 Neu dokumentiert: die ehrlichen Grenzen der Microsoft-Anbindung — was ohne Copilot-Lizenz nicht geht und warum."
  ]
 }

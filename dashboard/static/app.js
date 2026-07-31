@@ -145,6 +145,27 @@ async function loadUpdate() {
   let u;
   try { u = await api("GET", "/api/update/status"); } catch (e) { b.innerHTML = ""; return; }
   if (!u.update_available) { b.innerHTML = ""; return; }
+  if (u.installer_noetig) {
+    /* #128: Manche Fassungen ändern, WIE der Operator gestartet wird — das schreibt nur
+       der Installer. Ein »Jetzt aktualisieren«-Knopf würde hier neue Dateien bringen und
+       das Problem bestehen lassen, ohne dass es jemand merkt. Also kein Knopf, sondern
+       der Befehl. Er kommt hart kodiert aus dem Backend, nie aus einer Konfigdatei. */
+    b.innerHTML = `
+      <div class="card" style="border-color:var(--amber,#d29922);margin-bottom:14px">
+        <div class="row-between">
+          <h2 style="margin:0">🔧 Neue Version ${esc(u.latest)} — einmalig über den Installationsbefehl</h2>
+          <span class="pill">aktuell: ${esc(u.current)}</span>
+        </div>
+        <p class="small">${esc(u.installer_grund || "Diese Fassung ändert, wie dein Operator gestartet wird.")}
+          Das Ein-Klick-Update kann das nicht — es tauscht nur Dateien aus. Bitte einmal
+          diesen Befehl in einem Terminal-Fenster ausführen:</p>
+        <pre class="mono" style="user-select:all;padding:10px;border-radius:6px;overflow-x:auto"
+             id="update-befehl">${esc(u.befehl || "")}</pre>
+        <button class="ghost" onclick="navigator.clipboard.writeText(document.getElementById('update-befehl').textContent).then(()=>toast('Befehl kopiert'))">Befehl kopieren</button>
+        <ul style="margin:10px 0 0">${(u.highlights || []).map((h) => `<li>${esc(h)}</li>`).join("")}</ul>
+      </div>`;
+    return;
+  }
   b.innerHTML = `
     <div class="card" style="border-color:var(--green,#2ea043);margin-bottom:14px">
       <div class="row-between">
@@ -158,6 +179,12 @@ async function loadUpdate() {
 }
 
 async function applyUpdate(btn) {
+  /* Zweite Bremse: Auch wenn der Knopf durch einen Fehler doch sichtbar wäre, wird
+     hier nicht gestartet. Das Backend lehnt zusätzlich ab (updater.apply). */
+  try {
+    const u = await api("GET", "/api/update/status");
+    if (u.installer_noetig) { toast("Diese Fassung braucht den Installationsbefehl.", 1); return; }
+  } catch (e) { /* Status nicht abrufbar → normale Bestaetigung unten */ }
   if (!confirm("Operator jetzt auf die neue Version aktualisieren? Listener und Dashboard "
     + "starten dabei kurz neu (deine Daten & Einstellungen bleiben unverändert).")) return;
   if (btn) { btn.disabled = true; btn.textContent = "Aktualisiere …"; }
@@ -1669,10 +1696,42 @@ async function retentionWipe() {
   } catch (e) { toast(friendlyError(e)); }
 }
 
+/* Rückfrage-Stufen (#127). Ganz abschalten gibt es bewusst nicht — die Zusage
+   »ohne dein Ja passiert nichts« steht auf der Website. Deshalb drei Stufen, und in
+   jeder bleiben Sperrliste und Selbstschutz aktiv. Text per textContent. */
+async function loadRueckfragen() {
+  const box = document.getElementById("rueckfragen-optionen");
+  if (!box) return;
+  const r = await api("GET", "/api/rueckfragen");
+  box.textContent = "";
+  const namen = { streng: "Streng", normal: "Normal (empfohlen)", locker: "Locker" };
+  r.stufen.forEach((s) => {
+    const zeile = document.createElement("label");
+    zeile.className = "row";
+    zeile.style.cssText = "display:flex;gap:10px;align-items:flex-start;margin:10px 0;cursor:pointer";
+    const radio = document.createElement("input");
+    radio.type = "radio"; radio.name = "rueckfragen"; radio.value = s.id;
+    radio.checked = s.id === r.stufe;
+    radio.addEventListener("change", async () => {
+      try {
+        const a = await api("PUT", "/api/rueckfragen", { stufe: s.id });
+        toast("Gespeichert: " + namen[a.stufe]);
+      } catch (e) { toast(friendlyError(e), 1); loadRueckfragen(); }
+    });
+    const txt = document.createElement("div");
+    const t = document.createElement("strong"); t.textContent = namen[s.id] || s.id;
+    const p = document.createElement("div"); p.className = "small"; p.textContent = s.text;
+    txt.appendChild(t); txt.appendChild(p);
+    zeile.appendChild(radio); zeile.appendChild(txt);
+    box.appendChild(zeile);
+  });
+}
+
 async function loadPrivacy() {
   renderRetention();
   const s = STATUS || await api("GET", "/api/status");
   await loadPseudonymize();
+  loadRueckfragen().catch(() => {});
   $("#privacy-tables").innerHTML = `<div class="card"><table class="kv">
     <tr><td>Chat-Verarbeitung</td><td>Nachrichten werden zur Beantwortung an die Claude-API (Anthropic) übertragen — über dein persönliches Abo</td></tr>
     <tr><td>Bilder &amp; Dateien</td><td>Was du im Chat schickst, landet in deinem Arbeitsordner unter <span class="mono">eingang/</span> — nur für dich lesbar, und es wird nach derselben Frist gelöscht wie dein Gesprächsverlauf. <strong>Der Inhalt einer Datei wird nicht pseudonymisiert</strong>: Ein Foto geht so zum Modell, wie es ist.</td></tr>

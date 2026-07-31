@@ -725,6 +725,56 @@ class BotSession(threading.Thread):
         return ("Bisheriger Gesprächsverlauf (chronologisch, zur Einordnung von "
                 "Rückbezügen wie 'darüber' oder 'das'):\n" + "\n".join(lines) + "\n\n")
 
+    @staticmethod
+    def _anlass_kurz(kopf):
+        """Nur der Anlass, nicht die Werkzeug-Anweisung.
+
+        Der gespeicherte Ereignis-Prompt (triggers.event_prompt) enthält eine lange
+        Handlungsanweisung ans Modell. Im Rückblick ist die Ballast: Sie hat den Block
+        beim ersten Versuch auf 5245 Zeichen aufgebläht, für drei Meldungen. Gebraucht
+        wird nur, WORUM es ging — die Kennungen aus der Details-Zeile inklusive, sonst
+        kann auf »sag zu« nicht gehandelt werden."""
+        behalten = []
+        for zeile in (kopf or "").splitlines():
+            if zeile.startswith("Deine Anweisung"):
+                break
+            behalten.append(zeile)
+        return " ".join(" ".join(behalten).split())[:400] or "(unbekannt)"
+
+    def proaktiv_block(self):
+        """#132: Was ich von mir aus gemeldet habe — sonst kennt der Operator seine
+        eigenen Meldungen nicht.
+
+        Realer Fall (Michi, 31.07.): Um 13:03 schob der Operator eine Mail-Zusammenfassung
+        in den Chat, um 13:10 kam »hast du den termin schon zugesagt?« — und er hatte
+        dafür keinerlei Anhaltspunkt. Proaktive Kanäle schrieben nie in sessions.db.
+
+        Eigenes Kontingent statt Mitzählen im Dialogfenster: eine Mailflut am Morgen soll
+        den echten Dialog nicht verdrängen."""
+        if not sessions_db:
+            return ""
+        try:
+            eintraege = sessions_db.recent_proaktiv(self.bot_name, n=3, max_age_h=12)
+        except Exception:
+            return ""
+        if not eintraege:
+            return ""
+        zeilen = []
+        for ts, kopf, text in eintraege:
+            if redact_mod:
+                kopf, text = redact_mod.redact(kopf), redact_mod.redact(text)
+            zeilen.append(f"[{ts}] Anlass: {self._anlass_kurz(kopf)}\nGesendet: {text[:700]}")
+        return ("Das habe ich zuletzt VON MIR AUS gemeldet — der Nutzer hat nicht danach "
+                "gefragt, kann sich aber jederzeit darauf beziehen (»der Termin«, »die "
+                "Mail«, »das«):\n"
+                + "\n\n".join(zeilen)
+                + "\n\nWICHTIG dazu: Diese Meldungen waren Hinweise. Ich habe dabei gelesen "
+                  "und zusammengefasst — mehr nur dann, wenn es im gesendeten Text ausdrücklich "
+                  "steht. Fragt der Nutzer, ob ich etwas davon schon erledigt habe (zugesagt, "
+                  "geantwortet, verschickt), dann bejahe das NUR, wenn es oben wirklich "
+                  "dasteht. Sonst ist die ehrliche Antwort »nein, ich hatte es nur gemeldet« — "
+                  "gefolgt vom Angebot, es jetzt zu tun. Niemals raten.\n\n")
+
     def build(self, bodies):
         """Baut Prompt. Pseudonymisiert die PII-tragenden Nutzer-Segmente (aktuelle
         Nachricht + Gedächtnis-Treffer) gemeinsam — NICHT VERHALTEN/Infrastruktur, NICHT
@@ -740,7 +790,9 @@ class BotSession(threading.Thread):
         if segs is None:
             return None, None, None, False, None, None, None   # fail-safe: Aufrufer bricht ab
         messages_p, memories_p = segs
-        history = self.history_block()                # bereits pseudonymisiert in der DB
+        # #132: Eigene, unaufgeforderte Meldungen VOR den Dialogverlauf — sie sind der
+        # Anlass, auf den sich »hast du das schon gemacht?« bezieht.
+        history = self.proaktiv_block() + self.history_block()   # beides pseudonymisiert in der DB
         if self.kind == "owner":
             try:
                 verhalten = open(f"{BOT_DIR}/VERHALTEN.md").read()
