@@ -1,10 +1,10 @@
 {
- "version": "1.23.1",
+ "version": "1.24.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "811e9bcf121c10f79106733ed05cc429395741593614e237d8b9d77467b9b966"
+   "sha256": "64594e3cbde3df76265f4efcbe3a4f9af98dc29c6b75e686cb133d5459ff284e"
   },
   {
    "src": "matrix_room.py",
@@ -92,6 +92,11 @@
    "sha256": "9a799186ad50e4ed71c2974c39ffdf22ca687ce818c587a727eb9728771bcbdd"
   },
   {
+   "src": "raumwaechter.py",
+   "dst": "raumwaechter.py",
+   "sha256": "52f2e191c47a3d4a065a47602e0d521f8f1fd8ca71d17d62a8eaa67924a961c2"
+  },
+  {
    "src": "throttle.py",
    "dst": "throttle.py",
    "sha256": "c653e6fcc038381842272ee3f9d400d7b7785e672fd309b43615de6bc3b87594"
@@ -119,7 +124,7 @@
   {
    "src": "permission_broker.py",
    "dst": "permission_broker.py",
-   "sha256": "45aa9474352867fb2623ae1e23cd48a0c1a2131a12d5416127d5ea03a0e35741"
+   "sha256": "05c8c61f5dbcf52bed75c285cc146dc6888af41132a5c2a37e4e8143d214699b"
   },
   {
    "src": "sandbox.py",
@@ -224,7 +229,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "022c841091df0d0bd12f96a42372fbc5898ecb5a980bd905dfeba9ddf7a3d9fe"
+   "sha256": "9f7c4712e45e56fa9ed11078864f6c8b35184854fe4abdb57c41241d99a633e5"
   },
   {
    "src": "dashboard/tokens.py",
@@ -264,7 +269,7 @@
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "092ae59eed134975f7f47ac13a6c96c965ee881ce305f44209b13ecfb0949385"
+   "sha256": "b1a9635fc79313efda5db3cbe146dafaf144760009ee305555cd884686662276"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -284,7 +289,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "f24986f850ee6e66a4c7fdbe8ea5f72f94bee5434a3bcd1892799e3bc46f3d12"
+   "sha256": "674f4a09248743250e5a3af0542b31ac96a6031a254069470b83b1a4e14210f8"
   },
   {
    "src": "dienst_start.py",
@@ -304,7 +309,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "9ca768488b7333858d1007643df439eb963297c75fc4e594f0ea5218673fd9a0"
+   "sha256": "67893759d6eabe122f40d54165066827c6d91263832cedd81b06849e41d57251"
   },
   {
    "src": "dashboard/test_petra.py",

@@ -4716,3 +4716,286 @@ def test_send_py_protokolliert_was_es_verschickt():
     # Fail-open: ein Protokollfehler darf eine zugestellte Nachricht nie zum Fehler machen.
     nach = src.split("record_proaktiv")[1]
     assert "except Exception" in nach
+
+
+# ------------------------------------------------- Raum-Wächter (#98, Epic #90) --
+
+def _rw():
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import raumwaechter
+    return raumwaechter
+
+
+def _zustand(**ueberschreiben):
+    z = {"raeume": {"!raum:srv": {
+            "erwartet": ["@bot:srv", "@michi:srv"],
+            "mitglieder": ["@bot:srv", "@michi:srv"],
+            "einstellungen": {"m.room.join_rules": "invite",
+                              "m.room.guest_access": "forbidden",
+                              "m.room.history_visibility": "invited"}}},
+         "geraete": ["ABC"], "bekannte_geraete": ["ABC"], "registrierung_offen": False}
+    z.update(ueberschreiben)
+    return z
+
+
+def test_waechter_meldet_nichts_wenn_alles_stimmt():
+    assert _rw().bewerten(_zustand()) == []
+
+
+def test_waechter_erkennt_fremdes_mitglied():
+    """Tür 1: Im Owner-DM darf niemand sonst sein."""
+    z = _zustand()
+    z["raeume"]["!raum:srv"]["mitglieder"] = ["@bot:srv", "@michi:srv", "@fremd:srv"]
+    b = _rw().bewerten(z)
+    assert len(b) == 1 and b[0]["art"] == "fremde_mitglieder"
+    assert b[0]["details"] == ["@fremd:srv"]
+    assert b[0]["heilbar"] is False, "der Waechter darf niemanden von selbst hinauswerfen"
+    assert "@fremd:srv" in b[0]["text"] and "👉" in b[0]["text"]
+
+
+def test_waechter_erkennt_offene_raum_einstellungen():
+    """Tür 2: Die drei Einstellungen sind die einzigen, die er selbst repariert."""
+    z = _zustand()
+    z["raeume"]["!raum:srv"]["einstellungen"] = {
+        "m.room.join_rules": "public", "m.room.guest_access": "can_join",
+        "m.room.history_visibility": "world_readable"}
+    b = _rw().bewerten(z)
+    assert len(b) == 3
+    assert all(x["art"] == "einstellung" and x["heilbar"] is True for x in b)
+
+
+def test_waechter_erkennt_neues_geraet_und_offene_registrierung():
+    """Tür 3 und 4."""
+    rw = _rw()
+    b = rw.bewerten(_zustand(geraete=["ABC", "NEU"], bekannte_geraete=["ABC"]))
+    assert [x["art"] for x in b] == ["neue_geraete"] and b[0]["details"] == ["NEU"]
+    b = rw.bewerten(_zustand(registrierung_offen=True))
+    assert [x["art"] for x in b] == ["registrierung"]
+    # »konnte ich nicht feststellen« ist KEIN Befund — sonst Fehlalarm alle 30 Minuten.
+    assert rw.bewerten(_zustand(registrierung_offen=None)) == []
+
+
+def test_waechter_behauptet_nichts_was_er_nicht_lesen_konnte():
+    """Nicht lesbar heisst nicht »in Ordnung« und auch nicht »kaputt« — es heisst
+    schweigen. Ein Waechter, der bei jedem Netzwackler Alarm schlaegt, wird ignoriert."""
+    z = _zustand()
+    z["raeume"]["!raum:srv"]["mitglieder"] = None
+    z["raeume"]["!raum:srv"]["einstellungen"] = {k: None for k in _rw().SOLL}
+    assert _rw().bewerten(_zustand(geraete=None)) == []
+    assert _rw().bewerten(z) == []
+
+
+def test_waechter_heilt_nur_einstellungen_und_wirft_niemanden_hinaus():
+    """Der Kern der Leitplanke: genau drei State-PUTs, kein einziger Mitglieder-Aufruf."""
+    rw = _rw()
+    gerufen = []
+
+    def api(pfad, method="GET", body=None):
+        gerufen.append((method, pfad))
+        return {}
+    z = _zustand()
+    z["raeume"]["!raum:srv"]["einstellungen"] = {
+        "m.room.join_rules": "public", "m.room.guest_access": "can_join",
+        "m.room.history_visibility": "shared"}
+    z["raeume"]["!raum:srv"]["mitglieder"] = ["@bot:srv", "@michi:srv", "@fremd:srv"]
+    geheilt, gescheitert = rw.heilen(api, rw.bewerten(z))
+    assert len(geheilt) == 3 and not gescheitert
+    assert all(m == "PUT" and "/state/m.room." in p for m, p in gerufen)
+    assert len(gerufen) == 3, "es wurde mehr angefasst als die drei Einstellungen"
+    assert not any(w in p for _m, p in gerufen for w in ("kick", "ban", "leave"))
+
+
+def test_waechter_quelltext_kennt_kein_kick_ban_leave():
+    """Zweiter Riegel auf Quelltext-Ebene: Selbstheilung darf nie ueber Menschen
+    entscheiden. Ein kuenftiger Beitrag soll hier auflaufen, nicht erst im Betrieb."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/raumwaechter.py"),
+               encoding="utf-8").read()
+    code = "\n".join(z for z in src.splitlines() if not z.strip().startswith("#"))
+    code = code.split('"""')[-1]           # Modul-Docstring erklaert die Regel
+    for verboten in ("/kick", "/ban", "/leave", "deactivate"):
+        assert verboten not in code, f"Waechter kann {verboten} aufrufen"
+
+
+def test_waechter_meldet_nicht_alle_30_minuten_dasselbe(tmp_path, monkeypatch):
+    """Wie claude_health.should_warn: unveraenderte Lage → genau EINE Meldung."""
+    rw = _rw()
+    monkeypatch.setattr(rw, "STATE_FILE", str(tmp_path / "rw.json"))
+    meldungen = []
+    z_kaputt = {"joined": {"@bot:srv": {}, "@michi:srv": {}, "@fremd:srv": {}}}
+
+    def api(pfad, method="GET", body=None):
+        if pfad.endswith("/joined_members"):
+            return z_kaputt
+        if "/state/m.room." in pfad:
+            typ = pfad.split("/state/")[1].strip("/")
+            return {rw.SOLL[typ][0]: rw.SOLL[typ][1]}
+        if pfad.endswith("/devices"):
+            return {"devices": [{"device_id": "ABC"}]}
+        raise OSError("kein Netz")          # register/available → keine Aussage
+    raeume = {"!raum:srv": {"@bot:srv", "@michi:srv"}}
+    rw.tick(api, raeume, melden=meldungen.append, log=lambda *_: None)
+    rw.tick(api, raeume, melden=meldungen.append, log=lambda *_: None)
+    assert len(meldungen) == 1, "dieselbe Lage wurde mehrfach gemeldet"
+    assert "@fremd:srv" in meldungen[0]
+
+
+def test_waechter_basislinie_schreit_nicht_am_ersten_tag(tmp_path, monkeypatch):
+    """TOFU: Ohne Basislinie waere JEDE Bestandsinstallation beim ersten Lauf ein Alarm
+    ueber ihre eigenen, voellig normalen Sitzungen."""
+    rw = _rw()
+    monkeypatch.setattr(rw, "STATE_FILE", str(tmp_path / "rw.json"))
+    meldungen = []
+    geraete = [{"device_id": "ALT1"}, {"device_id": "ALT2"}]
+
+    def api(pfad, method="GET", body=None):
+        if pfad.endswith("/devices"):
+            return {"devices": geraete}
+        raise OSError("nicht relevant")
+    rw.tick(api, {}, melden=meldungen.append, log=lambda *_: None)
+    assert meldungen == [], "Bestandsgeraete wurden beim ersten Lauf gemeldet"
+    geraete.append({"device_id": "FREMD"})
+    rw.tick(api, {}, melden=meldungen.append, log=lambda *_: None)
+    assert len(meldungen) == 1 and "FREMD" in meldungen[0]
+
+
+def test_waechter_meldet_ehrlich_wenn_er_nicht_heilen_darf(tmp_path, monkeypatch):
+    """Realistischster Ausfall: In einem von Element angelegten Owner-DM hat der Bot
+    womoeglich Machtstufe 0 — das PUT gibt 403. Das gehoert gesagt, nicht verschwiegen."""
+    rw = _rw()
+    monkeypatch.setattr(rw, "STATE_FILE", str(tmp_path / "rw.json"))
+    meldungen = []
+
+    def api(pfad, method="GET", body=None):
+        if method == "PUT":
+            raise PermissionError("403 M_FORBIDDEN")
+        if pfad.endswith("/joined_members"):
+            return {"joined": {"@bot:srv": {}, "@michi:srv": {}}}
+        if "/state/m.room.join_rules" in pfad:
+            return {"join_rule": "public"}
+        if "/state/m.room." in pfad:
+            typ = pfad.split("/state/")[1].strip("/")
+            return {rw.SOLL[typ][0]: rw.SOLL[typ][1]}
+        raise OSError("kein Netz")
+    rw.tick(api, {"!raum:srv": {"@bot:srv", "@michi:srv"}},
+            melden=meldungen.append, log=lambda *_: None)
+    assert len(meldungen) == 1
+    assert "nicht selbst zurücksetzen" in meldungen[0] and "👉" in meldungen[0]
+
+
+def test_waechter_ist_stdlib_only():
+    import ast as _ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/raumwaechter.py"),
+               encoding="utf-8").read()
+    mods = set()
+    for k in _ast.walk(_ast.parse(src)):
+        if isinstance(k, _ast.Import):
+            mods.update(a.name.split(".")[0] for a in k.names)
+        elif isinstance(k, _ast.ImportFrom) and k.module:
+            mods.add(k.module.split(".")[0])
+    assert mods <= {"hashlib", "json", "os", "time", "urllib"}, f"nicht stdlib: {mods}"
+
+
+def test_waechter_haengt_in_der_hauptschleife_nicht_pro_raum():
+    """Der Waechter gehoert zur Installation, nicht zum einzelnen Raum: In BotSession
+    liefe die Homeserver-Pruefung einmal PRO RAUM."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"), encoding="utf-8").read()
+    assert "_raumwaechter_tick(owner, agents)" in src
+    klassenteil = src.split("class BotSession")[1].split("\ndef ")[0]
+    assert "raumwaechter.tick" not in klassenteil, "Waechter laeuft pro Raum"
+    assert "daemon=True" in src.split("def _raumwaechter_tick")[1].split("\ndef ")[0], \
+        "ein haengender Homeserver wuerde die Hauptschleife anhalten"
+
+
+def test_agentenraeume_sind_ab_geburt_hart():
+    """Beide createRoom-Wege muessen denselben Body benutzen — zwei gleichlautende Kopien
+    sind genau die Konstellation, aus der beim naechsten Mal eine Drift wird (#126)."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py"),
+               encoding="utf-8").read()
+    assert src.count("_agentenraum_body(name, c[\"owner_id\"])") == 2, \
+        "nicht beide Wege nutzen den gemeinsamen Helfer"
+    helfer = src.split("def _agentenraum_body")[1].split("\n@app.")[0]
+    for erwartet in ('"join_rule": "invite"', '"guest_access": "forbidden"',
+                     '"history_visibility": "invited"'):
+        assert erwartet in helfer, f"{erwartet} fehlt beim Anlegen"
+    # Michis Entscheidung 31.07.: Foederation NICHT sperren (pro Raum unumkehrbar).
+    code = "\n".join(z for z in helfer.splitlines() if not z.strip().startswith("#"))
+    code = code.split('"""')[-1]
+    assert "m.federate" not in code
+
+
+# ------------------------------ Dock-Bedrohungsmodell: Punkt 5 (#94/#95) --
+
+def test_dock_ist_kein_umweg_um_die_freigabe():
+    """#94 Punkt 5 — der wichtigste. Der Dock schreibt unter dem Konto des OPERATORS,
+    der Broker akzeptiert nur den OWNER. Wuerde er Bot-Nachrichten als Freigabe zaehlen,
+    koennte ein Modell, das an den Dashboard-Token kommt, seine EIGENE Rueckfrage
+    bejahen — aus »ohne dein Ja passiert nichts« wuerde »ohne sein eigenes Ja«."""
+    pb = open(os.path.expanduser("~/.claude/matrix-bot/permission_broker.py"),
+              encoding="utf-8").read()
+    assert 'if e.get("sender") != owner' in pb, "die Owner-Bindung ist weg"
+    mr = open(os.path.expanduser("~/.claude/matrix-bot/matrix_room.py"), encoding="utf-8").read()
+    assert "def senden_dashboard" in mr
+    # Der Dock benutzt den Bot-Token — genau deshalb greift die Owner-Bindung.
+    assert "owner" not in mr.split("def senden_dashboard")[1].split("\ndef ")[0].lower()
+
+
+def test_dock_schluckt_ein_ja_nicht_stillschweigend():
+    """Bis 1.23.1 verpuffte ein »ja« aus dem Dashboard lautlos, und die Aufgabe lief nach
+    drei Minuten in den Timeout. Sicher, aber unsichtbar kaputt — und fuer den Nutzer
+    nicht von einem Fehler zu unterscheiden."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    assert hasattr(pb, "offene_frage")
+    srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py"),
+               encoding="utf-8").read()
+    teil = srv.split('@app.post("/api/dock/senden")')[1].split("\n@app.")[0]
+    assert "offene_frage()" in teil, "der Dock weiss nicht, dass eine Frage offen ist"
+    assert "_antwort_aus_text" in teil, "erkennt ein »ja« nicht als Antwortversuch"
+    # Der Hinweis muss sagen, WOHIN die Antwort gehoert (Petra-Test: 👉-naechster-Schritt).
+    assert "👉" in teil and "Element" in teil
+
+
+def test_offene_frage_wird_gesetzt_und_wieder_geloescht(tmp_path, monkeypatch):
+    """Eine haengengebliebene Markierung waere schlimmer als keine: Der Dock wuerde
+    dauerhaft Antworten verweigern. Deshalb loeschen bei Entscheidung UND bei Timeout,
+    plus Ablauf nach der doppelten Wartezeit fuer den Absturzfall."""
+    import sys as _s
+    _s.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import permission_broker as pb
+    monkeypatch.setattr(pb, "OFFEN_DATEI", str(tmp_path / "offen.json"))
+    assert pb.offene_frage() is None
+    pb._frage_offen("eine Mail versenden")
+    assert pb.offene_frage()["was"] == "eine Mail versenden"
+    pb._frage_erledigt()
+    assert pb.offene_frage() is None
+    # Abgestuerzter Lauf: alte Markierung darf nicht ewig blockieren.
+    import json as _j
+    import time as _t
+    open(str(tmp_path / "offen.json"), "w").write(
+        _j.dumps({"seit": _t.time() - 10 * pb.WAIT_SECONDS, "was": "alt"}))
+    assert pb.offene_frage() is None, "veraltete Markierung blockiert den Dock dauerhaft"
+    quelle = open(os.path.expanduser("~/.claude/matrix-bot/permission_broker.py"),
+                  encoding="utf-8").read()
+    assert "_frage_erledigt()" in quelle.split("def _entscheidung")[1], \
+        "nach einer Entscheidung bleibt die Markierung stehen"
+
+
+def test_datenschutz_tab_erklaert_den_dock():
+    """#95: »Was liegt wo?« muss auch fuer den Dock beantwortet sein — und die Grenze
+    aus Punkt 5 gehoert dorthin, wo der Nutzer sie sucht, nicht nur in die Doku."""
+    js = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/app.js"),
+              encoding="utf-8").read()
+    teil = js.split("#privacy-tables")[1][:4000]
+    assert "Chat-Fenster im Dashboard" in teil
+    assert "gespeichert wird hier nichts" in teil, "der Dock-Eintrag ist nicht ehrlich"
+    assert "Freigaben im Dashboard" in teil, "die Grenze aus #94 Punkt 5 fehlt"
+
+
+def test_bedrohungsmodell_ist_dokumentiert():
+    doku = open(os.path.expanduser("~/.claude/matrix-bot/docs/SICHERHEIT_UND_ARCHITEKTUR.md"),
+               encoding="utf-8").read()
+    assert "Bedrohungsmodell des Chat-Fensters" in doku
+    for punkt in ("XSS", "CSRF", "Prompt-Injection", "127.0.0.1", "Ende-zu-Ende"):
+        assert punkt in doku, f"{punkt} fehlt im Bedrohungsmodell"

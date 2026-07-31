@@ -486,6 +486,26 @@ async def api_dock_senden(request: Request):
     text = ((await request.json()).get("text") or "").strip()
     if not text:
         return err("dock", "Leere Nachricht", 400)
+    # #94 Punkt 5: Der Dock sendet unter dem BOT-Konto (matrix_room.senden_dashboard),
+    # der Permission-Broker akzeptiert aber ausschließlich Antworten des OWNERS. Das ist
+    # richtig so — sonst wäre der Dock ein Umweg um die Bestätigung, und schlimmer: ein
+    # Modell, das an den Dashboard-Token kommt, könnte seine eigene Rückfrage bejahen.
+    #
+    # Die Folge ist aber, dass ein »ja« aus dem Dashboard still verpufft und die Aufgabe
+    # nach drei Minuten in den Timeout läuft. Statt schweigend zu schlucken: sagen, wo
+    # die Antwort hingehört.
+    try:
+        import permission_broker as _pb
+        offen = _pb.offene_frage()
+    except Exception:
+        offen = None
+    if offen and _pb._antwort_aus_text(text) is not None:
+        return err("dock",
+                   "Dein Operator wartet gerade auf eine Freigabe — die musst du im "
+                   "Chat selbst beantworten (Element auf dem Handy oder am Rechner). "
+                   "Hier im Dashboard schreibe ich unter dem Konto deines Operators, "
+                   f"und ein »{text}« von ihm selbst darf nicht als deines zählen. "
+                   f"👉 Es geht um: {offen.get('was', 'eine Aktion')}")
     try:
         event_id = matrix_room.senden_dashboard(text)
     except ValueError as e:
@@ -659,6 +679,38 @@ def api_agent_delete(name: str):
 
 
 # ---------------------------------------------------------------- Publishing --
+def _agentenraum_body(name, owner_id):
+    """#98: Ein neuer Agenten-Raum startet HART — der Wächter muss nichts reparieren.
+
+    Beide createRoom-Aufrufe (Standard-Weg »via main« und Experten-Weg mit eigenem Konto)
+    benutzen diesen einen Helfer. Vorher hatten sie zwei getrennte, gleichlautende Bodies —
+    genau die Konstellation, aus der beim nächsten Mal eine Drift wird (siehe #126: zwei
+    der acht Windows-Fehler waren reine Paritäts-Drift zwischen den Installern).
+
+    `join_rules` steckt zwar schon in `trusted_private_chat`, wird aber ausdrücklich
+    gesetzt: Wächter und Ersteller sollen dieselbe Aussage machen, nicht eine davon
+    implizit voraussetzen.
+
+    Bewusst NICHT gesetzt: `creation_content: {"m.federate": False}`. Das wäre pro Raum
+    UNUMKEHRBAR — danach könnte nie jemand von einem anderen Homeserver hinzukommen.
+    Sicherheitlich verlockend, produktpolitisch eine zugemauerte Tür (Entscheidung Michi,
+    31.07.2026)."""
+    return {
+        "is_direct": True,
+        "invite": [owner_id],
+        "preset": "trusted_private_chat",
+        "name": f"{name} (Operator-Agent)",
+        "initial_state": [
+            {"type": "m.room.join_rules", "state_key": "",
+             "content": {"join_rule": "invite"}},
+            {"type": "m.room.guest_access", "state_key": "",
+             "content": {"guest_access": "forbidden"}},
+            {"type": "m.room.history_visibility", "state_key": "",
+             "content": {"history_visibility": "invited"}},
+        ],
+    }
+
+
 @app.post("/api/agents/{name}/publish")
 async def api_agent_publish(name: str, request: Request):
     agent = agents_store.get_agent(name)
@@ -688,10 +740,8 @@ async def api_agent_publish(name: str, request: Request):
             return err("matrix", "Der Operator-Zugang wurde nicht gefunden — bitte einmal "
                        "den Listener-Dienst prüfen (Tab System).", 500)
         try:
-            room = mx(hs, "POST", "/_matrix/client/v3/createRoom", {
-                "is_direct": True, "invite": [c["owner_id"]],
-                "preset": "trusted_private_chat", "name": f"{name} (Operator-Agent)"},
-                token=owner_tok)
+            room = mx(hs, "POST", "/_matrix/client/v3/createRoom",
+                      _agentenraum_body(name, c["owner_id"]), token=owner_tok)
         except RuntimeError as e:
             audit("dashboard", "agent.publish", name, False)
             return err("matrix", str(e), 502)
@@ -715,10 +765,8 @@ async def api_agent_publish(name: str, request: Request):
             "identifier": {"type": "m.id.user", "user": localpart},
             "password": password,
             "initial_device_display_name": f"Operator Agent {name}"})
-        room = mx(hs, "POST", "/_matrix/client/v3/createRoom", {
-            "is_direct": True, "invite": [c["owner_id"]],
-            "preset": "trusted_private_chat", "name": f"{name} (Operator-Agent)"},
-            token=login["access_token"])
+        room = mx(hs, "POST", "/_matrix/client/v3/createRoom",
+                  _agentenraum_body(name, c["owner_id"]), token=login["access_token"])
     except RuntimeError as e:
         audit("dashboard", "agent.publish", name, False)
         return err("matrix", str(e), 502)

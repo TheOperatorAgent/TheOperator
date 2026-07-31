@@ -1,10 +1,10 @@
 {
- "version": "1.23.1",
+ "version": "1.24.0",
  "date": "2026-07-31",
  "highlights": [
-  "🧠 Dein Operator kennt jetzt seine eigenen Meldungen. Wenn er dir von sich aus etwas schickt — eine neue Mail, eine Terminanfrage — und du danach fragst »hast du das schon zugesagt?«, weiß er, wovon du sprichst. Und er sagt ehrlich, dass er es nur gemeldet und noch nichts erledigt hat, statt zu raten.",
-  "🙋 Du bestimmst, wie oft nachgefragt wird: »Streng«, »Normal« oder »Locker« im Tab Datenschutz. Vor gefährlichen Befehlen und vor Zugriffen auf seine eigenen Sicherheitsdateien fragt er in jeder Stufe — das bleibt.",
-  "🔧 Updates, die mehr brauchen als neue Dateien, sagen das jetzt. Bisher konnte »Aktualisieren« neue Dateien bringen und das eigentliche Problem bestehen lassen, ohne Hinweis. Jetzt zeigt das Dashboard in dem Fall den Installationsbefehl statt eines Knopfes, der nicht hilft.",
-  "📄 Neu dokumentiert: die ehrlichen Grenzen der Microsoft-Anbindung — was ohne Copilot-Lizenz nicht geht und warum."
+  "🚪 Neu: Ein Wächter prüft alle 30 Minuten die vier Türen zu deinem Chat — ist außer dir und deinem Operator jemand im Raum? Darf jemand ohne Konto mitlesen? Hat sich ein fremdes Gerät angemeldet? Kann sich auf deinem Server plötzlich jeder registrieren? Raum-Einstellungen richtet er selbst wieder gerade; bei allem, wo es um Personen geht, fragt er dich — er wirft niemanden von sich aus hinaus.",
+  "🙋 Wenn dein Operator auf eine Freigabe wartet und du »ja« ins Dashboard tippst, sagt er dir jetzt, dass die Antwort in den Chat gehört. Vorher verschwand sie wirkungslos und die Aufgabe lief in eine Zeitüberschreitung — ohne dass jemand merkte, warum.",
+  "🔒 Neue Agenten-Räume sind ab dem ersten Moment dicht: kein Gastzugang, keine Einsicht in frühere Nachrichten, Eintritt nur auf Einladung.",
+  "📄 Der Datenschutz-Tab erklärt jetzt auch das Chat-Fenster im Dashboard: Es zeigt nur, gespeichert wird dort nichts."
  ]
 }

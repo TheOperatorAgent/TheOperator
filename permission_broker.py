@@ -262,6 +262,43 @@ _SCHREIB_CMD = {"tee", "cp", "mv", "ln", "dd", "install", "rsync", "truncate",
 
 
 WARTE_DATEI = os.path.join(BOT_DIR, "run", "wartezeit.json")
+# #94: Solange eine Rückfrage offen ist, steht sie hier. Grund: Der Dock im Dashboard
+# sendet unter dem BOT-Konto (matrix_room.senden_dashboard), der Broker akzeptiert aber
+# nur Antworten des Owners. Ein »ja«, das jemand ins Dashboard tippt, wird also
+# stillschweigend ignoriert und die Aufgabe läuft nach drei Minuten in den Timeout.
+# Sicherheitlich richtig — aber ohne diese Datei völlig unsichtbar.
+OFFEN_DATEI = os.path.join(BOT_DIR, "run", "frage_offen.json")
+
+
+def offene_frage():
+    """Läuft gerade eine Rückfrage? → dict mit »seit« und »was«, sonst None.
+    Veraltete Einträge (Prozess abgestürzt) laufen nach der doppelten Wartezeit ab."""
+    try:
+        with open(OFFEN_DATEI, encoding="utf-8") as f:
+            d = json.load(f)
+        if time.time() - d.get("seit", 0) > 2 * WAIT_SECONDS:
+            return None
+        return d
+    except (OSError, ValueError, AttributeError):
+        return None
+
+
+def _frage_offen(beschreibung):
+    try:
+        os.makedirs(os.path.dirname(OFFEN_DATEI), exist_ok=True)
+        tmp = OFFEN_DATEI + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"seit": time.time(), "was": str(beschreibung)[:200]}, f)
+        os.replace(tmp, OFFEN_DATEI)
+    except OSError:
+        pass
+
+
+def _frage_erledigt():
+    try:
+        os.remove(OFFEN_DATEI)
+    except OSError:
+        pass
 
 
 def wartezeit_gesamt():
@@ -574,6 +611,7 @@ def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None, merken=N
     except Exception as e:
         log(f"Permission-Broker: Frage konnte nicht gesendet werden ({e}) → abgelehnt")
         return False
+    _frage_offen(beschreibung)          # #94: der Dock kann jetzt ehrlich warnen
     ab = time.time()
     ende = ab + wait
     global _WARTE_START
@@ -620,6 +658,7 @@ def ask_owner(beschreibung, fp, wait=WAIT_SECONDS, log=lambda *_: None, merken=N
                     mark_reply_used(e.get("event_id"))
                     return _entscheidung(a, fp, log)
     _verbuche_wartezeit()
+    _frage_erledigt()
     log("Permission-Broker: keine Antwort in der Wartezeit → abgelehnt (fail-closed)")
     try:
         _api(hs, tok, f"/_matrix/client/v3/rooms/{raum_q}/send/m.room.message/{time.time_ns()}",
@@ -645,6 +684,7 @@ def _verbuche_wartezeit():
 
 def _entscheidung(ja, fp, log):
     _verbuche_wartezeit()
+    _frage_erledigt()
     if not ja:
         log("Permission-Broker: vom Owner abgelehnt")
         return False

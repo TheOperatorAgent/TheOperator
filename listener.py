@@ -93,6 +93,10 @@ try:
 except Exception:
     claude_health = None
 try:
+    import raumwaechter                # noqa: E402  (#98 Raum-Wächter: die vier Türen)
+except Exception:
+    raumwaechter = None
+try:
     import throttle                    # noqa: E402  (#58 Fair-Use-Drossel)
 except Exception:
     throttle = None
@@ -1523,6 +1527,43 @@ def ensure_tool_hook():
 _health_state = {"last": 0.0}
 
 
+_waechter_state = {"last": 0.0, "busy": False}
+
+
+def _raumwaechter_tick(owner, agents, interval=None):
+    """#98: Die vier Türen laufend prüfen. Hier in main() und NICHT in BotSession —
+    der Wächter gehört zur Installation, nicht zum einzelnen Raum. In einem Raum-Thread
+    liefe die Homeserver-Prüfung einmal pro Raum, also mehrfach ohne Grund.
+
+    Eigener Thread: Ein hängender Homeserver darf die 5-Sekunden-Schleife nicht anhalten.
+    Fail-open — ein Wächter-Fehler darf den Operator nie stummschalten."""
+    if not raumwaechter or not owner:
+        return
+    interval = interval or raumwaechter.INTERVALL
+    now = time.time()
+    if _waechter_state["busy"] or now - _waechter_state["last"] < interval:
+        return
+    _waechter_state["last"] = now
+    _waechter_state["busy"] = True
+
+    raeume = {owner.room: {CREDS["user_id"], CREDS["owner_id"]}}
+    for name, s in (agents or {}).items():
+        raeume[s.room] = {s.creds["user_id"], CREDS["owner_id"]}
+
+    def _lauf():
+        try:
+            def api(pfad, method="GET", body=None):
+                return _owner_api(CREDS["homeserver"], owner.creds["access_token"],
+                                  pfad, method=method, body=body)
+            raumwaechter.tick(api, raeume, melden=owner.send_message, log=log)
+        except Exception as e:
+            log(f"Raum-Wächter fehlgeschlagen: {e}")
+        finally:
+            _waechter_state["busy"] = False
+
+    threading.Thread(target=_lauf, daemon=True).start()
+
+
 def _claude_health_tick(owner, interval=900):
     """#59: Läuft der Claude-Zugang noch? Nachgesehen wird nur, wenn längere Zeit kein
     echter Lauf Beweis geliefert hat (spart Aufrufe). Bei abgelaufenem Login geht EINE
@@ -1713,6 +1754,7 @@ def main():
                 log(f"Ereignis-Prüfung fehlgeschlagen: {e}")
         _mail_watch_tick(log)
         _claude_health_tick(owner)
+        _raumwaechter_tick(owner, agents)      # #98: die vier Türen
         datenschutz_angebot(owner)     # #116: einmalig anbieten, sobald alles läuft
         if retention:                  # #18: einmal täglich alte Daten aufräumen
             try:

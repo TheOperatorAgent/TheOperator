@@ -1742,6 +1742,14 @@ async function loadPrivacy() {
     <tr><td>OAuth-Tokens (Google/M365)</td><td>AES-256-verschlüsselt in <span class="mono">secrets/</span>, Schlüssel im macOS-Schlüsselbund</td></tr>
     <tr><td>Microsoft 365</td><td>${s.m365.connected ? "Aktive Rechte: <span class='mono'>" + esc(s.m365.active_values.join(", ")) + "</span>" : "nicht verbunden — keine Daten"}</td></tr>
     <tr><td>Google Drive</td><td>${s.google.connected ? "Scope: <span class='mono'>" + esc(s.google.scopes.join(", ")) + "</span> (" + esc(s.google.connected_email) + ")" : "nicht verbunden — keine Daten"}</td></tr>
+    <tr><td>Chat-Fenster im Dashboard</td><td>Es <strong>zeigt</strong> nur — gespeichert wird hier nichts.
+      Die Nachrichten liegen im Matrix-Raum auf deinem eigenen Server; das Dashboard liest sie bei jedem
+      Öffnen frisch von dort. Schließt du das Fenster, ist nichts zu löschen, weil nichts angelegt wurde.
+      Was du hier tippst, geht unter dem Konto deines Operators in den Raum und ist als
+      <span class="mono">🖥️</span> gekennzeichnet — damit du später erkennst, was vom Dashboard kam.</td></tr>
+    <tr><td>Freigaben im Dashboard</td><td><strong>Gehen bewusst nicht.</strong> Eine Rückfrage
+      (»soll ich das wirklich?«) musst du im Chat selbst beantworten. Grund: Das Dashboard schreibt
+      unter dem Konto deines Operators — ein »ja« von ihm selbst darf nicht als deines zählen.</td></tr>
     <tr><td>Telemetrie</td><td>keine. Es gibt keinen Hersteller-Server.</td></tr>
     <tr><td>Löschung (Art. 17)</td><td><span class="mono">bash install.sh --uninstall</span> entfernt Dienste, widerruft Tokens und löscht auf Wunsch alle Daten</td></tr>
   </table></div>`;

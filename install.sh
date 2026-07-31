@@ -24,7 +24,7 @@ WORKSPACE="${OPERATOR_WORKSPACE:-$HOME/Operator}"
 STATE_FILE="$BOT_DIR/.install-state.json"
 # #131: Der Installer nennt seine eigene Fassung. Bei zwei Auslieferungswegen
 # (GitHub sofort, operator.bayern per Handupload) ist Drift sonst unsichtbar.
-INSTALLER_VERSION="1.23.1"
+INSTALLER_VERSION="1.24.0"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main}"
 
@@ -586,7 +586,7 @@ phase5_files() {
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]:-.}")" 2>/dev/null && pwd)
   local F A DEST
   for F in listener.py send.py memory.py skills.py sessions.py cron_runner.py redact.py reid.py \
-           dienst_start.py pruefung.py diagnose.py migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py matrix_room.py dock_fenster.py update_verify.py update_pubkey.txt sandbox.py claude_health.py throttle.py retention.py permission_broker.py claude_tool_hook.py net_guard.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
+           dienst_start.py pruefung.py diagnose.py migrate_tokens.py vaultwarden.py platform_compat.py secretstore.py servicemgr.py providers.py persona.py matrix_room.py dock_fenster.py update_verify.py update_pubkey.txt sandbox.py claude_health.py raumwaechter.py throttle.py retention.py permission_broker.py claude_tool_hook.py net_guard.py triggers.py verify_loop.py embeddings.py skillguard.py updater.py audit_log.py; do
     if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
     else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || die "$F weder lokal noch unter $REPO_RAW gefunden"; fi
     ok "$F installiert"

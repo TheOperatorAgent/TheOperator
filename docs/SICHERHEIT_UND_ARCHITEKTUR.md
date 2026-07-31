@@ -205,7 +205,46 @@ nicht aufschließen; alles andere holen wir.
 
 ---
 
-## 9. Verwandte Dokumente
+## 9. Bedrohungsmodell des Chat-Fensters im Dashboard (#94)
+
+Der Dock spiegelt den echten Matrix-Chat ins Dashboard. Alles, was der Nutzer dort sieht,
+kommt von außen — also ist jede Zeile darin **Daten, nie Anweisung**. Sieben Wege wurden
+durchgegangen; drei davon sind per Test festgenagelt.
+
+| # | Weg | Antwort |
+|---|---|---|
+| 1 | **Fremder Text wird zu Markup** (XSS) | Nachrichten werden ausschließlich per `textContent` gesetzt, nie per `innerHTML`. Test: `test_dock_frontend_rendert_nur_text`. |
+| 2 | **Prompt-Injection über den Raum** | Was im Raum steht, ist Eingabe für das Modell — nicht für den Broker. Jede riskante Aktion bleibt bestätigungspflichtig, egal wer sie im Text „anordnet". |
+| 3 | **Fremde Webseite schickt Befehle ans Dashboard** (CSRF) | `_dock_origin_ok()` prüft die Herkunft jeder Sende-Anfrage; abgewiesene landen im Audit-Log. Test: `test_dock_origin_wache`. |
+| 4 | **Token landet in einer URL** | Der Ereignisstrom trägt das Token nie im Adressfeld (Browser-Historie, Proxy-Logs). Test: `test_dock_stream_token_nie_in_url`. |
+| 5 | **Der Dock als Umweg um deine Freigabe** | **Der wichtigste Punkt.** Siehe unten. |
+| 6 | **Mitlesen im Netz** | Das Dashboard bindet nur an `127.0.0.1`. Von außen ist da nichts. |
+| 7 | **Ende-zu-Ende-Verschlüsselung** | Sobald der Raum verschlüsselt ist, kann der Dock nicht mehr mitlesen. Dann muss er das **sagen**, nicht leer bleiben (offen, gekoppelt an #12). |
+
+### Punkt 5 im Detail — und die Grenze, die daraus folgt
+
+Der Dock schreibt unter dem **Konto des Operators** (`matrix_room.senden_dashboard`), nicht
+unter deinem. Der Permission-Broker akzeptiert aber ausschließlich Antworten des **Owners**
+(`permission_broker.py`: `if e.get("sender") != owner: continue`).
+
+Das ist absichtlich so, und zwar aus einem Grund, der schwerer wiegt als die Bequemlichkeit:
+Würde der Broker Nachrichten des Bot-Kontos als Freigabe akzeptieren, könnte ein Modell,
+das an den Dashboard-Token gelangt, **seine eigene Rückfrage bejahen**. Aus »ohne dein Ja
+passiert nichts« würde »ohne sein eigenes Ja passiert nichts«.
+
+**Die ehrliche Folge:** Ein »ja«, das jemand in den Dock tippt, zählt nicht. Bis 1.23.1
+verpuffte es lautlos und die Aufgabe lief nach drei Minuten in den Timeout — sicher, aber
+unsichtbar kaputt. Seit 1.24.0 schreibt der Broker eine offene Frage nach
+`run/frage_offen.json`, und der Dock antwortet in dem Fall mit dem Hinweis, wo die Antwort
+hingehört, statt sie zu schlucken.
+
+Der bequeme Weg wäre eine **eigene Matrix-Sitzung fürs Dashboard** (#96) — dann käme das
+»ja« wirklich von dir. Das ist bewusst ein eigenes Issue: Ein Matrix-Token lässt sich nicht
+auf einen Raum begrenzen, und diese Abwägung trifft der Nutzer, nicht wir.
+
+---
+
+## 10. Verwandte Dokumente
 
 - `SICHERHEIT.md` — Detail-Sicherheitskonzept (Tresor, Pseudonymisierung, Audit)
 - `ARCHITEKTUR.md` — technische Gesamtarchitektur
