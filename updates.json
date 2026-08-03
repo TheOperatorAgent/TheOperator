@@ -1,10 +1,9 @@
 {
- "version": "1.37.0",
+ "version": "1.38.0",
  "date": "2026-08-03",
  "highlights": [
-  "📋 Neu: ein Nachweis darüber, was der Operator getan hat — und vor allem, was er versucht und NICHT gedurft hat. Genau die Frage, die dir ein Datenschutzbeauftragter stellt.",
-  "🔗 Die Einträge sind miteinander verkettet: Wer nachträglich eine Zeile herausnimmt oder ändert, macht das sichtbar. Der Operator sagt dir selbst, ob sein Protokoll lückenlos ist.",
-  "🔐 Im Protokoll stehen Handlungen und Urteile — keine Dateiinhalte, keine Mailtexte, keine Passwörter, keine E-Mail-Adressen. Ein Nachweis darf kein zweites Datenschutzproblem sein.",
-  "🗓️ Alte Einträge verschwinden nach 90 Tagen von selbst. Die Dauer lässt sich ändern."
+  "🧹 Der Nachweis räumt sich ab sofort selbst auf: Einträge, die älter als die eingestellte Aufbewahrungsdauer sind, verschwinden täglich von allein. Ohne das würde die Datei unbegrenzt wachsen — und unbegrenztes Aufheben ist genau das, was der Datenschutz nicht will.",
+  "🔍 Beim Aufräumen prüft der Operator gleich, ob sein Nachweis noch lückenlos ist. Wurde daran manipuliert, steht es im Protokoll statt unbemerkt zu bleiben.",
+  "⚡ Diese Wartung läuft ohne Sprachmodell — sie kostet dich nichts und kann nicht daran scheitern, dass gerade kein Modell erreichbar ist."
  ]
 }

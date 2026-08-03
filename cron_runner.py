@@ -59,11 +59,47 @@ def save_jobs(jobs: list) -> None:
     os.replace(CRON_FILE + ".tmp", CRON_FILE)
 
 
+_letzte_hausarbeit = ""
+
+
+def hausarbeit(log=print, heute=None) -> None:
+    """Wartung ohne Modell — einmal täglich, still (#146/#156).
+
+    Bewusst KEINE Automation mit Prompt: Aufräumen ist Hausarbeit, kein Auftrag. Ein
+    Modell dafür zu bemühen kostet Tokens, kann scheitern und wäre vom Ergebnis her
+    nicht besser. Was ohne Sprachmodell geht, sollte ohne Sprachmodell laufen.
+
+    Das Protokoll wächst mit jeder Handlung. Ohne Aufräumen wäre die Aufbewahrung
+    unbegrenzt — und genau das ist datenschutzrechtlich das Problem, das der Nachweis
+    vermeiden sollte. Ein Feature, das ein Problem löst und ein neues schafft, ist keins.
+    """
+    global _letzte_hausarbeit
+    heute = heute or time.strftime("%Y-%m-%d")
+    if _letzte_hausarbeit == heute:
+        return
+    _letzte_hausarbeit = heute
+    try:
+        import protokoll
+        vorher = len(protokoll.lesen())
+        geblieben = protokoll.aufraeumen()
+        if vorher != geblieben:
+            log(f"Protokoll aufgeräumt: {vorher - geblieben} Einträge älter als "
+                f"{protokoll.AUFBEWAHRUNG_TAGE} Tage entfernt, {geblieben} behalten")
+        heil, meldung = protokoll.kette_pruefen()
+        if not heil:
+            # Nicht still schlucken: Ein gebrochener Nachweis ist genau der Fall, für
+            # den die Kette gebaut wurde.
+            log(f"⚠️ {meldung}")
+    except Exception as e:
+        log(f"Hausarbeit fehlgeschlagen: {e}")
+
+
 def tick(owner_session, agent_sessions: dict, log=print) -> None:
     """Einmal pro Aufruf: fällige Jobs starten (zeitgesteuert oder per Dashboard
     „Jetzt ausführen"-Flag). Doppelstart derselben Minute wird über last_run_min verhindert."""
     now = time.localtime()
     this_minute = time.strftime("%Y-%m-%d %H:%M")
+    hausarbeit(log)
     jobs = load_jobs()
     changed = False
     for job in jobs:

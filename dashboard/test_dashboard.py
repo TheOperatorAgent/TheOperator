@@ -7002,3 +7002,73 @@ def test_der_hook_schreibt_jede_entscheidung_mit():
     # Die Rückfrage-Entscheidung ist die interessanteste: Sie muss das Ergebnis der
     # Nachfrage festhalten, nicht die Absicht.
     assert '_protokoll("ausgefuehrt" if ok else "abgelehnt"' in src
+
+
+def test_pruefstand_schreibt_keine_loesungswege_vor():
+    """Ein Prüfstand, der Werkzeugnamen verlangt, misst Gehorsam statt Fähigkeit.
+
+    Zweimal in diese Falle gelaufen: erst bei `kette-mail-dann-kalender` (Claude nahm
+    einen anderen, richtigen Weg), dann bei fünf Aufgaben gegen den eigenen Kern — dort
+    zählte ich 0 von 5, obwohl mindestens zwei inhaltlich richtig gelöst waren.
+
+    Ausnahmen mit gutem Grund: **ablehnung** (dort ist der Werkzeugaufruf selbst der
+    Messwert) und »ohne-werkzeug-antworten« (dort ist das Nicht-Benutzen der Punkt)."""
+    import json as _j
+    daten = _j.load(open(_PS_AUFGABEN, encoding="utf-8"))
+    for a in daten["aufgaben"]:
+        if a["art"] == "ablehnung" or a["name"] == "ohne-werkzeug-antworten":
+            continue
+        erw = a.get("erwartet") or {}
+        assert not erw.get("werkzeuge") and not erw.get("gruppen"), (
+            f"»{a['name']}« schreibt einen Lösungsweg vor: "
+            f"{erw.get('werkzeuge') or erw.get('gruppen')}")
+        assert erw.get("stichworte"), \
+            f"»{a['name']}« prüft weder Weg noch Ergebnis — der Test misst nichts"
+
+
+def test_hausarbeit_laeuft_ohne_sprachmodell():
+    """#156: Aufräumen ist Hausarbeit, kein Auftrag.
+
+    Die Automatik führt sonst Prompts aus. Für Wartung wäre das falsch: Es kostet
+    Tokens, kann am Modell scheitern und wäre vom Ergebnis her nicht besser.
+    **Was ohne Sprachmodell geht, sollte ohne Sprachmodell laufen.**"""
+    import ast as _a
+    src = open(os.path.expanduser("~/.claude/matrix-bot/cron_runner.py"),
+               encoding="utf-8").read()
+    baum = _a.parse(src)
+    fn = next(k for k in baum.body if isinstance(k, _a.FunctionDef)
+              and k.name == "hausarbeit")
+    # Docstring raus, BEVOR im Code gesucht wird. Er erklärt ja gerade, warum hier kein
+    # Prompt benutzt wird — ein Test, der Prosa mit Programm verwechselt, zwingt einen
+    # später, die Begründung zu löschen. Heute zum dritten Mal in diese Falle gelaufen
+    # (»BatchMode«, »Docker«, jetzt »Prompt«); deshalb steht die Regel hier nochmal.
+    ohne_doku = [k for k in fn.body
+                 if not (isinstance(k, _a.Expr) and isinstance(k.value, _a.Constant)
+                         and isinstance(k.value.value, str))]
+    text = "\n".join(_a.dump(k) for k in ohne_doku).lower()
+    for modellhaft in ("run_automation", "claude", "llm_runner", "anbieter", "prompt"):
+        assert modellhaft not in text, \
+            f"Hausarbeit bemüht »{modellhaft}« — sie soll ohne Modell auskommen"
+    assert "aufraeumen" in text and "kette_pruefen" in text
+
+
+def test_hausarbeit_laeuft_hoechstens_einmal_taeglich():
+    """Der Automatik-Läufer tickt jede Minute. Ohne Sperre würde das Protokoll
+    1440-mal am Tag neu geschrieben — auf einem Pi spürbar, und völlig ohne Nutzen."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import cron_runner
+    laeufe = []
+    cron_runner._letzte_hausarbeit = ""
+    for _ in range(5):
+        cron_runner.hausarbeit(log=laeufe.append, heute="2026-08-03")
+    cron_runner.hausarbeit(log=laeufe.append, heute="2026-08-04")   # neuer Tag → wieder
+    assert cron_runner._letzte_hausarbeit == "2026-08-04"
+
+
+def test_gebrochene_kette_wird_gemeldet_nicht_geschluckt():
+    """Ein gebrochener Nachweis ist genau der Fall, für den die Kette gebaut wurde.
+    Ihn still zu übergehen wäre schlimmer, als gar keine Kette zu haben."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/cron_runner.py"),
+               encoding="utf-8").read()
+    teil = src.split("def hausarbeit")[1].split("\ndef ")[0]
+    assert "if not heil" in teil and "log(" in teil

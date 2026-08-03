@@ -1,5 +1,5 @@
 {
- "version": "1.37.0",
+ "version": "1.38.0",
  "files": [
   {
    "src": "listener.py",
@@ -44,7 +44,7 @@
   {
    "src": "cron_runner.py",
    "dst": "cron_runner.py",
-   "sha256": "3076c40a111f139678d3589cd0ce1af61023f24efb80e8a2ddbf60e965a73e0a"
+   "sha256": "ec2c02658960bf29e4acad0936ea814f939784df75164563df101eb5e1d1b612"
   },
   {
    "src": "redact.py",
@@ -234,7 +234,7 @@
   {
    "src": "werkzeuge.py",
    "dst": "werkzeuge.py",
-   "sha256": "13942ca135ee488a9184025a425a25dac7629af3783e6523d02ad372285154e2"
+   "sha256": "a85dad73cdcdc875043015435feb9306f9c894e7a90d1f5fc6c3f0b6e3cba1ad"
   },
   {
    "src": "anbieter.py",
@@ -324,7 +324,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "fbfda2117eb5b2ed303ae73dbc55f71c3080cf120fcf78aab3959d1502b9ded6"
+   "sha256": "d017e5e0b1b46d9e85200deb17573d2742de0deb101a7410062c2df8d3a0e138"
   },
   {
    "src": "dienst_start.py",
@@ -349,7 +349,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "43b797343bb0bb3f855431b0d235a7275d9d480e8054fed09b76233a44f5e139"
+   "sha256": "d19bdc7c6a45077c48fb08856d02d4676ce053bacd05f60162a9959ebffb3923"
   },
   {
    "src": "dashboard/test_petra.py",
