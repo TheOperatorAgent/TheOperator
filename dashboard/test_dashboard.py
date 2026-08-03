@@ -7072,3 +7072,47 @@ def test_gebrochene_kette_wird_gemeldet_nicht_geschluckt():
                encoding="utf-8").read()
     teil = src.split("def hausarbeit")[1].split("\ndef ")[0]
     assert "if not heil" in teil and "log(" in teil
+
+
+def _wants_nachweis():
+    """Die reine Funktion aus listener.py holen, ohne den Listener zu starten."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
+               encoding="utf-8").read()
+    ns = {}
+    exec(src[src.index("def wants_nachweis"):src.index("def reidentify")], ns)
+    return ns["wants_nachweis"]
+
+
+def test_nachweis_im_chat_abrufbar():
+    """#156: Ein Nachweis, den nur der Entwickler im Terminal abrufen kann, hilft dem
+    Datenschutzbeauftragten nicht. `EINFACHHEIT.md` verbietet den Terminal-Zwang."""
+    w = _wants_nachweis()
+    for satz in ("nachweis", "Bericht", "protokoll", "monatsbericht",
+                 "was hast du verweigert"):
+        assert w([satz]) is True, satz
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
+               encoding="utf-8").read()
+    assert "wants_nachweis(bodies)" in src, "Befehl ist nicht eingehängt"
+
+
+def test_nachweis_befehl_loest_nicht_bei_normalen_saetzen_aus():
+    """Die Gegenprobe ist hier wichtiger als die Erkennung: »Schreib einen Bericht
+    über das Quartal« ist ein Auftrag ans Modell, kein Abruf des Protokolls. Ein
+    Kurzbefehl, der normale Sätze abfängt, macht den Assistenten unbrauchbar."""
+    w = _wants_nachweis()
+    for satz in ("was hast du diesen monat gemacht?",
+                 "schreib einen bericht über das quartal",
+                 "leg das protokoll der montagsrunde ab",
+                 "hallo", ""):
+        assert w([satz]) is False, f"»{satz}« löst fälschlich den Kurzbefehl aus"
+
+
+def test_nachweis_meldet_gebrochene_kette_im_chat():
+    """Wurde am Protokoll manipuliert, darf die Antwort nicht aussehen wie immer."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
+               encoding="utf-8").read()
+    # Auf die AUFRUFSTELLE schneiden, nicht auf die Definition — beide enthalten
+    # dieselbe Zeichenfolge, und `split` nimmt die erste.
+    teil = src.split('and wants_nachweis(bodies):')[1][:900]
+    assert "kette_pruefen" in teil, "prüft die Kette nicht"
+    assert "⚠️" in teil, "eine gebrochene Kette sähe aus wie ein normaler Bericht"

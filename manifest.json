@@ -1,10 +1,10 @@
 {
- "version": "1.38.0",
+ "version": "1.39.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "3fe5ea72c7be18eed20c48cf51ded4ca716682d0792eea024b9305eb88b32061"
+   "sha256": "3e6a3122c472540e569c5d6729f8f26a5718d114c0f3df438cf2531eead574d5"
   },
   {
    "src": "matrix_room.py",
@@ -324,7 +324,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "d017e5e0b1b46d9e85200deb17573d2742de0deb101a7410062c2df8d3a0e138"
+   "sha256": "1f003bfbfbf33d45c6fcdc5b05841d47487d7b52cbdb6aff67fe58d766c1083f"
   },
   {
    "src": "dienst_start.py",
@@ -349,7 +349,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "d19bdc7c6a45077c48fb08856d02d4676ce053bacd05f60162a9959ebffb3923"
+   "sha256": "2837f5e149614f80012f41d98bb5b0bb27ad8ad7a97a5001a3dcf77c2ab867b5"
   },
   {
    "src": "dashboard/test_petra.py",

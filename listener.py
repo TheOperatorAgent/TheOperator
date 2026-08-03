@@ -328,6 +328,20 @@ def wants_dashboard(bodies):
         "link", "öffn", "zugang", "login", "entsperr", "anmeld", "einlogg", "freischalt"))
 
 
+def wants_nachweis(bodies):
+    """Erkennt die Bitte um den Compliance-Nachweis (#146/#156).
+
+    Bewusst eng gefasst wie `wants_dashboard`: »Was hast du diesen Monat gemacht?«
+    soll NICHT auslösen — das ist eine Frage ans Modell, keine an das Protokoll.
+    """
+    t = " ".join(bodies or []).strip().lower().strip("!.?/ ")
+    if not t:
+        return False
+    return t in ("nachweis", "bericht", "protokoll", "compliance", "nachweis zeigen",
+                 "zeig mir den nachweis", "zeig den nachweis", "monatsbericht",
+                 "datenschutzbericht", "was hast du verweigert")
+
+
 def reidentify(text, mapping):
     """Surrogate → echte Werte (stdlib). #60: nutzt reid.apply — erfasst auch
     abgeleitete Formen (Nachname allein, kleingeschrieben in Dateinamen) case-insensitiv."""
@@ -895,6 +909,24 @@ class BotSession(threading.Thread):
         # Rechner« und bekam einen 127.0.0.1-Link — den er auf dem MAC las. Der Link
         # kann auf jedem anderen Gerät nur ins Leere gehen. Der Listener läuft aber
         # auf demselben Rechner wie das Dashboard: also öffnet er es einfach selbst.
+        if self.kind == "owner" and wants_nachweis(bodies):
+            # Ohne diesen Weg wäre der Nachweis nur im Terminal erreichbar — und ein
+            # Nachweis, den nur der Entwickler abrufen kann, hilft dem
+            # Datenschutzbeauftragten nicht (EINFACHHEIT.md: kein Terminal-Zwang).
+            self.mark_read(last_event_id)
+            try:
+                import protokoll
+                text = protokoll.bericht()
+                heil, _ = protokoll.kette_pruefen()
+                kopf = "📋 **Nachweis**\n\n" if heil else "⚠️ **Nachweis — Achtung**\n\n"
+                self.send_message(kopf + text)
+            except Exception as e:
+                log(f"[{self.bot_name}] Nachweis fehlgeschlagen: {e}")
+                self.send_message(
+                    "⚠️ Ich komme gerade nicht an mein Protokoll heran. 👉 Schau im "
+                    f"Protokoll auf dem {GERAET} nach, dort steht der Grund.")
+            return
+
         if self.kind == "owner" and wants_dashboard(bodies):
             self.mark_read(last_event_id)
             import socket

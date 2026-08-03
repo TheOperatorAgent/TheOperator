@@ -1,9 +1,9 @@
 {
- "version": "1.38.0",
+ "version": "1.39.0",
  "date": "2026-08-03",
  "highlights": [
-  "🧹 Der Nachweis räumt sich ab sofort selbst auf: Einträge, die älter als die eingestellte Aufbewahrungsdauer sind, verschwinden täglich von allein. Ohne das würde die Datei unbegrenzt wachsen — und unbegrenztes Aufheben ist genau das, was der Datenschutz nicht will.",
-  "🔍 Beim Aufräumen prüft der Operator gleich, ob sein Nachweis noch lückenlos ist. Wurde daran manipuliert, steht es im Protokoll statt unbemerkt zu bleiben.",
-  "⚡ Diese Wartung läuft ohne Sprachmodell — sie kostet dich nichts und kann nicht daran scheitern, dass gerade kein Modell erreichbar ist."
+  "💬 Neu im Chat: Schreib »nachweis« — und der Operator zeigt dir in einem Absatz, was er getan, was er zur Bestätigung vorgelegt und was er verweigert hat. Kein Terminal nötig.",
+  "🔗 Ist am Protokoll manipuliert worden, sieht die Antwort anders aus als sonst. Ein gebrochener Nachweis darf nicht wie ein normaler aussehen.",
+  "🙂 Der Kurzbefehl ist eng gefasst: »Schreib mir einen Bericht über das Quartal« bleibt eine ganz normale Bitte an deinen Assistenten."
  ]
 }
