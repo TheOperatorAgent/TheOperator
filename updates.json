@@ -1,9 +1,10 @@
 {
- "version": "1.40.0",
+ "version": "1.41.0",
  "date": "2026-08-03",
  "highlights": [
-  "🧾 Wichtige Korrektur am Nachweis: Interne Prüfläufe landeten versehentlich im Compliance-Protokoll. Der Bericht meldete dadurch Handlungen, die nie stattgefunden haben — ein Nachweis, der Falsches behauptet, ist schlimmer als keiner.",
-  "🔒 Prüfungen und Betrieb sind jetzt sauber getrennt: Was zum Testen läuft, kommt in ein eigenes Protokoll und niemals in deinen Nachweis.",
-  "🧹 Dein bisheriges Protokoll wurde geleert, weil es ausschließlich Testverkehr enthielt. Der Nachweis beginnt damit bei null — dafür stimmt ab jetzt jede Zeile darin."
+  "🧾 Neu im Dashboard unter »Datenschutz«: die Karte »Nachweis«. Sie zeigt auf einen Blick, was dein Operator ausgeführt, was er dir vorgelegt und was er von sich aus verweigert hat — wahlweise für 7, 30 oder 90 Tage.",
+  "📄 Ein Klick auf »Als Datei sichern« erzeugt den fertigen Bericht zum Weitergeben — mit Einzelnachweis und Prüfsumme je Zeile, damit ihn auch jemand ohne den Operator nachrechnen kann.",
+  "🟢 Eine Ampel über dem Bericht sagt, ob die Aufzeichnung lückenlos ist. Steht sie auf Rot, wurde nachträglich etwas verändert — dann darfst du den Zahlen darunter nicht mehr trauen.",
+  "⏳ Wie lange der Nachweis aufbewahrt wird, stellst du selbst ein. Voreinstellung bleiben 90 Tage."
  ]
 }

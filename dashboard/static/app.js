@@ -1773,8 +1773,71 @@ async function loadRueckfragen() {
   });
 }
 
+// ---------------------------------------------------------- Nachweis (#156) --
+// Der Bericht kommt als Markdown-Fließtext mit **Hervorhebungen**. Er wird über DOM-Knoten
+// aufgebaut, nie über innerHTML: Im Text stehen Werkzeugnamen und Gründe aus dem Betrieb,
+// und die dürfen niemals als Markup interpretiert werden.
+function nachweisAbsatz(text) {
+  const p = document.createElement("p");
+  text.split(/\*\*/).forEach((teil, i) => {
+    if (i % 2) {
+      const fett = document.createElement("strong");
+      fett.textContent = teil;
+      p.appendChild(fett);
+    } else {
+      p.appendChild(document.createTextNode(teil));
+    }
+  });
+  return p;
+}
+
+async function loadNachweis() {
+  const tage = +($("#nachweis-tage")?.value ?? 30);
+  const ziel = $("#nachweis-text"), kette = $("#nachweis-kette");
+  if (!ziel) return;
+  try {
+    const d = await api("GET", "/api/nachweis?tage=" + tage);
+    ziel.textContent = "";
+    d.bericht.split("\n\n").forEach((abs) => ziel.appendChild(nachweisAbsatz(abs)));
+    // Die Ampel steht bewusst ÜBER dem Bericht: Ist die Kette gebrochen, darf man den
+    // Zahlen darunter nicht mehr trauen — das muss man lesen, bevor man sie liest.
+    kette.textContent = d.kette_heil
+      ? "🟢 Die Aufzeichnung ist lückenlos — nichts wurde nachträglich verändert."
+      : "🔴 " + d.kette_meldung;
+    kette.className = "small " + (d.kette_heil ? "ok" : "err");
+    const f = $("#nachweis-frist");
+    if (f) f.value = String(d.aufbewahrung_tage);
+  } catch (e) {
+    ziel.textContent = friendlyError(e);
+  }
+}
+
+async function nachweisDownload() {
+  const tage = +($("#nachweis-tage")?.value ?? 30);
+  try {
+    const r = await fetch("/api/nachweis/markdown?tage=" + tage,
+                          { headers: { "Authorization": "Bearer " + TOKEN } });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = "operator-nachweis.md";
+    a.click(); URL.revokeObjectURL(a.href);
+    toast("Der Nachweis liegt jetzt in deinem Download-Ordner.");
+  } catch (e) { toast(friendlyError(e), true); }
+}
+
+async function nachweisFrist() {
+  const tage = +$("#nachweis-frist").value;
+  try {
+    await api("POST", "/api/nachweis/aufbewahrung", { tage });
+    toast(`Gemerkt — der Nachweis bleibt ${tage} Tage erhalten. ` +
+          `Ältere Einträge verschwinden beim nächsten Aufräumen von allein.`);
+  } catch (e) { toast(friendlyError(e), true); }
+}
+
 async function loadPrivacy() {
   renderRetention();
+  loadNachweis().catch(() => {});
   const s = STATUS || await api("GET", "/api/status");
   await loadPseudonymize();
   loadRueckfragen().catch(() => {});

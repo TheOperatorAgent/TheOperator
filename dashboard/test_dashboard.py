@@ -7148,3 +7148,70 @@ def test_werkzeugkasten_kann_das_protokollziel_umlenken():
         vorher = os.path.getsize(eigen)
         wz.ausfuehren("lies", {"pfad": "/etc/passwd"}, umg2)
         assert os.path.getsize(eigen) == vorher
+
+
+# ------------------------------------------------ Nachweis im Dashboard (#156) --
+def test_nachweis_karte_ist_im_datenschutz_tab():
+    """Der Nachweis war bisher nur über den Chat erreichbar. Wer ihn einem
+    Datenschutzbeauftragten zeigen will, braucht ihn dort, wo er ihn sucht —
+    im Datenschutz-Tab, nicht in einem Chatbefehl, den man kennen muss."""
+    html = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/index.html"),
+                encoding="utf-8").read()
+    privacy = html.split('id="tab-privacy"')[1].split("</section>")[0]
+    for teil in ('id="nachweis-card"', 'id="nachweis-tage"', 'id="nachweis-kette"',
+                 'id="nachweis-frist"', "nachweisDownload()"):
+        assert teil in privacy, f"{teil} fehlt in der Nachweis-Karte"
+
+
+def test_nachweis_wird_nie_als_html_gerendert():
+    """Im Bericht stehen Werkzeugnamen und Ablehnungsgründe aus dem echten Betrieb.
+    Ein Werkzeugname, der als Markup durchschlägt, wäre ein Weg vom Modell in die
+    Dashboard-Seite — genau die Lücke, die der Dock (#94) schon einmal hatte."""
+    js = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/static/app.js"),
+              encoding="utf-8").read()
+    block = js.split("function nachweisAbsatz")[1].split("\nasync function loadPrivacy")[0]
+    assert "innerHTML" not in block, "Nachweis wird als HTML gerendert"
+    assert "textContent" in block
+
+
+def test_nachweis_bericht_kommt_aus_derselben_quelle_wie_der_chat():
+    """Zwei Auswertungen driften auseinander, und dann behauptet das Dashboard etwas
+    anderes als der Chat. Beide müssen protokoll.bericht() benutzen."""
+    srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py"),
+               encoding="utf-8").read()
+    lis = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
+               encoding="utf-8").read()
+    assert "protokoll.bericht(" in srv and "protokoll.bericht(" in lis
+
+
+def test_aufbewahrungsfrist_ist_einstellbar_und_begrenzt():
+    """»0 Tage« würde beim nächsten Aufräumen den ganzen Nachweis löschen — eine
+    Einstellung, die den Nachweis vernichtet, darf es nicht geben."""
+    import importlib, json as _json
+    protokoll = importlib.import_module("protokoll")
+    cfg = os.path.join(os.path.expanduser("~/.claude/matrix-bot"), "dashboard.json")
+    original = open(cfg, encoding="utf-8").read()
+    try:
+        for gesetzt, erwartet in ((0, 1), (-5, 1), (99999, 3650), (180, 180), ("x", 90)):
+            d = _json.loads(original)
+            d.setdefault("retention", {})["protokoll_days"] = gesetzt
+            open(cfg, "w").write(_json.dumps(d))
+            assert protokoll.frist() == erwartet, f"{gesetzt} → {protokoll.frist()}"
+    finally:
+        open(cfg, "w").write(original)
+
+
+def test_nachweis_export_enthaelt_keine_inhalte():
+    """Der Markdown-Export ist zum Weitergeben gedacht. Er darf Handlungen zeigen —
+    niemals Nachrichtentexte oder Zugangsdaten."""
+    import importlib, tempfile
+    protokoll = importlib.import_module("protokoll")
+    with tempfile.TemporaryDirectory() as tmp:
+        f = os.path.join(tmp, "p.jsonl")
+        protokoll.eintragen("ausgefuehrt", "werkzeug", "mail_send",
+                            "Mail an kunde@firma.de mit Schluessel sk-abcdefgh12345",
+                            ziel="M365", datei=f)
+        md = protokoll.markdown(datei=f)
+    assert "kunde@firma.de" not in md and "sk-abcdefgh12345" not in md
+    assert "[entfernt]" in md
+    assert "| Zeit | Urteil |" in md, "Rohtabelle fehlt — extern nicht nachrechenbar"

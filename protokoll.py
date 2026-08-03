@@ -52,6 +52,22 @@ _GEHEIM = re.compile(r"(sk-[A-Za-z0-9]{8,}|ghp_[A-Za-z0-9]{8,}|eyJ[A-Za-z0-9_\-]
 URTEILE = ("ausgefuehrt", "bestaetigung", "abgelehnt", "gesperrt")
 
 
+def frist():
+    """Aufbewahrungsdauer in Tagen — einstellbar in dashboard.json unter »retention«.
+
+    Bewusst dieselbe Stelle wie die übrigen Fristen (#18): Wer im Dashboard
+    festlegt, wie lange sein Verlauf bleibt, erwartet die Protokollfrist nicht
+    in einer zweiten Datei. Unplausible Werte werden auf 1…3650 begrenzt —
+    »0 Tage« hieße, dass jedes Aufräumen den ganzen Nachweis löscht.
+    """
+    try:
+        wert = json.load(open(os.path.join(BOT_DIR, "dashboard.json"))) \
+            .get("retention", {}).get("protokoll_days", AUFBEWAHRUNG_TAGE)
+        return max(1, min(3650, int(wert)))
+    except (OSError, ValueError, TypeError, AttributeError):
+        return AUFBEWAHRUNG_TAGE
+
+
 def _saeubern(text):
     """Alles, was nach Geheimnis oder Adresse aussieht, wird ersetzt.
 
@@ -146,7 +162,7 @@ def kette_pruefen(datei=None):
     return True, "Das Protokoll ist lückenlos."
 
 
-def aufraeumen(tage=AUFBEWAHRUNG_TAGE, datei=None):
+def aufraeumen(tage=None, datei=None):
     """Alte Einträge entfernen und die Kette neu bilden.
 
     Die Kette wird dabei bewusst NEU gebildet: Sonst wäre jedes Aufräumen von einem
@@ -154,6 +170,7 @@ def aufraeumen(tage=AUFBEWAHRUNG_TAGE, datei=None):
     sichtbar zu machen — nicht, das Löschen zu verhindern, das die Datenschutz-
     Grundverordnung sogar verlangt.
     """
+    tage = frist() if tage is None else tage
     grenze = time.strftime("%Y-%m-%dT%H:%M:%S",
                            time.localtime(time.time() - tage * 86400))
     behalten = [e for e in lesen(datei) if e.get("zeit", "") >= grenze]
@@ -178,8 +195,9 @@ def bericht(seit=None, bis=None, datei=None):
     ziele = sorted({x["ziel"] for x in e if x.get("ziel")})
     heil, kette = kette_pruefen(datei)
 
+    handlung = "Handlung" if zaehler["ausgefuehrt"] == 1 else "Handlungen"
     text = [
-        f"In diesem Zeitraum hat der Operator **{zaehler['ausgefuehrt']} Handlungen "
+        f"In diesem Zeitraum hat der Operator **{zaehler['ausgefuehrt']} {handlung} "
         f"ausgeführt**, **{zaehler['bestaetigung']} zur Bestätigung vorgelegt** und "
         f"**{zaehler['abgelehnt'] + zaehler['gesperrt']} selbst verweigert** "
         f"(davon {zaehler['gesperrt']} ohne Rückfrage, weil grundsätzlich untersagt)."]
@@ -197,6 +215,35 @@ def bericht(seit=None, bis=None, datei=None):
             f"{g} ({n}×)" for g, n in sorted(gruende.items(), key=lambda p: -p[1])[:3]))
     text.append(kette if heil else "⚠️ " + kette)
     return "\n\n".join(text)
+
+
+def markdown(seit=None, bis=None, datei=None):
+    """Der Nachweis zum Weiterreichen — Fließtext plus die Rohtabelle darunter.
+
+    Warum beides: Der Absatz ist für den Menschen, der fragt »was hat das Ding
+    getan?«. Die Tabelle ist für den, der es nachrechnen will — mit Prüfsumme je
+    Zeile, sodass die Kette außerhalb dieses Programms nachvollziehbar bleibt.
+    Ein Nachweis, den man nur im eigenen Werkzeug prüfen kann, ist keiner.
+    """
+    e = lesen(datei, seit, bis)
+    zeitraum = f"{seit or 'Beginn'} bis {bis or 'jetzt'}"
+    zeilen = ["# Nachweis — Operator", "",
+              f"Erstellt am {time.strftime('%d.%m.%Y um %H:%M')} Uhr  ",
+              f"Zeitraum: {zeitraum}  ",
+              f"Aufbewahrung: {frist()} Tage", "",
+              bericht(seit, bis, datei), ""]
+    if e:
+        zeilen += ["## Einzelne Handlungen", "",
+                   "| Zeit | Urteil | Werkzeug | Ziel | Auslöser | Grund | Prüfsumme |",
+                   "|---|---|---|---|---|---|---|"]
+        for x in e:
+            zeilen.append("| " + " | ".join(
+                str(x.get(k, "")).replace("|", "/") for k in
+                ("zeit", "urteil", "werkzeug", "ziel", "herkunft", "grund", "pruefsumme")
+            ) + " |")
+        zeilen += ["", "Hinweis: Hier stehen Handlungen und Urteile — keine Inhalte, "
+                       "keine Nachrichtentexte, keine Zugangsdaten."]
+    return "\n".join(zeilen) + "\n"
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 {
- "version": "1.40.0",
+ "version": "1.41.0",
  "files": [
   {
    "src": "listener.py",
@@ -249,7 +249,7 @@
   {
    "src": "protokoll.py",
    "dst": "protokoll.py",
-   "sha256": "87902dd5f64db6605343397eddf51ed61193c223d29bd9d8a5b0728731a9ce9e"
+   "sha256": "861f19d82409f9118fc37715c915193b43953f7a372889c165800f761a06dc61"
   },
   {
    "src": "schleuse.py",
@@ -264,7 +264,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "9f7c4712e45e56fa9ed11078864f6c8b35184854fe4abdb57c41241d99a633e5"
+   "sha256": "bf692066b47938819fc835ae34260b541de032d1127d510957cfdc5288994371"
   },
   {
    "src": "dashboard/tokens.py",
@@ -299,12 +299,12 @@
   {
    "src": "dashboard/static/index.html",
    "dst": "dashboard/static/index.html",
-   "sha256": "da92c63180c204f3172311e93b2e346bd05f7e4c514c79a83ccd238e0fc2bb1a"
+   "sha256": "9763089b9eeff8a7da5cc2cc1722c8e2f94cbf67092eb13d889abe09c1b057a9"
   },
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "a7de46b0ec16ae1a31f65d615f9feabd54de32f821e9324eb4b7c29511b59299"
+   "sha256": "2facaf61edfdfa34a778d3a665d91c22eef30e4adc25483288a3deb7aea47a87"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -324,7 +324,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "439b7bb7892a092fbc9c6f272aed1f702d9394e92d3b7fe7e8098613826f06ec"
+   "sha256": "83fdd46f12835a555fc178caa6fd1ae9a390e5024f25274681bbb7af6da516a3"
   },
   {
    "src": "dienst_start.py",
@@ -349,7 +349,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "2f9d73bf268c06962124a4331cdd46d8b8e5f145d5b7f7d18d8b93ff3be797c6"
+   "sha256": "daf66e6562a140a7e21342ae8c2cb08c616ae378b800cb0b97a371af490e898a"
   },
   {
    "src": "dashboard/test_petra.py",

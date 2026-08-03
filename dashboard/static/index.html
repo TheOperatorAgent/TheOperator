@@ -327,6 +327,38 @@
         Stufe fragt er weiterhin vor gefährlichen Befehlen (löschen, formatieren, Skripte
         aus dem Netz) und vor jedem Zugriff auf seine eigenen Sicherheitsdateien.</p>
     </div>
+    <!-- Nachweis (#146/#156): die Antwort auf »was hat das Ding getan?« —
+         derselbe Bericht wie im Chat, nur zum Ausdrucken und Weiterreichen. -->
+    <div class="card" id="nachweis-card">
+      <h2>🧾 Nachweis — was dein Operator getan hat</h2>
+      <p class="small">Hier steht, was er ausgeführt, was er dir vorgelegt und was er von
+        sich aus verweigert hat. <strong>Ohne Inhalte</strong> — keine Nachrichtentexte,
+        keine Zugangsdaten. Genau das, was ein Datenschutzbeauftragter sehen darf.</p>
+      <div class="row" style="gap:10px;align-items:center;margin:10px 0">
+        <label class="small">Zeitraum
+          <select id="nachweis-tage" onchange="loadNachweis()">
+            <option value="7">letzte 7 Tage</option>
+            <option value="30" selected>letzte 30 Tage</option>
+            <option value="90">letzte 90 Tage</option>
+            <option value="0">alles</option>
+          </select>
+        </label>
+        <button class="ghost" onclick="nachweisDownload()">Als Datei sichern</button>
+      </div>
+      <div id="nachweis-kette" class="small"></div>
+      <div id="nachweis-text" class="small">wird geladen …</div>
+      <p class="small muted" style="margin-top:12px">
+        Aufbewahrung:
+        <select id="nachweis-frist" onchange="nachweisFrist()">
+          <option value="30">30 Tage</option>
+          <option value="90">90 Tage</option>
+          <option value="180">180 Tage</option>
+          <option value="365">1 Jahr</option>
+        </select>
+        — danach wird automatisch gelöscht. Ein Protokoll, das ewig bleibt, löst ein
+        Problem und schafft ein neues.
+      </p>
+    </div>
     <div id="privacy-tables"></div>
   </section>
 </main>

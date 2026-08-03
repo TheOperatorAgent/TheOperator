@@ -16,7 +16,8 @@ import urllib.parse
 import urllib.request
 
 from fastapi import FastAPI, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse,
+                               PlainTextResponse, StreamingResponse)
 
 import agents_store
 import google_auth
@@ -2018,6 +2019,64 @@ def api_aufbewahrung(aktion: str):
         audit("dashboard", "aufbewahrung.loeschen", f"{n} Runden geloescht")
         return {"ok": True, "geloescht": n}
     raise HTTPException(400, "unbekannte Aktion")
+
+
+# ------------------------------------------------------- Nachweis (#146/#156) --
+def _nachweis_seit(tage: int):
+    """Startzeitpunkt für den Bericht. 0 heißt »alles, was noch da ist«."""
+    tage = max(0, min(3650, int(tage)))
+    if not tage:
+        return None
+    return time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(time.time() - tage * 86400))
+
+
+@app.get("/api/nachweis")
+def api_nachweis(tage: int = 30):
+    """Was hat der Operator getan — und was hat er verweigert?
+
+    Die Zahlen kommen aus derselben Quelle wie der Chat-Befehl »nachweis«; es gibt
+    bewusst keine zweite Auswertung, die auseinanderdriften könnte.
+    """
+    import protokoll
+    seit = _nachweis_seit(tage)
+    eintraege = protokoll.lesen(seit=seit)
+    heil, meldung = protokoll.kette_pruefen()
+    return {
+        "bericht": protokoll.bericht(seit=seit),
+        "zaehler": {u: sum(1 for x in eintraege if x.get("urteil") == u)
+                    for u in protokoll.URTEILE},
+        "anzahl": len(eintraege),
+        "kette_heil": heil,
+        "kette_meldung": meldung,
+        "aufbewahrung_tage": protokoll.frist(),
+        "tage": tage,
+    }
+
+
+@app.get("/api/nachweis/markdown")
+def api_nachweis_markdown(tage: int = 30):
+    import protokoll
+    text = protokoll.markdown(seit=_nachweis_seit(tage))
+    audit("dashboard", "nachweis.export", f"{tage} Tage")
+    name = f"operator-nachweis-{time.strftime('%Y%m%d')}.md"
+    return PlainTextResponse(text, media_type="text/markdown; charset=utf-8",
+                             headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@app.post("/api/nachweis/aufbewahrung")
+def api_nachweis_aufbewahrung(body: dict):
+    """Aufbewahrungsdauer ändern. Aufgeräumt wird erst beim nächsten Tageslauf —
+    eine Einstellung, die sofort löscht, wäre ein Fehlklick mit Datenverlust."""
+    try:
+        tage = max(1, min(3650, int(body.get("tage", 90))))
+    except (TypeError, ValueError):
+        return err("ungueltig", "Bitte eine Zahl von 1 bis 3650 angeben.")
+    pfad = os.path.join(BOT_DIR, "dashboard.json")
+    cfg = json.load(open(pfad))
+    cfg.setdefault("retention", {})["protokoll_days"] = tage
+    open(pfad, "w").write(json.dumps(cfg, indent=1))
+    audit("dashboard", "nachweis.aufbewahrung", f"{tage} Tage")
+    return {"ok": True, "tage": tage}
 
 
 @app.post("/api/backup")
