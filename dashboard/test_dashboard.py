@@ -7116,3 +7116,35 @@ def test_nachweis_meldet_gebrochene_kette_im_chat():
     teil = src.split('and wants_nachweis(bodies):')[1][:900]
     assert "kette_pruefen" in teil, "prüft die Kette nicht"
     assert "⚠️" in teil, "eine gebrochene Kette sähe aus wie ein normaler Bericht"
+
+
+def test_pruefstand_verschmutzt_den_nachweis_nicht():
+    """Am 03.08. standen im Compliance-Protokoll 15 Einträge — **alle** aus meinen
+    Messläufen, keiner aus echter Arbeit. Der Bericht meldete »12 zur Bestätigung
+    vorgelegt«, obwohl Michi keine einzige Rückfrage bekommen hatte.
+
+    **Ein Nachweis, der Handlungen meldet, die nie stattgefunden haben, ist schlimmer
+    als keiner** — er ist eine falsche Auskunft an einen Datenschutzbeauftragten."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pruefstand.py"),
+               encoding="utf-8").read()
+    assert "protokoll_datei" in src, "Prüfstand schreibt ins Betriebsprotokoll"
+    teil = src.split("def weg_kern")[1].split("\ndef ")[0]
+    assert "protokoll_datei" in teil and "arbeitsordner" in teil, \
+        "Prüfstand-Protokoll liegt nicht im Wegwerf-Ordner des Laufs"
+
+
+def test_werkzeugkasten_kann_das_protokollziel_umlenken():
+    """Die Gegenprobe zur Trennung: Ohne diese Möglichkeit müsste der Prüfstand ins
+    Betriebsprotokoll schreiben oder ganz auf den Nachweis verzichten."""
+    wz = _wz()
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        eigen = os.path.join(tmp, "eigen.jsonl")
+        umg = dict(_wz_umgebung(tmp), protokoll_datei=eigen)
+        wz.ausfuehren("lies", {"pfad": "/etc/passwd"}, umg)
+        assert os.path.exists(eigen), "Umlenkung wirkt nicht"
+        # Und ohne Umlenkung darf gar nichts geschrieben werden, wenn abgeschaltet:
+        umg2 = dict(_wz_umgebung(tmp), kein_protokoll=True)
+        vorher = os.path.getsize(eigen)
+        wz.ausfuehren("lies", {"pfad": "/etc/passwd"}, umg2)
+        assert os.path.getsize(eigen) == vorher

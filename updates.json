@@ -1,9 +1,9 @@
 {
- "version": "1.39.0",
+ "version": "1.40.0",
  "date": "2026-08-03",
  "highlights": [
-  "💬 Neu im Chat: Schreib »nachweis« — und der Operator zeigt dir in einem Absatz, was er getan, was er zur Bestätigung vorgelegt und was er verweigert hat. Kein Terminal nötig.",
-  "🔗 Ist am Protokoll manipuliert worden, sieht die Antwort anders aus als sonst. Ein gebrochener Nachweis darf nicht wie ein normaler aussehen.",
-  "🙂 Der Kurzbefehl ist eng gefasst: »Schreib mir einen Bericht über das Quartal« bleibt eine ganz normale Bitte an deinen Assistenten."
+  "🧾 Wichtige Korrektur am Nachweis: Interne Prüfläufe landeten versehentlich im Compliance-Protokoll. Der Bericht meldete dadurch Handlungen, die nie stattgefunden haben — ein Nachweis, der Falsches behauptet, ist schlimmer als keiner.",
+  "🔒 Prüfungen und Betrieb sind jetzt sauber getrennt: Was zum Testen läuft, kommt in ein eigenes Protokoll und niemals in deinen Nachweis.",
+  "🧹 Dein bisheriges Protokoll wurde geleert, weil es ausschließlich Testverkehr enthielt. Der Nachweis beginnt damit bei null — dafür stimmt ab jetzt jede Zeile darin."
  ]
 }
