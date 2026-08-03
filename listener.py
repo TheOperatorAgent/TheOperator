@@ -1125,20 +1125,31 @@ class BotSession(threading.Thread):
                 log(f"[{self.bot_name}] Claude-Lauf rc={r.returncode}: "
                     f"{(r.stderr or r.stdout or '')[:600].strip()}")
                 out = (r.stdout + r.stderr).lower()
-                if "401" in out or "authenticate" in out or "oauth" in out:
+                login_weg = "401" in out or "authenticate" in out or "oauth" in out
+                limit_weg = any(k in out for k in ("limit", "429", "quota"))
+                # #151: Bevor der Nutzer im Regen steht — ein Fremdmodell versuchen.
+                # Der bisherige Ersatzweg brauchte einen hinterlegten Anthropic-Schlüssel;
+                # ist keiner da, war der Operator STUMM. Genau so entstanden drei Tage
+                # Stille (31.07.–03.08.), obwohl Ollama die ganze Zeit bereitstand.
+                if (login_weg or limit_weg) and self._ersatzmodell_versucht(
+                        prompt, system, messages_label, kind, mapping,
+                        "Mein Claude-Zugang ist gerade nicht verfügbar"
+                        if login_weg else "Mein Claude-Abo ist gerade am Limit"):
+                    pass                      # Antwort ist raus, Hinweis steht darin
+                elif login_weg:
                     self.send_message(
-                        "⚠️ Ich kann gerade nicht antworten: Mein Claude-CLI-Login ist "
-                        f"abgelaufen. Bitte auf dem {GERAET} {TERMINAL} `claude /login` "
-                        "ausführen — danach beantworte ich deine Nachricht gern nochmal.\n"
-                        "👉 Damit das nie wieder passiert: Hinterlege im Dashboard unter "
-                        "»Modelle & Provider« einen Claude-API-Key als Reserve. Dann "
-                        "springe ich in so einem Fall automatisch darauf um, statt dich "
-                        "warten zu lassen.")
-                elif any(k in out for k in ("limit", "429", "quota")):
+                        "⚠️ Ich kann gerade nicht antworten: Mein Claude-Login ist "
+                        f"abgelaufen. Bitte auf dem {GERAET} {TERMINAL} `claude` starten "
+                        "und dort `/login` eingeben — danach beantworte ich deine "
+                        "Nachricht gern nochmal.\n"
+                        "👉 Damit ich in so einem Fall weiterarbeiten kann, richte im "
+                        "Dashboard unter »Modelle & Provider« ein Ersatzmodell ein "
+                        "(z. B. über Ollama) — das kostet nichts und hält mich am Laufen.")
+                elif limit_weg:
                     self.send_message(
-                        "⚠️ Mein Claude-Abo ist gerade am Limit. Du kannst im Dashboard unter "
-                        "»Modelle & Provider« einen Claude-API-Key als Reserve hinterlegen — "
-                        "dann springe ich automatisch darauf um.")
+                        "⚠️ Mein Claude-Abo ist gerade am Limit. Richte im Dashboard unter "
+                        "»Modelle & Provider« ein Ersatzmodell ein — dann springe ich "
+                        "automatisch darauf um, statt dich warten zu lassen.")
                 else:
                     self.send_message(
                         "⚠️ Beim Bearbeiten ist ein Fehler aufgetreten. Was genau, steht "
@@ -1184,6 +1195,43 @@ class BotSession(threading.Thread):
             if nach:
                 self._merk_nachlauf = None
                 self._merken(*nach)
+
+    def _ersatzmodell_versucht(self, prompt, system, messages_label, kind, mapping, grund):
+        """Ersatzweg über ein Fremdmodell, wenn Claude nicht durchkommt (#151).
+
+        Gibt True zurück, wenn eine Antwort rausgegangen ist.
+
+        Warum das nötig war: Der bisherige Ersatzweg (#59) brauchte einen hinterlegten
+        Anthropic-API-Schlüssel. Ohne den war die Bedingung schlicht falsch und der
+        Operator blieb STUMM — drei Tage lang, obwohl ein Fremdmodell bereitstand.
+        Ein Ersatzweg, der eine Voraussetzung hat, die die meisten nicht erfüllen,
+        ist kein Ersatzweg.
+
+        Bewusst NICHT still: Die Antwort bekommt einen Hinweis vorangestellt. Ein
+        Operator, der wochenlang unbemerkt auf dem schwächeren Modell läuft, ist
+        schlimmer als einer, der einmal Bescheid sagt.
+        """
+        if not providers:
+            return False
+        try:
+            fremd = [m for m in providers.list_models() if m.get("kind") == "foreign"]
+            if not fremd:
+                return False
+            plan = providers.resolve(fremd[0]["value"])
+            if plan.get("kind") != "foreign":
+                return False
+            log(f"[{self.bot_name}] Ersatzweg über {plan['provider']}/{plan['model_id']} "
+                f"— {grund}")
+            hinweis = (f"ℹ️ {grund}, deshalb antworte ich über "
+                       f"»{plan['model_id']}«. Das Ergebnis kann schwächer ausfallen.\n"
+                       f"👉 Auf dem {GERAET} {TERMINAL} `claude` starten und `/login` "
+                       "eingeben, dann bin ich wieder in Bestform.")
+            self.send_message(hinweis)
+            self._run_foreign(plan, prompt, system, messages_label, kind, mapping)
+            return True
+        except Exception as e:
+            log(f"[{self.bot_name}] Ersatzweg fehlgeschlagen: {e}")
+            return False
 
     def _run_foreign(self, plan, prompt, system, messages_label, kind, mapping, verify=None,
                      tools=None):

@@ -4265,16 +4265,21 @@ def test_login_vorwarnung_greift_bevor_der_nutzer_auflaeuft(monkeypatch, tmp_pat
 
 
 def test_login_meldungen_nennen_die_dauerhafte_loesung():
-    """Eine Fehlermeldung ohne Ausweg ist eine Sackgasse (EINFACHHEIT.md). Sowohl die
-    Chat-Antwort als auch die Selbstprüfung müssen den API-Key als Reserve nennen —
-    das ist die Lösung, die den Fall künftig ganz verhindert."""
+    """Eine Fehlermeldung ohne Ausweg ist eine Sackgasse (EINFACHHEIT.md).
+
+    Der Test verlangte bis 1.34.0, dass ein **API-Key** als Reserve empfohlen wird.
+    Nach #151 ist das schlechter Rat: Er kostet Geld für etwas, das ein kostenloses
+    Ersatzmodell genauso löst — und genau diese Voraussetzung war der Grund, warum
+    der Ersatzweg drei Tage lang nicht griff. Verlangt wird jetzt: **ein** gangbarer
+    Ausweg, und der billigere zuerst."""
     li = open(os.path.expanduser("~/.claude/matrix-bot/listener.py")).read()
-    teil = li.split("Mein Claude-CLI-Login ist ")[1][:700]
-    assert "Modelle & Provider" in teil and "API-Key" in teil, \
+    teil = li.split("Mein Claude-Login ist ")[1][:700]
+    assert "Modelle & Provider" in teil, \
         "Chat-Meldung nennt nur /login, nicht die dauerhafte Lösung"
+    assert "Ersatzmodell" in teil, "empfiehlt nicht den kostenlosen Weg"
     pr = open(os.path.expanduser("~/.claude/matrix-bot/pruefung.py")).read()
     assert "claude_health.klartext()" in pr, "Selbstprüfung zeigt den Zustand nicht"
-    assert "Reserve hinterlegen" in pr
+    assert "Ersatzmodell einrichten" in pr
     ch = open(os.path.expanduser("~/.claude/matrix-bot/claude_health.py")).read()
     assert "def klartext(" in ch
     # Auch die Probe muss den Windows-Weg nutzen (stdin) und nie auf Eingabe warten
@@ -6743,3 +6748,53 @@ def test_kern_nur_mit_bordmitteln():
         elif isinstance(n, _a.ImportFrom) and n.module:
             importe.add(n.module.split(".")[0])
     assert not (importe - {"json", "os", "sys", "anbieter", "werkzeuge"}), importe
+
+
+# ================== Ersatzweg statt Stille bei Claude-Ausfall (#151) --
+def _listener_src():
+    return open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
+                encoding="utf-8").read()
+
+
+def test_ersatzweg_braucht_keinen_api_schluessel():
+    """#151, die eigentliche Ursache der drei Tage Stille.
+
+    Der bisherige Ersatzweg (#59) hing an `providers.fallback_key()` — einem
+    hinterlegten Anthropic-Schlüssel. Michi hatte keinen, also war die Bedingung
+    schlicht falsch und der Operator blieb stumm, obwohl Ollama bereitstand.
+    **Ein Ersatzweg mit einer Voraussetzung, die die meisten nicht erfüllen, ist
+    kein Ersatzweg.**"""
+    src = _listener_src()
+    assert "_ersatzmodell_versucht" in src, "kein schlüsselfreier Ersatzweg"
+    teil = src.split("def _ersatzmodell_versucht")[1].split("\n    def ")[0]
+    assert "fallback_key" not in teil, "hängt wieder an einem API-Schlüssel"
+    assert 'kind") == "foreign"' in teil or "kind') == 'foreign'" in teil, \
+        "sucht kein Fremdmodell"
+    assert "_run_foreign" in teil, "führt den Ersatzweg nicht aus"
+
+
+def test_ersatzweg_greift_bei_login_UND_bei_limit():
+    """Beide Fälle führen zur Stille, beide brauchen den Ersatzweg."""
+    src = _listener_src()
+    teil = src.split("login_weg = ")[1].split("def ")[0]
+    assert "_ersatzmodell_versucht" in teil
+    assert "login_weg or limit_weg" in teil, "nur einer der beiden Fälle abgedeckt"
+
+
+def test_ersatzweg_laeuft_nicht_heimlich():
+    """Ein Operator, der wochenlang unbemerkt auf dem schwächeren Modell läuft, ist
+    schlimmer als einer, der einmal Bescheid sagt."""
+    src = _listener_src()
+    teil = src.split("def _ersatzmodell_versucht")[1].split("\n    def ")[0]
+    assert "send_message" in teil, "wechselt stillschweigend"
+    assert "👉" in teil, "kein nächster Schritt für den Nutzer"
+    assert "schwächer" in teil, "verschweigt die geringere Qualität"
+
+
+def test_hinweistext_verlangt_keinen_api_schluessel_mehr():
+    """Der alte Text riet »hinterlege einen Claude-API-Key« — also Geld ausgeben für
+    etwas, das ein kostenloses Ersatzmodell genauso löst. Das war schlechter Rat."""
+    src = _listener_src()
+    stelle = src.split("Mein Claude-Login ist ")[1][:600]
+    assert "Ersatzmodell" in stelle, "empfiehlt weiterhin nur den API-Key"
+    assert "kostet nichts" in stelle

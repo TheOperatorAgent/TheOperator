@@ -145,7 +145,9 @@ def schritt3_claude():
               f"Zustand: {text}",
               "" if zustand == "ok" else
               "»claude /login« ausführen — und im Dashboard unter »Modelle & Provider« "
-              "einen API-Key als Reserve hinterlegen, dann springt der Operator selbst ein.")
+              "ein Ersatzmodell einrichten (z. B. Ollama — kostet nichts), dann springt der "
+              "Operator selbst ein. Wer lieber bei Claude bleibt, kann dort auch "
+              "einen API-Key als Reserve hinterlegen.")
     except Exception:
         pass
     try:

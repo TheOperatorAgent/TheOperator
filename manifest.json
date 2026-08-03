@@ -1,10 +1,10 @@
 {
- "version": "1.34.0",
+ "version": "1.35.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "92c6365a5b4672f373c69935a40df8db4c20244e03a7463860d13d7c8ba19e20"
+   "sha256": "3fe5ea72c7be18eed20c48cf51ded4ca716682d0792eea024b9305eb88b32061"
   },
   {
    "src": "matrix_room.py",
@@ -319,7 +319,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "c4155251503c696a652c544a074652df9aeb85a650c1eebca99ee20a27dd85e8"
+   "sha256": "c34d19b8ddcf6f916e4e43354d3a22058dcb584a957d62ac967052ec7bb3a424"
   },
   {
    "src": "dienst_start.py",
@@ -329,7 +329,7 @@
   {
    "src": "pruefung.py",
    "dst": "pruefung.py",
-   "sha256": "74be1c96fc6e451e96d11968e2148cf841aabf994fd46e14a904eaa9813beec6"
+   "sha256": "712c9235274d2deb8aa56ae34579db99d9bf3b51a575633aa6c2f071712464ba"
   },
   {
    "src": "diagnose.py",
@@ -344,7 +344,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "3248bedbbb19aa81f7daf6a9ed5d0dd5836d72dcd6e7c287b949a361d02dc3b2"
+   "sha256": "1584cf35b7d6e373e5e57e78f6a2e7b856b1cce963fee87d56a6fde2561a6706"
   },
   {
    "src": "dashboard/test_petra.py",
