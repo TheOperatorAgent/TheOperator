@@ -232,17 +232,28 @@ class AnthropicArtig(Anbieter):
 def aus_einstellungen(name):
     """Baut einen Anbieter aus dem, was providers.py schon weiß.
 
-    Keine zweite Konfiguration: Adressen und Schlüssel liegen bereits dort, und eine
-    zweite Quelle würde auseinanderlaufen.
+    Adressen und Schlüssel kommen ausschliesslich aus `providers.resolve()` — der
+    Funktion, die der Listener seit Monaten benutzt. Der erste Entwurf hier rief ein
+    `providers.get_key()` auf, das es gar nicht gibt: eine erfundene zweite Quelle,
+    also genau die Doppelung, die dieses Epic abschaffen soll. Der Prüfstand hat es
+    beim ersten Lauf aufgedeckt.
     """
     import providers
     if name == "anthropic":
-        return AnthropicArtig(providers.get_key("anthropic") or "")
-    basis = providers.base_url(name) if hasattr(providers, "base_url") else ""
-    if not basis:
-        basis = {"ollama": "http://localhost:11434/v1",
-                 "openai": "https://api.openai.com/v1"}.get(name, "")
-    return OpenAIArtig(name, basis, providers.get_key(name) or "")
+        return AnthropicArtig(providers.fallback_key() or "")
+
+    modelle = [m for m in providers.list_models()
+               if m.get("kind") == "foreign" and m["value"].startswith(name + "/")]
+    if not modelle:
+        raise RuntimeError(f"für »{name}« ist kein Modell eingerichtet")
+    plan = providers.resolve(modelle[0]["value"])
+    basis = plan["base_url"]
+    # Ollama & Co. sprechen die OpenAI-Schnittstelle unter /v1. providers.resolve()
+    # liefert die nackte Adresse, weil das openai-Paket das selbst anhängt — wir
+    # sprechen direkt HTTP und müssen es deshalb selbst tun.
+    if not basis.rstrip("/").endswith("/v1"):
+        basis = basis.rstrip("/") + "/v1"
+    return OpenAIArtig(name, basis, plan.get("key") or "")
 
 
 def mit_wechsel(reihenfolge, nachrichten, werkzeuge=None, modelle=None,

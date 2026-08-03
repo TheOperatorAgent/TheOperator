@@ -1,5 +1,5 @@
 {
- "version": "1.35.0",
+ "version": "1.36.0",
  "files": [
   {
    "src": "listener.py",
@@ -239,17 +239,17 @@
   {
    "src": "anbieter.py",
    "dst": "anbieter.py",
-   "sha256": "49a4ca7587f253c6d1b65c4c2acb3a5ef4d05febd2482bb14d5a0692538c16e2"
+   "sha256": "8667ec838b7e3547187143fa49b3392449bef8e7cd3dd67febd29fe43df97064"
   },
   {
    "src": "kern.py",
    "dst": "kern.py",
-   "sha256": "564f579ba9532b07943d928a2756a5059f86686009f5c1a45bd206a8629b9db2"
+   "sha256": "59a4c35d8e1f8a02a979bd36480478c7ae29ba134a07cb73ee5eb85467245942"
   },
   {
    "src": "schleuse.py",
    "dst": "schleuse.py",
-   "sha256": "841c0acd6f92d6af7449c05e257485e55fb8c02f6d56bf2c331276e0e48fa2d1"
+   "sha256": "4bf86a95af6cef9fff74faf68393f1b0c5f1104cfe4b52e71f3ef82423545185"
   },
   {
    "src": "mail_watch.py",
@@ -319,7 +319,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "c34d19b8ddcf6f916e4e43354d3a22058dcb584a957d62ac967052ec7bb3a424"
+   "sha256": "8ee37189badff8557a3f76850c1be19dbaf3642e5c5c66afb3c44f029e89e3fb"
   },
   {
    "src": "dienst_start.py",
@@ -344,7 +344,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "1584cf35b7d6e373e5e57e78f6a2e7b856b1cce963fee87d56a6fde2561a6706"
+   "sha256": "53c6b9c55d34cecb8226d35512ec4872092bdfddefd9843e9a1ecf0480a37eab"
   },
   {
    "src": "dashboard/test_petra.py",

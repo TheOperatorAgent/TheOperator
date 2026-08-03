@@ -1,9 +1,9 @@
 {
- "version": "1.35.0",
+ "version": "1.36.0",
  "date": "2026-08-03",
  "highlights": [
-  "🆘 Kommt dein Claude-Zugang nicht durch — abgelaufene Anmeldung oder Abo am Limit —, antwortet der Operator ab sofort über ein Ersatzmodell, statt stumm zu bleiben. Bisher brauchte das einen kostenpflichtigen API-Schlüssel; wer keinen hatte, bekam gar keine Antwort mehr.",
-  "🗣️ Der Wechsel passiert nicht heimlich: Du erfährst, dass gerade das Ersatzmodell antwortet, dass das Ergebnis schwächer ausfallen kann und was du tust, um wieder in Bestform zu sein.",
-  "💡 Der Rat in den Fehlermeldungen ist ehrlicher geworden: zuerst das kostenlose Ersatzmodell, der API-Schlüssel nur noch als Alternative für alle, die bei Claude bleiben wollen."
+  "🛡️ Eine Lücke geschlossen, die ein Test allein nie gefunden hätte: Der Operator prüfte bei Befehlen nur das Befehlswort, nicht den Pfad. »cat« ist harmlos, »cat ~/.ssh/id_ed25519« nicht — jetzt wird beides unterschieden.",
+  "🔍 Aufgefallen ist es beim ersten echten Durchlauf des neuen Prüfstands: Ein Sprachmodell umging den Schutz, indem es statt »Datei lesen« einfach einen Befehl nahm.",
+  "🙂 Deine Alltagsarbeit bleibt unbehelligt: Lesen und Schreiben im Arbeitsordner sowie Blicke in Systemordner fragen weiterhin nie nach."
  ]
 }

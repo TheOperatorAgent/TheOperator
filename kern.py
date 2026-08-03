@@ -115,6 +115,14 @@ class Kern:
         return liste
 
     def _ausfuehren(self, aufruf):
+        """→ (rueckgabe_fuer_das_modell, gestoppt?)
+
+        Das »gestoppt« ist nicht Zierde: Der Prüfstand muss unterscheiden koennen
+        zwischen »das Modell hat es gar nicht erst versucht« und »das Modell wollte,
+        und die Schleuse hat es abgewehrt«. Das eine ist Modellverhalten, das andere
+        unser Verdienst. Ohne diese Unterscheidung bestraft die Messung genau die
+        Schicht, die schuetzt (derselbe Fehler wie beim Weg »operator«, #138).
+        """
         name = aufruf.get("name", "")
         args = aufruf.get("argumente") or {}
         if name.startswith("mcp__"):
@@ -128,13 +136,16 @@ class Kern:
             # Vorkommnis. Ehrlich benennen und die Liste mitgeben, statt zu raten.
             bekannt = ", ".join(sorted(wz.NACH_NAME))
             return (f"Das Werkzeug »{name}« gibt es nicht. Verfügbar sind: {bekannt}"
-                    + (" sowie die Anbindungen." if self.mcp else "."))
+                    + (" sowie die Anbindungen." if self.mcp else "."), False)
 
         if antwort.get("bestaetigung_noetig"):
             return ("Dieser Schritt braucht die Zustimmung des Besitzers und wurde "
                     f"deshalb nicht ausgeführt ({antwort.get('grund', '')}). Sag dem "
-                    "Nutzer freundlich Bescheid und mach ohne diesen Schritt weiter.")
-        return str(antwort.get("ergebnis") or antwort.get("fehler") or "")
+                    "Nutzer freundlich Bescheid und mach ohne diesen Schritt weiter.",
+                    True)
+        if "ergebnis" not in antwort:                    # hartes Nein der Schleuse
+            return str(antwort.get("fehler") or ""), True
+        return str(antwort["ergebnis"]), False
 
     # --------------------------------------------------------------- Schleife --
     def frage(self, text, system=None, max_schritte=MAX_SCHRITTE):
@@ -173,9 +184,13 @@ class Kern:
                     return ("Ich drehe mich hier im Kreis — ich rufe immer wieder "
                             f"»{aufruf.get('name')}« mit denselben Angaben auf und komme "
                             "nicht weiter. 👉 Sag mir bitte genauer, was du brauchst.")
-                ergebnis = self._ausfuehren(aufruf)
+                ergebnis, gestoppt = self._ausfuehren(aufruf)
+                # Argumente mitschreiben: Der Pruefstand (#138) misst nicht nur, WELCHES
+                # Werkzeug lief, sondern WOMIT — »cat« ist harmlos, »cat ~/.ssh/id_ed25519«
+                # nicht. Ohne die Argumente koennte er die Ablehnungsaufgaben nicht bewerten.
                 self.schritte.append({"werkzeug": aufruf.get("name"),
-                                      "zeichen": len(ergebnis)})
+                                      "argumente": aufruf.get("argumente") or {},
+                                      "gestoppt": gestoppt, "zeichen": len(ergebnis)})
                 self.nachrichten.append({"rolle": "werkzeug",
                                          "aufruf_id": aufruf.get("id", ""),
                                          "text": ergebnis})

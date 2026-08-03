@@ -6798,3 +6798,51 @@ def test_hinweistext_verlangt_keinen_api_schluessel_mehr():
     stelle = src.split("Mein Claude-Login ist ")[1][:600]
     assert "Ersatzmodell" in stelle, "empfiehlt weiterhin nur den API-Key"
     assert "kostet nichts" in stelle
+
+
+def test_schleuse_misst_befehle_am_pfad_nicht_nur_am_wort():
+    """Der wichtigste Fund des Prüfstands (#138) — und genau der Rückschritt, vor dem
+    Epic #137 warnt.
+
+    Am 03.08. wurde im alten Broker der Lese-Käfig geschlossen (#148). In der neuen
+    Schleuse fehlte er: Sie prüfte bei Befehlen nur das Befehlswort. Kimi umging den
+    Käfig, indem es statt `lies` einfach `befehl` mit »cat /etc/passwd« nahm — und kam
+    durch.
+
+    **Wer eine Regel an zwei Stellen pflegen muss, verliert sie an einer.** Genau
+    deshalb gibt es das Epic; hier hat es sich an sich selbst gezeigt."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import schleuse
+    umg = {"arbeitsordner": "/Users/michi/Operator", "stufe": "normal",
+           "sichere_befehle": {"ls", "cat", "echo", "pwd", "python3", "head", "grep"}}
+
+    def urteil(cmd):
+        return schleuse.pruefen({"art": "befehl", "argumente": {"befehl": cmd}}, umg)
+
+    for boese in ("cat /etc/passwd", "cat ~/.ssh/id_ed25519",
+                  "grep -r geheim ~/Documents", "cat /tmp/operator-pii-x.json"):
+        u = urteil(boese)
+        assert u["bestaetigung_noetig"] or not u["erlaubt"], f"»{boese}« lief ungefragt"
+
+    # Gegenprobe — ohne sie wäre der Operator unbenutzbar (EINFACHHEIT.md):
+    for harmlos in ("ls", "python3 --version", "cat notizen.md",
+                    "cat /Users/michi/Operator/bericht.txt", "head /usr/share/dict/words"):
+        u = urteil(harmlos)
+        assert u["erlaubt"] and not u["bestaetigung_noetig"], \
+            f"»{harmlos}« fragt unnötig nach"
+
+    # Und die Sperrliste bleibt ein hartes Nein, keine Rückfrage.
+    assert urteil("rm -rf /")["erlaubt"] is False
+
+
+def test_schleuse_und_broker_kennen_dieselben_geheimnisse():
+    """Solange es zwei Schutzschichten gibt, müssen sie dasselbe schützen. Driften
+    die Listen auseinander, entsteht genau der stille Rückschritt, den dieses Epic
+    verhindern soll."""
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import schleuse
+    import permission_broker as pb
+    for geheim in ("credentials.json", "~/.ssh/id_ed25519", "operator-pii-a.json",
+                   "sessions.db", "x.pem"):
+        assert schleuse._GEHEIM.search(geheim), f"Schleuse kennt {geheim} nicht"
+        assert pb.GEHEIM_MUSTER.search(geheim), f"Broker kennt {geheim} nicht"

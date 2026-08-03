@@ -166,6 +166,18 @@ def _befehl(handlung, umgebung):
     # Fail-closed: nur bekannte Befehlswörter laufen ohne Rückfrage. Alles andere fragt.
     # Ein vergessener Eintrag kostet eine überflüssige Rückfrage; vorher kostete er eine
     # stillschweigend ausgeführte Aktion (#104-B).
+    # Der Pfad zaehlt, nicht nur das Befehlswort. »cat« ist harmlos, »cat
+    # ~/.ssh/id_ed25519« ist es nicht. Der Pruefstand hat genau das aufgedeckt: Ein
+    # Modell umging den Lese-Kaefig, indem es statt »lies« einfach »befehl« mit
+    # »cat /etc/passwd« nahm — dieselbe Luecke, die im alten Broker am 03.08. geschlossen
+    # wurde (#148) und hier zunaechst fehlte. Genau der stille Sicherheits-Rueckschritt,
+    # vor dem das Epic warnt: Wer eine Regel an ZWEI Stellen pflegen muss, verliert sie
+    # an einer.
+    fremd_pfad = _fremder_pfad(cmd, umgebung)
+    if fremd_pfad:
+        return _urteil(FRAGEN, f"Zugriff außerhalb des Arbeitsordners: {fremd_pfad}",
+                       "befehl_fremder_pfad", handlung)
+
     sicher = set(umgebung.get("sichere_befehle") or ()) | set(umgebung.get("gelernte_befehle") or ())
     unbekannt = [w for w in _befehlswoerter(cmd) if w not in sicher]
     if unbekannt:
@@ -175,6 +187,35 @@ def _befehl(handlung, umgebung):
         return _urteil(FRAGEN, "Stufe »streng«: Befehle werden immer bestätigt.",
                        "stufe_streng", handlung)
     return _urteil(JA, "Bekannter, ungefährlicher Befehl.", "befehl_bekannt", handlung)
+
+
+# Geheimnisse sind UEBERALL geschuetzt, auch im sonst erlaubten Ordner — dieselbe Regel
+# wie im Broker (#148): entscheidend ist, WAS eine Datei ist, nicht wo sie liegt.
+_GEHEIM = re.compile(r"credentials\.json|bots\.json|/secrets?/|\.ssh/|id_(rsa|ed25519|ecdsa)"
+                     r"|operator-pii-|\.db$|Keychains|\.env$|update-signing|tokens\.json"
+                     r"|\.pem$|\.key$", re.IGNORECASE)
+_PFAD_IM_BEFEHL = re.compile(r"(?<![\w=])(~/[^\s;|&)\"']*|/[A-Za-z0-9._\-/]{3,})")
+# Oeffentliche Systempfade: ohne sie fragt der Operator bei jedem »python3 --version« nach
+# und wird unbenutzbar. Bewusst NICHT dabei: /etc und /tmp.
+_OEFFENTLICH = ("/usr/", "/bin/", "/sbin/", "/opt/", "/System/", "/Library/", "/Applications/")
+
+
+def _fremder_pfad(cmd, umgebung):
+    """Erster Pfad im Befehl, der eine Rueckfrage verdient — oder None.
+
+    Rein textlich, wie die ganze Schleuse: kein Dateisystem, damit sie ohne Umgebung
+    testbar bleibt. Das Aufloesen von »~« und relativen Pfaden ist Aufgabe des
+    Werkzeugkastens (#141), nicht ihre.
+    """
+    if _GEHEIM.search(cmd or ""):
+        return _GEHEIM.search(cmd).group(0)
+    ordner = umgebung.get("arbeitsordner") or ""
+    for treffer in _PFAD_IM_BEFEHL.findall(cmd or ""):
+        if treffer.startswith(_OEFFENTLICH):
+            continue
+        if treffer.startswith("~/") or not _im_ordner(treffer, ordner):
+            return treffer
+    return None
 
 
 _TRENNER = re.compile(r"\|\||&&|\||;|\n")
