@@ -6547,3 +6547,199 @@ def test_die_repo_pruefungen_werden_nicht_stillschweigend_uebersprungen():
         assert os.path.isdir(os.path.join(pfad, ".git")), (
             f"{pfad} fehlt — die Auslieferungs-Prüfungen laufen ins Leere. "
             f"Neu holen mit: git clone <repo> {pfad}")
+
+
+# ================================================== Die Agentenschleife (#143) --
+def _kern():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import kern
+    return kern
+
+
+class _ModellAttrappe:
+    """Ein Modell, das eine vorgegebene Folge von Antworten liefert.
+
+    Damit ist die Schleife vollstaendig pruefbar, ohne ein Modell zu starten — und
+    vor allem VORHERSAGBAR: Ein echtes Modell antwortet bei jedem Lauf anders,
+    dann prueft man nicht die Schleife, sondern das Tagesglueck.
+    """
+
+    def __init__(self, folge):
+        self.folge = list(folge)
+        self.gefragt = []
+
+    def __call__(self, reihenfolge, nachrichten, werkzeuge=None, modelle=None,
+                 max_zeichen=4096, protokoll=None):
+        self.gefragt.append(list(nachrichten))
+        return self.folge.pop(0) if self.folge else _antwort(text="fertig")
+
+
+def _antwort(text="", aufrufe=None, fehler="", anmeldung_fehlt=False):
+    import anbieter
+    return anbieter.Antwort(text=text, werkzeug_aufrufe=aufrufe or [], fehler=fehler,
+                            anmeldung_fehlt=anmeldung_fehlt)
+
+
+def _kern_umgebung(tmp):
+    return {"arbeitsordner": tmp, "stufe": "normal",
+            "sichere_befehle": {"ls", "echo", "cat", "pwd"}}
+
+
+def test_kern_fuehrt_werkzeuge_aus_und_antwortet():
+    """Der Grundfall: Modell will ein Werkzeug, bekommt das Ergebnis, antwortet."""
+    k, ab = _kern(), None
+    import anbieter as ab
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        open(os.path.join(tmp, "notiz.txt"), "w").write("Hallo Welt")
+        modell = _ModellAttrappe([
+            _antwort(aufrufe=[{"id": "1", "name": "lies",
+                               "argumente": {"pfad": "notiz.txt"}}]),
+            _antwort(text="In der Datei steht: Hallo Welt")])
+        echt = ab.mit_wechsel
+        ab.mit_wechsel = modell
+        try:
+            antwort = k.Kern(_kern_umgebung(tmp)).frage("Was steht in notiz.txt?")
+        finally:
+            ab.mit_wechsel = echt
+    assert antwort == "In der Datei steht: Hallo Welt"
+    # Das Werkzeugergebnis muss beim zweiten Fragen im Verlauf stehen — sonst
+    # antwortet das Modell aus der Luft.
+    zweiter = modell.gefragt[1]
+    assert any(n["rolle"] == "werkzeug" and "Hallo Welt" in n["text"] for n in zweiter)
+
+
+def test_kern_bricht_ab_wenn_er_sich_im_kreis_dreht():
+    """Ein Modell, das dasselbe Werkzeug mit denselben Argumenten immer wieder
+    aufruft, hat sich verrannt. Ohne Erkennung laeuft es bis zum Schrittlimit und
+    kostet dabei Geld fuer nichts."""
+    k = _kern()
+    import anbieter as ab, tempfile
+    immer_dasselbe = _antwort(aufrufe=[{"id": "1", "name": "liste", "argumente": {}}])
+    with tempfile.TemporaryDirectory() as tmp:
+        modell = _ModellAttrappe([immer_dasselbe] * 10)
+        echt = ab.mit_wechsel
+        ab.mit_wechsel = modell
+        try:
+            antwort = k.Kern(_kern_umgebung(tmp)).frage("mach was")
+        finally:
+            ab.mit_wechsel = echt
+    assert "im Kreis" in antwort and "👉" in antwort
+    assert len(modell.gefragt) < 10, "hat trotz Erkennung weitergemacht"
+
+
+def test_kern_erfindet_keine_werkzeuge_sondern_sagt_es():
+    """Erfundene Werkzeugnamen sind bei kleineren Modellen ein bekanntes Vorkommnis.
+    Der Kern muss das benennen und die Liste mitgeben, statt zu raten."""
+    k = _kern()
+    import anbieter as ab, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        modell = _ModellAttrappe([
+            _antwort(aufrufe=[{"id": "1", "name": "zauberei", "argumente": {}}]),
+            _antwort(text="ok, dann anders")])
+        echt = ab.mit_wechsel
+        ab.mit_wechsel = modell
+        try:
+            k.Kern(_kern_umgebung(tmp)).frage("verzaubere mich")
+        finally:
+            ab.mit_wechsel = echt
+    rueckgabe = [n for n in modell.gefragt[1] if n["rolle"] == "werkzeug"][0]["text"]
+    assert "gibt es nicht" in rueckgabe and "lies" in rueckgabe
+
+
+def _kern_werkzeugrueckgabe(tmp, aufruf):
+    """Fuehrt EINEN Werkzeugwunsch durch den Kern und gibt zurueck, was das Modell
+    daraufhin zu sehen bekommt."""
+    k = _kern()
+    import anbieter as ab
+    modell = _ModellAttrappe([_antwort(aufrufe=[aufruf]), _antwort(text="ok")])
+    echt = ab.mit_wechsel
+    ab.mit_wechsel = modell
+    try:
+        k.Kern(_kern_umgebung(tmp)).frage("mach das")
+    finally:
+        ab.mit_wechsel = echt
+    return [n for n in modell.gefragt[1] if n["rolle"] == "werkzeug"][0]["text"]
+
+
+def test_kern_unterscheidet_hartes_nein_von_rueckfrage():
+    """Zwei verschiedene Urteile, zwei verschiedene Antworten — und in BEIDEN Faellen
+    passiert nichts.
+
+    * »rm -rf /« steht auf der Sperrliste: hartes Nein, es wird nicht einmal gefragt.
+    * Eine Datei ausserhalb des Arbeitsordners lesen: Rueckfrage. Der Kern hat aber
+      keinen Draht zum Chat des Besitzers, kann also nicht fragen — und fuehrt
+      deshalb NICHT aus. Im Zweifel nicht handeln.
+
+    (Der Test war zuerst falsch herum gebaut: Er erwartete beim Loeschbefehl den
+    Rueckfrage-Wortlaut. Der Kern gab die klare Ablehnung zurueck — richtiger als
+    die Erwartung.)"""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        hart = _kern_werkzeugrueckgabe(
+            tmp, {"id": "1", "name": "befehl", "argumente": {"befehl": "rm -rf /"}})
+        assert "löschen" in hart.lower() or "nie" in hart.lower(), hart
+        assert "Zustimmung" not in hart, "Sperrliste als Rueckfrage ausgegeben"
+
+        rueckfrage = _kern_werkzeugrueckgabe(
+            tmp, {"id": "1", "name": "lies", "argumente": {"pfad": "/etc/passwd"}})
+        assert "Zustimmung des Besitzers" in rueckfrage and \
+            "nicht ausgeführt" in rueckfrage, rueckfrage
+        # Und die Gegenprobe: im Arbeitsordner laeuft es glatt durch.
+        open(os.path.join(tmp, "da.txt"), "w").write("Inhalt")
+        gut = _kern_werkzeugrueckgabe(
+            tmp, {"id": "1", "name": "lies", "argumente": {"pfad": "da.txt"}})
+        assert gut == "Inhalt"
+
+
+def test_kuerzen_wirft_werkzeugergebnisse_weg_aber_nie_den_auftrag():
+    """Wer den Auftrag wegkuerzt, hat einen Assistenten, der eifrig das Falsche tut."""
+    k = _kern()
+    verlauf = [{"rolle": "system", "text": "Sei knapp."},
+               {"rolle": "nutzer", "text": "DER AUFTRAG"}]
+    for i in range(40):
+        verlauf.append({"rolle": "modell", "text": f"denke {i}"})
+        verlauf.append({"rolle": "werkzeug", "aufruf_id": str(i), "text": "x" * 4000})
+    gekuerzt, entfernt = k.kuerzen(verlauf, grenze=20000)
+    assert entfernt > 0
+    assert gekuerzt[0]["text"] == "Sei knapp."
+    assert any(n.get("text") == "DER AUFTRAG" for n in gekuerzt), "Auftrag weggekürzt"
+    assert any("entfernt" in (n.get("text") or "") for n in gekuerzt), \
+        "stillschweigend gekürzt — die Antwort wäre nicht nachvollziehbar"
+    # Die letzten Schritte muessen erhalten bleiben, sonst verliert das Modell den Faden.
+    assert gekuerzt[-1]["text"] == verlauf[-1]["text"]
+
+
+def test_kuerzen_laesst_kurze_verlaeufe_in_ruhe():
+    k = _kern()
+    verlauf = [{"rolle": "nutzer", "text": "kurz"}]
+    assert k.kuerzen(verlauf) == (verlauf, 0)
+
+
+def test_kern_sagt_bei_fehlender_anmeldung_was_zu_tun_ist():
+    """Die Lehre aus #151 bis zum Nutzer durchgezogen: kein Fehlercode, sondern der
+    naechste Schritt."""
+    k = _kern()
+    import anbieter as ab, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        echt = ab.mit_wechsel
+        ab.mit_wechsel = _ModellAttrappe([_antwort(fehler="401", anmeldung_fehlt=True)])
+        try:
+            antwort = k.Kern(_kern_umgebung(tmp)).frage("hallo")
+        finally:
+            ab.mit_wechsel = echt
+    assert "anmelden" in antwort.lower() and "👉" in antwort
+    assert "401" not in antwort, "Fehlercode statt Klartext"
+
+
+def test_kern_nur_mit_bordmitteln():
+    import ast as _a
+    baum = _a.parse(open(os.path.expanduser("~/.claude/matrix-bot/kern.py"),
+                         encoding="utf-8").read())
+    importe = set()
+    for n in _a.walk(baum):
+        if isinstance(n, _a.Import):
+            importe |= {x.name.split(".")[0] for x in n.names}
+        elif isinstance(n, _a.ImportFrom) and n.module:
+            importe.add(n.module.split(".")[0])
+    assert not (importe - {"json", "os", "sys", "anbieter", "werkzeuge"}), importe

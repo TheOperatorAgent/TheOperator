@@ -1,9 +1,10 @@
 {
- "version": "1.33.0",
+ "version": "1.34.0",
  "date": "2026-08-03",
  "highlights": [
-  "🔄 Alle Sprachmodelle sprechen jetzt dieselbe Sprache — Claude ist einer von mehreren Anbietern statt der Sonderfall, um den herum alles gebaut ist.",
-  "🔑 Wichtig: Wenn eine Anmeldung abgelaufen ist, gilt der Anbieter ab sofort als ausgefallen, und der Operator wechselt automatisch zum nächsten. Bisher blieb er in so einem Fall einfach stumm.",
-  "🧯 Antwortet ein Anbieter mit unbrauchbaren Daten, bricht der Operator nicht mehr ab, sondern macht weiter."
+  "🧠 Der eigene Kern kann jetzt arbeiten: fragen, Werkzeuge benutzen, weiterdenken — mit jedem Sprachmodell, nicht nur mit einem.",
+  "🔁 Dreht er sich im Kreis, merkt er es und sagt es dir, statt bis zum Limit weiterzurechnen.",
+  "📜 Wird ein langes Gespräch zu groß, wirft er alte Zwischenschritte weg — nie aber deinen Auftrag, und er sagt dir, dass er gekürzt hat.",
+  "🔒 Was Bestätigung braucht, führt er nicht aus, sondern meldet es zurück. Ein Assistent, der nicht fragen kann, handelt nicht."
  ]
 }

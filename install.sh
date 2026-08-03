@@ -24,7 +24,7 @@ WORKSPACE="${OPERATOR_WORKSPACE:-$HOME/Operator}"
 STATE_FILE="$BOT_DIR/.install-state.json"
 # #131: Der Installer nennt seine eigene Fassung. Bei zwei Auslieferungswegen
 # (GitHub sofort, operator.bayern per Handupload) ist Drift sonst unsichtbar.
-INSTALLER_VERSION="1.33.0"
+INSTALLER_VERSION="1.34.0"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main}"
 
@@ -781,7 +781,7 @@ phase8_dashboard() {
       if [ -f "$SCRIPT_DIR/dashboard/static/$F" ]; then cp "$SCRIPT_DIR/dashboard/static/$F" "$DASH_DIR/static/$F"
       else curl -fsSL "$REPO_RAW/dashboard/static/$F" -o "$DASH_DIR/static/$F" || DASH_OK=0; fi
     done
-    for F in m365.py gdrive.py mcp_m365.py vault.py mcp_n8n.py pseudonym.py pseudonym_daemon.py migrate_sessions.py llm_runner.py mcp_client.py schleuse.py werkzeuge.py anbieter.py mail_watch.py; do
+    for F in m365.py gdrive.py mcp_m365.py vault.py mcp_n8n.py pseudonym.py pseudonym_daemon.py migrate_sessions.py llm_runner.py mcp_client.py schleuse.py werkzeuge.py anbieter.py kern.py mail_watch.py; do
       if [ -f "$SCRIPT_DIR/$F" ]; then cp "$SCRIPT_DIR/$F" "$BOT_DIR/$F"
       else curl -fsSL "$REPO_RAW/$F" -o "$BOT_DIR/$F" || DASH_OK=0; fi
     done
