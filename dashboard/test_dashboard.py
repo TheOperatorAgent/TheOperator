@@ -2355,8 +2355,8 @@ def test_installer_richtet_surf_browser_ein():
     """Playwright bringt nicht für jede Architektur ein Chromium mit (ARM/Raspberry Pi).
     Der Installer muss es holen UND einen Rückfall auf System-Chromium haben."""
     src = ""
-    for kandidat in ("/tmp/_diff_op/install.sh", "/tmp/_rel10gh/install.sh",
-                     "/tmp/operator-site/public/install.sh",
+    for kandidat in ("/Users/Shared/operator-release/_diff_op/install.sh", "/Users/Shared/operator-release/_rel10gh/install.sh",
+                     "/Users/Shared/operator-release/operator-site/public/install.sh",
                      os.path.expanduser("~/.claude/matrix-bot/install.sh")):
         if os.path.exists(kandidat):
             src = open(kandidat).read()
@@ -2386,9 +2386,9 @@ def test_oeffentlicher_installer_zeigt_nie_ins_private_netz():
     import re
     privat = re.compile(r"(?:^|[/@])(?:10\.|127\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)")
     geprueft = 0
-    for pfad in ("/tmp/_rel10gh/install.sh", "/tmp/_rel10gh/install.ps1",
-                 "/tmp/operator-site/public/install.sh",
-                 "/tmp/operator-site/public/install.ps1"):
+    for pfad in ("/Users/Shared/operator-release/_rel10gh/install.sh", "/Users/Shared/operator-release/_rel10gh/install.ps1",
+                 "/Users/Shared/operator-release/operator-site/public/install.sh",
+                 "/Users/Shared/operator-release/operator-site/public/install.ps1"):
         if not os.path.exists(pfad):
             continue
         geprueft += 1
@@ -2405,7 +2405,7 @@ def test_oeffentlicher_installer_ist_die_ausgelieferte_fassung():
     """Zweiter Teil derselben Panne: Der GitHub-Spiegel hinkte inhaltlich hinterher und
     ließ Sicherheitsmodule aus. Alles, was der Auslieferungs-Installer nachlädt, muss
     auch im öffentlichen stehen — nur die Bezugsquelle darf sich unterscheiden."""
-    quelle, oeffentlich = "/tmp/_diff_op/install.sh", "/tmp/_rel10gh/install.sh"
+    quelle, oeffentlich = "/Users/Shared/operator-release/_diff_op/install.sh", "/Users/Shared/operator-release/_rel10gh/install.sh"
     if not (os.path.exists(quelle) and os.path.exists(oeffentlich)):
         import pytest
         pytest.skip("Repos nicht ausgecheckt")
@@ -2734,14 +2734,14 @@ def test_updater_hat_keinen_privaten_fallback():
 def test_kein_persoenliches_verhalten_in_auslieferung():
     """Review-Fund: die persönliche VERHALTEN.md des Autors (Infrastruktur-Landkarte)
     lag im ausgelieferten Repo. Sie gehört in KEIN Repo — nur das Template."""
-    for repo in ("/tmp/_diff_op", "/tmp/_rel10", "/tmp/_rel10gh"):
+    for repo in (("/Users/Shared/operator-release/_diff_op"), ("/Users/Shared/operator-release/_rel10"), ("/Users/Shared/operator-release/_rel10gh")):
         if os.path.isdir(repo):
             assert not os.path.exists(os.path.join(repo, "VERHALTEN.md")), repo
             assert os.path.exists(os.path.join(repo, "VERHALTEN.template.md")), repo
 
 
 def test_uninstall_nutzt_keinen_vorhersagbaren_tmp_pfad():
-    for pfad in ("/tmp/_diff_op/install.sh",):
+    for pfad in ("/Users/Shared/operator-release/_diff_op/install.sh",):
         if not os.path.exists(pfad):
             continue
         src = open(pfad).read()
@@ -3255,8 +3255,8 @@ def test_gedaechtnis_bewertung_hybrid_nicht_schlechter():
 
 # ------------------------------------------------ Windows-Installer (#112–#114) --
 def _ps1():
-    for p in ("/tmp/_diff_op/install.ps1", "/tmp/_rel10gh/install.ps1",
-              "/tmp/operator-site/public/install.ps1"):
+    for p in ("/Users/Shared/operator-release/_diff_op/install.ps1", "/Users/Shared/operator-release/_rel10gh/install.ps1",
+              "/Users/Shared/operator-release/operator-site/public/install.ps1"):
         if os.path.exists(p):
             return open(p, encoding="utf-8").read()
     import pytest
@@ -3428,8 +3428,8 @@ def test_installer_aktiviert_datenschutz_nicht_von_selbst():
     """#116: Der Filter startet AUS — sonst blockiert er auf Rechnern, wo er nicht
     läuft, JEDE Nachricht, und der Kunde hat einen Operator, der nichts tut.
     Der Operator bietet ihn danach selbst an (und kann dann auch helfen)."""
-    for pfad, muster in (("/tmp/_diff_op/install.sh", "setdefault('enabled', False)"),
-                         ("/tmp/_diff_op/install.ps1", "setdefault('enabled',False)")):
+    for pfad, muster in (("/Users/Shared/operator-release/_diff_op/install.sh", "setdefault('enabled', False)"),
+                         ("/Users/Shared/operator-release/_diff_op/install.ps1", "setdefault('enabled',False)")):
         if not os.path.exists(pfad):
             continue
         s = open(pfad, encoding="utf-8", errors="replace").read()
@@ -3468,7 +3468,7 @@ def test_learn_mcp_ohne_node_erreichbar():
 def test_installer_verdrahtet_learn_ab_werk():
     """#120: Bei einer frischen Installation soll Learn schon an sein — sonst raten
     wir weiter über Microsoft-Themen, obwohl die echte Doku gratis erreichbar ist."""
-    for pfad in ("/tmp/_diff_op/install.sh", "/tmp/_diff_op/install.ps1"):
+    for pfad in ("/Users/Shared/operator-release/_diff_op/install.sh", "/Users/Shared/operator-release/_diff_op/install.ps1"):
         if not os.path.exists(pfad):
             continue
         src = open(pfad, encoding="utf-8").read()
@@ -3799,8 +3799,8 @@ def test_startbild_in_beiden_installern_identisch_und_terminal_tauglich():
     bekannten Fallen: (1) install.ps1 muss reines ASCII bleiben — Blockzeichen wie
     █▓▒ wären bei »irm | iex« Matsch; (2) über ~78 Zeichen bricht es in einem
     Standard-Terminal um und sieht kaputt aus statt retro."""
-    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read() \
-        if os.path.exists("/tmp/_diff_op/install.sh") else None
+    sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read() \
+        if os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh") else None
     ps = _ps1()
     if sh is None:
         import pytest
@@ -3848,8 +3848,8 @@ def test_installation_endet_mit_offenem_dashboard_auf_beiden_systemen():
     assert zeile, "install.ps1 öffnet das Dashboard nicht automatisch"
     assert "catch {}" in zeile[0], "ein Fehler beim Öffnen dürfte nie fatal sein"
     assert "oeffnet sich gleich im Browser" in ps, "keine Ankündigung — wirkt wie Spuk"
-    if os.path.exists("/tmp/_diff_op/install.sh"):
-        sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    if os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh"):
+        sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read()
         assert "dashboard/open.py" in sh and "Öffne das Dashboard" in sh
 
 
@@ -3909,8 +3909,8 @@ def test_dashboard_installation_zeigt_fortschritt_in_prozent():
     assert ps_marken == sorted(ps_marken) and ps_marken[-1] == 100, ps_marken
     assert len(ps_marken) >= 6, "zu wenige Marken — lange Lücken bleiben stumm"
     assert "mehrere Minuten" in ps, "der längste Schritt verschweigt seine Dauer"
-    if os.path.exists("/tmp/_diff_op/install.sh"):
-        sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    if os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh"):
+        sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read()
         sh_marken = [int(m) for m in re.findall(r'step (\d+) "', sh)]
         assert sh_marken == ps_marken, \
             f"Prozent-Marken driften: sh={sh_marken} ps1={ps_marken}"
@@ -4103,8 +4103,8 @@ def test_installer_starten_dienste_ueber_den_mantel_und_liefern_pruefung_mit():
     assert "dienst_start.py" in ps and 'Join-Path $BotDir "dienst_start.py"' in ps
     assert '"pruefung.py"' in ps, "Selbstprüfung wird auf Windows nicht mitgeliefert"
     assert 'if /i "%1"=="pruefen"' in ps, "Kurzbefehl »operator pruefen« fehlt"
-    if os.path.exists("/tmp/_diff_op/install.sh"):
-        sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    if os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh"):
+        sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read()
         assert "dienst_start.py pruefung.py" in sh, "sh liefert die neuen Dateien nicht"
         assert "pruefen|check" in sh, "sh kennt »operator pruefen« nicht"
 
@@ -4149,7 +4149,7 @@ def test_selbstpruefung_findet_den_matrix_token_unter_dem_echten_namen():
     assert src.index('"matrix-owner"') < src.index('"matrix-token"'), \
         "der echte Name muss zuerst versucht werden"
     for datei in ("install.ps1", "install.sh"):
-        p = f"/tmp/_diff_op/{datei}"
+        p = f"/Users/Shared/operator-release/_diff_op/{datei}"
         if os.path.exists(p):
             assert "matrix-owner" in open(p, encoding="utf-8").read(), \
                 f"{datei} benennt den Token anders — Prüfung würde wieder falsch alarmieren"
@@ -4216,8 +4216,8 @@ def test_diagnose_sammelt_alles_und_schuetzt_geheimnisse():
 def test_kurzbefehle_kennen_pruefen_und_diagnose():
     ps = _ps1()
     assert 'if /i "%1"=="diagnose"' in ps and '"diagnose.py"' in ps
-    if os.path.exists("/tmp/_diff_op/install.sh"):
-        sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    if os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh"):
+        sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read()
         assert "diagnose)" in sh and "diagnose.py" in sh
 
 
@@ -4416,7 +4416,7 @@ def test_isolation_fasst_die_auslieferung_nicht_an():
     zwischen GitHub und operator.bayern faende niemand mehr."""
     src = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/conftest.py"),
                encoding="utf-8").read()
-    for repo in ("/tmp/_diff_op", "/tmp/_rel10gh", "/tmp/operator-site"):
+    for repo in (("/Users/Shared/operator-release/_diff_op"), ("/Users/Shared/operator-release/_rel10gh"), ("/Users/Shared/operator-release/operator-site")):
         assert f'"{repo}"' in src, f"{repo} nicht als geschuetzt vermerkt"
     # Kein Umschreiben: die Pfade duerfen nur in der AUSLIEFERUNG-Konstante und in
     # Erklaertexten stehen, nie in ausgefuehrtem Code.
@@ -4459,10 +4459,10 @@ def test_pruefungen_werden_mit_ausgeliefert():
     for datei in ("dashboard/test_dashboard.py", "dashboard/test_petra.py",
                   "dashboard/conftest.py"):
         assert datei in gefuehrt, f"{datei} fehlt im Manifest — kein Update erreicht sie"
-    if not os.path.exists("/tmp/_diff_op/install.sh"):
+    if not os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh"):
         return
-    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
-    ps1 = open("/tmp/_diff_op/install.ps1", encoding="utf-8").read()
+    sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read()
+    ps1 = open("/Users/Shared/operator-release/_diff_op/install.ps1", encoding="utf-8").read()
     assert "test_dashboard.py test_petra.py conftest.py" in sh, \
         "install.sh laedt die Pruefungen nicht"
     assert '"test_dashboard.py","test_petra.py","conftest.py"' in ps1, \
@@ -4490,11 +4490,11 @@ def test_installer_nennt_seine_eigene_fassung():
     Testlauf wertlos gemacht, weil niemand wusste, welcher Installer gerade lief.
     Seit 1.23.0 sagt er es im Startbild — und diese Angabe muss stimmen."""
     import pytest
-    if not os.path.exists("/tmp/_diff_op/install.sh"):
+    if not os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh"):
         pytest.skip("Auslieferungs-Repo nicht ausgecheckt")
-    version = open("/tmp/_diff_op/VERSION", encoding="utf-8").read().strip()
-    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
-    ps1 = open("/tmp/_diff_op/install.ps1", encoding="utf-8").read()
+    version = open("/Users/Shared/operator-release/_diff_op/VERSION", encoding="utf-8").read().strip()
+    sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read()
+    ps1 = open("/Users/Shared/operator-release/_diff_op/install.ps1", encoding="utf-8").read()
     assert f'INSTALLER_VERSION="{version}"' in sh, \
         "install.sh nennt eine andere Fassung als VERSION — genau die Drift, die das verhindern soll"
     assert f'$InstallerVersion = "{version}"' in ps1, "install.ps1 nennt eine andere Fassung"
@@ -4539,7 +4539,7 @@ def test_website_kopie_der_installer_ist_die_oeffentliche_fassung():
     Netz-Wächter (test_website_liefert_dieselben_installer_wie_das_repo) merkt es erst
     danach — und nur, wenn jemand die Suite mit Netz laufen laesst."""
     import pytest
-    quelle, kopie = "/tmp/_rel10gh", "/tmp/operator-site/public"
+    quelle, kopie = ("/Users/Shared/operator-release/_rel10gh"), "/Users/Shared/operator-release/operator-site/public"
     if not (os.path.isdir(quelle) and os.path.isdir(kopie)):
         pytest.skip("Repos nicht ausgecheckt")
     for datei in ("install.sh", "install.ps1"):
@@ -4556,9 +4556,9 @@ def _dienstdefinition_fingerabdruck():
     """Der Rumpf beider Dienst-Registrierungen, normalisiert und gehasht. Genau diese
     Stellen schreibt der Updater NIE — er tauscht nur Manifest-Dateien aus."""
     import hashlib
-    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
+    sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read()
     rumpf_sh = sh.split("install_service() {")[1].split("\n}\n")[0]
-    ps1 = open("/tmp/_diff_op/install.ps1", encoding="utf-8").read()
+    ps1 = open("/Users/Shared/operator-release/_diff_op/install.ps1", encoding="utf-8").read()
     rumpf_ps1 = ps1.split("function Install-Service(")[1].split("\n}\n")[0]
     roh = "\n".join(z.strip() for z in (rumpf_sh + rumpf_ps1).splitlines()
                     if z.strip() and not z.strip().startswith("#"))
@@ -4582,7 +4582,7 @@ def test_dienstdefinitionen_verlangen_den_installer():
     Ändert jemand die Dienstdefinition, wird dieser Test rot und erzwingt eine bewusste
     Entscheidung, statt sich auf Erinnerung zu verlassen."""
     import pytest
-    if not os.path.exists("/tmp/_diff_op/install.sh"):
+    if not os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh"):
         pytest.skip("Auslieferungs-Repo nicht ausgecheckt")
     jetzt = _dienstdefinition_fingerabdruck()
     assert jetzt == DIENSTDEFINITION_STAND, (
@@ -5560,7 +5560,7 @@ def test_marketing_agent_darf_nichts_erfinden():
     Karte, mit der der Operator wirbt (»Nicht versprochen. Sichtbar.«). Die Leitplanken
     stehen deshalb im Agenten-Prompt und nicht in einer Absichtserklaerung."""
     import pytest
-    pfad = "/tmp/_diff_op/agents/marketing.md"
+    pfad = "/Users/Shared/operator-release/_diff_op/agents/marketing.md"
     if not os.path.exists(pfad):
         pytest.skip("Auslieferungs-Repo nicht ausgecheckt")
     md = open(pfad, encoding="utf-8").read()
@@ -5585,7 +5585,7 @@ def test_deploy_bleibt_beim_kennwort_und_stellt_seine_vorbedingungen_selbst_her(
     schaltete auf BatchMode und damit auf »Permission denied« ohne Kennwortfrage.
     Ein Deploy-Skript, das durch einen GESCHEITERTEN Einrichtungsversuch kaputtgeht."""
     import pytest
-    pfad = "/tmp/operator-site/deploy-strato.command"
+    pfad = "/Users/Shared/operator-release/operator-site/deploy-strato.command"
     if not os.path.exists(pfad):
         pytest.skip("Website-Repo nicht ausgecheckt")
     sh = open(pfad, encoding="utf-8").read()
@@ -5769,10 +5769,10 @@ def test_abnahme_wird_ausgeliefert_und_ist_aufrufbar():
     import pytest
     man = _j.load(open(os.path.expanduser("~/.claude/matrix-bot/manifest.json")))
     assert "abnahme.py" in {f["dst"] for f in man["files"]}
-    if not os.path.exists("/tmp/_diff_op/install.sh"):
+    if not os.path.exists("/Users/Shared/operator-release/_diff_op/install.sh"):
         pytest.skip("Auslieferungs-Repo nicht ausgecheckt")
-    sh = open("/tmp/_diff_op/install.sh", encoding="utf-8").read()
-    ps1 = open("/tmp/_diff_op/install.ps1", encoding="utf-8").read()
+    sh = open("/Users/Shared/operator-release/_diff_op/install.sh", encoding="utf-8").read()
+    ps1 = open("/Users/Shared/operator-release/_diff_op/install.ps1", encoding="utf-8").read()
     assert "abnahme.py" in sh and "abnahme.py" in ps1, "eine Paritaets-Luecke (#126)"
     # Der Kurzbefehl auf BEIDEN Systemen — sonst ist er auf einem unbenutzbar.
     assert "abnahme)" in sh, "»operator abnahme« fehlt auf macOS/Linux"
@@ -6310,3 +6310,240 @@ def test_ausfuehrungsort_ist_austauschbar_ohne_docker_zwang():
                 and k.value not in doku}
     assert not any("docker" in n for n in stellen), \
         "Docker als Voraussetzung eingeschlichen"
+
+
+# ====================================== Modell-Anbieter unter einem Dach (#142) --
+def _ab():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import anbieter
+    return anbieter
+
+
+class _AnbieterAttrappe:
+    """Ein HTTP-Server, der sich als OpenAI bzw. Anthropic ausgibt.
+
+    So ist die Formatuebersetzung vollstaendig pruefbar, ohne ein Modell zu starten:
+    Lokale Modelle sind auf diesem Rechner tabu, und ein Cloud-Aufruf im Test waere
+    langsam, teuer und je nach Tageslaune anders.
+    """
+
+    def __init__(self, art="openai", antwort=None, status=200):
+        import http.server, threading, json as _j
+        self.empfangen = []
+        eltern = self
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *a):
+                pass
+
+            def do_POST(self):
+                n = int(self.headers.get("Content-Length", 0))
+                eltern.empfangen.append({
+                    "pfad": self.path,
+                    "kopf": dict(self.headers),
+                    "koerper": _j.loads(self.rfile.read(n) or b"{}")})
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(_j.dumps(antwort or {}).encode())
+
+        self.server = http.server.HTTPServer(("127.0.0.1", 0), H)
+        self.url = f"http://127.0.0.1:{self.server.server_port}"
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        self.server.shutdown()
+
+
+def test_beide_formate_ergeben_dieselbe_antwortform():
+    """Der Kern von K4: OpenAI und Anthropic sprechen verschieden, aber oben kommt
+    dasselbe an. Sonst braucht jede Stelle im Kern eine Fallunterscheidung."""
+    ab = _ab()
+    with _AnbieterAttrappe(antwort={
+            "choices": [{"message": {"content": "", "tool_calls": [
+                {"id": "a1", "type": "function",
+                 "function": {"name": "lies", "arguments": '{"pfad":"x.txt"}'}}]},
+                "finish_reason": "tool_calls"}],
+            "usage": {"prompt_tokens": 11, "completion_tokens": 3}}) as s:
+        o = ab.OpenAIArtig("test", s.url).antworten(
+            [{"rolle": "nutzer", "text": "lies x.txt"}], modell="m")
+    with _AnbieterAttrappe(antwort={
+            "content": [{"type": "tool_use", "id": "a1", "name": "lies",
+                         "input": {"pfad": "x.txt"}}],
+            "stop_reason": "tool_use",
+            "usage": {"input_tokens": 11, "output_tokens": 3}}) as s:
+        a = ab.AnthropicArtig("k", s.url).antworten(
+            [{"rolle": "nutzer", "text": "lies x.txt"}], modell="m")
+    for antwort in (o, a):
+        assert antwort.werkzeug_aufrufe == [
+            {"id": "a1", "name": "lies", "argumente": {"pfad": "x.txt"}}]
+        assert antwort.verbrauch == {"ein": 11, "aus": 3}
+
+
+def test_anthropic_bekommt_system_als_eigenes_feld():
+    """Leicht zu übersehen: Bei Anthropic ist die Systemanweisung KEINE Nachricht.
+    Wer sie als Nachricht mitschickt, bekommt einen Fehler oder — schlimmer — ein
+    Modell, das die Anweisung für Nutzertext hält."""
+    ab = _ab()
+    with _AnbieterAttrappe(antwort={"content": [{"type": "text", "text": "ok"}]}) as s:
+        ab.AnthropicArtig("k", s.url).antworten(
+            [{"rolle": "system", "text": "Du bist knapp."},
+             {"rolle": "nutzer", "text": "hallo"}], modell="m")
+        koerper = s.empfangen[0]["koerper"]
+    assert koerper["system"] == "Du bist knapp."
+    assert [n["role"] for n in koerper["messages"]] == ["user"]
+
+
+def test_werkzeugergebnisse_ueberleben_beide_uebersetzungen():
+    """Ein Werkzeugergebnis ist bei OpenAI eine eigene Rolle, bei Anthropic ein
+    Inhaltsblock in einer Nutzernachricht. Geht das verloren, dreht sich das Modell
+    im Kreis und ruft dasselbe Werkzeug immer wieder auf."""
+    ab = _ab()
+    verlauf = [{"rolle": "nutzer", "text": "lies x"},
+               {"rolle": "modell", "text": "",
+                "werkzeug_aufrufe": [{"id": "a1", "name": "lies", "argumente": {}}]},
+               {"rolle": "werkzeug", "aufruf_id": "a1", "text": "Dateiinhalt"}]
+    with _AnbieterAttrappe(antwort={"choices": [{"message": {"content": "fertig"}}]}) as s:
+        ab.OpenAIArtig("t", s.url).antworten(verlauf, modell="m")
+        o = s.empfangen[0]["koerper"]["messages"]
+    assert o[-1] == {"role": "tool", "tool_call_id": "a1", "content": "Dateiinhalt"}
+    assert o[1]["tool_calls"][0]["function"]["name"] == "lies"
+    with _AnbieterAttrappe(antwort={"content": [{"type": "text", "text": "fertig"}]}) as s:
+        ab.AnthropicArtig("k", s.url).antworten(verlauf, modell="m")
+        a = s.empfangen[0]["koerper"]["messages"]
+    assert a[-1]["content"][0]["type"] == "tool_result"
+    assert a[-1]["content"][0]["tool_use_id"] == "a1"
+    assert a[1]["content"][0]["type"] == "tool_use"
+
+
+def test_abgelaufene_anmeldung_gilt_als_ausgefallener_anbieter():
+    """#151: Genau hier hing der dreitägige Ausfall. Claude kam nicht durch die
+    Anmeldung, das war kein »Fehler beim Antworten«, also griff der Wechsel nicht —
+    obwohl Ollama die ganze Zeit bereitstand."""
+    ab = _ab()
+    with _AnbieterAttrappe(antwort={"error": {"message": "OAuth session expired"}},
+                           status=401) as s:
+        antwort = ab.OpenAIArtig("t", s.url).antworten(
+            [{"rolle": "nutzer", "text": "hi"}], modell="m")
+    assert antwort.fehler and antwort.anmeldung_fehlt is True, \
+        "Anmeldeproblem nicht erkannt — der Wechsel würde nicht greifen"
+    for text in ("invalid_api_key", "401 Unauthorized", "credential missing",
+                 "Failed to authenticate: OAuth session expired"):
+        assert ab._anmeldeproblem(text) is True, text
+    for harmlos in ("model not found", "context length exceeded", "rate limit"):
+        assert ab._anmeldeproblem(harmlos) is False, \
+            f"»{harmlos}« fälschlich als Anmeldeproblem — würde den Nutzer zum " \
+            "sinnlosen Anmelden schicken"
+
+
+def test_kaputtes_json_in_werkzeugargumenten_bricht_den_lauf_nicht_ab():
+    """Ein bekanntes Vorkommnis bei kleineren Modellen. Leere Argumente sind
+    ehrlicher als geratene — und allemal besser als ein Absturz."""
+    ab = _ab()
+    with _AnbieterAttrappe(antwort={"choices": [{"message": {"content": "", "tool_calls": [
+            {"id": "a1", "type": "function",
+             "function": {"name": "lies", "arguments": "{kaputt,,,"}}]}}]}) as s:
+        antwort = ab.OpenAIArtig("t", s.url).antworten(
+            [{"rolle": "nutzer", "text": "x"}], modell="m")
+    assert antwort.werkzeug_aufrufe[0]["argumente"] == {}
+    assert not antwort.fehler
+
+
+def test_anbieter_nur_mit_bordmitteln():
+    """Der Pi ist die Untergrenze. Beide Schnittstellen sind HTTP mit JSON — das
+    openai-Paket nimmt einem hier wenig ab und kostet eine Abhängigkeit."""
+    import ast as _a
+    baum = _a.parse(open(os.path.expanduser("~/.claude/matrix-bot/anbieter.py"),
+                         encoding="utf-8").read())
+    importe = set()
+    for k in _a.walk(baum):
+        if isinstance(k, _a.Import):
+            importe |= {n.name.split(".")[0] for n in k.names}
+        elif isinstance(k, _a.ImportFrom) and k.module:
+            importe.add(k.module.split(".")[0])
+    assert not (importe - {"json", "os", "sys", "urllib", "providers"}), \
+        f"Fremd-Abhängigkeiten: {importe}"
+
+
+def test_wechsel_springt_ein_wenn_der_erste_anbieter_sich_nicht_anmelden_kann():
+    """Die Lehre aus #151, als Test festgehalten: Drei Tage Stille, weil der erste
+    Anbieter an der ANMELDUNG scheiterte statt an der Antwort — und der Wechsel
+    deshalb nicht ansprang, obwohl ein zweiter Anbieter bereitstand."""
+    ab = _ab()
+    gemeldet = []
+    with _AnbieterAttrappe(antwort={"error": {"message": "OAuth session expired"}},
+                           status=401) as tot, \
+         _AnbieterAttrappe(antwort={"choices": [{"message": {"content": "ich kann"}}],
+                                    "usage": {"prompt_tokens": 5,
+                                              "completion_tokens": 2}}) as lebt:
+        echte = ab.aus_einstellungen
+        ab.aus_einstellungen = lambda n: ab.OpenAIArtig(
+            n, tot.url if n == "kaputt" else lebt.url)
+        try:
+            antwort = ab.mit_wechsel(["kaputt", "ersatz"],
+                                     [{"rolle": "nutzer", "text": "hallo"}],
+                                     protokoll=gemeldet.append)
+        finally:
+            ab.aus_einstellungen = echte
+
+    assert antwort.text == "ich kann", "der Wechsel hat nicht gegriffen"
+    assert antwort.verbrauch["anbieter"] == "ersatz"
+    # Der Ausfall muss SICHTBAR sein — ein stiller Wechsel verdeckt genau das
+    # Problem, das drei Tage lang niemandem auffiel.
+    assert any("Anmeldung abgelaufen" in m for m in gemeldet), gemeldet
+    assert any("übernommen" in m for m in gemeldet), gemeldet
+
+
+def test_wenn_alle_anbieter_an_der_anmeldung_scheitern_sagt_es_das_auch_so():
+    """Fallen alle wegen fehlender Anmeldung aus, ist »kein Anbieter erreichbar« die
+    falsche Auskunft — der Nutzer soll sich anmelden, nicht das Netz prüfen."""
+    ab = _ab()
+    with _AnbieterAttrappe(antwort={"error": {"message": "invalid_api_key"}},
+                           status=401) as tot:
+        echte = ab.aus_einstellungen
+        ab.aus_einstellungen = lambda n: ab.OpenAIArtig(n, tot.url)
+        try:
+            antwort = ab.mit_wechsel(["a", "b"], [{"rolle": "nutzer", "text": "x"}])
+        finally:
+            ab.aus_einstellungen = echte
+    assert antwort.fehler and antwort.anmeldung_fehlt is True
+
+
+def test_auslieferungsquelle_liegt_nicht_an_einem_fluechtigen_ort():
+    """Am 03.08. waren die Arbeitskopien weg — /tmp wird vom Betriebssystem geräumt.
+    Folge: 27 Tests wurden STILL übersprungen statt rot zu werden, die Suite meldete
+    grün und prüfte die halbe Auslieferung nicht mehr.
+
+    Zwei Orte sind verboten, aus zwei verschiedenen Gründen:
+    * **/tmp** — das Betriebssystem darf es jederzeit löschen.
+    * **unter HOME** — die Testisolation (#89) tauscht HOME gegen eine Momentaufnahme
+      aus; die Prüfungen liefen dann gegen leere Ordner. Derselbe stille Ausfall,
+      nur mit anderer Ursache. (Genau in diese Falle bin ich beim Reparieren zuerst
+      gelaufen.)
+    """
+    src = open(os.path.expanduser("~/.claude/matrix-bot/werkzeug/release.py"),
+               encoding="utf-8").read()
+    assert "/tmp/_diff_op" not in src and "/tmp/_rel10" not in src, \
+        "Auslieferungsquelle wieder unter /tmp — das räumt macOS weg"
+    zeile = [z for z in src.splitlines() if z.startswith("RELEASE_DIR")]
+    assert zeile, "RELEASE_DIR fehlt"
+    import re as _re
+    vorgabe = _re.search(r'"([^"]*operator-release[^"]*)"', src)
+    assert vorgabe, "kein Vorgabe-Ort erkennbar"
+    ort = vorgabe.group(1)
+    assert not ort.startswith("/tmp"), ort
+    assert not ort.startswith("~") and not ort.startswith(os.path.expanduser("~")), \
+        f"{ort} liegt unter HOME — die Testisolation legt es dann lahm"
+
+
+def test_die_repo_pruefungen_werden_nicht_stillschweigend_uebersprungen():
+    """Die eigentliche Lehre: Ein übersprungener Test sieht aus wie ein bestandener.
+    Fehlen die Arbeitskopien, muss das auffallen — nicht als Fußnote in der Ausgabe."""
+    for ordner in ("_diff_op", "_rel10", "_rel10gh"):
+        pfad = os.path.join("/Users/Shared/operator-release", ordner)
+        assert os.path.isdir(os.path.join(pfad, ".git")), (
+            f"{pfad} fehlt — die Auslieferungs-Prüfungen laufen ins Leere. "
+            f"Neu holen mit: git clone <repo> {pfad}")

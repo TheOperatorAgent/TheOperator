@@ -1,10 +1,9 @@
 {
- "version": "1.32.0",
- "date": "2026-08-01",
+ "version": "1.33.0",
+ "date": "2026-08-03",
  "highlights": [
-  "🧱 Das Fundament für die Unabhängigkeit steht: ein eigener Werkzeugkasten zum Lesen, Schreiben, Suchen und Ausführen — und eine einzige Stelle, durch die jede Handlung muss, bevor sie passiert.",
-  "✏️ »Ändern« ersetzt nur noch eindeutige Textstellen. Kommt der gesuchte Text mehrfach vor, fragt der Operator nach, statt die falsche Stelle zu treffen.",
-  "📏 Lange Ausgaben werden sichtbar gekürzt statt stillschweigend abgeschnitten — sonst hält der Operator einen Ausschnitt für das Ganze und zieht falsche Schlüsse.",
-  "🖥️ Wo ein Befehl läuft, ist ab jetzt eine Einstellung und keine feste Verdrahtung. Voreingestellt bleibt: auf deinem Rechner, ohne zusätzliche Software."
+  "🔄 Alle Sprachmodelle sprechen jetzt dieselbe Sprache — Claude ist einer von mehreren Anbietern statt der Sonderfall, um den herum alles gebaut ist.",
+  "🔑 Wichtig: Wenn eine Anmeldung abgelaufen ist, gilt der Anbieter ab sofort als ausgefallen, und der Operator wechselt automatisch zum nächsten. Bisher blieb er in so einem Fall einfach stumm.",
+  "🧯 Antwortet ein Anbieter mit unbrauchbaren Daten, bricht der Operator nicht mehr ab, sondern macht weiter."
  ]
 }

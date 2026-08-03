@@ -24,7 +24,7 @@ $DashDir = Join-Path $BotDir "dashboard"
 $Workspace = if ($env:OPERATOR_WORKSPACE) { $env:OPERATOR_WORKSPACE } else { Join-Path $HOME "Operator" }
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 # #131: Der Installer nennt seine eigene Fassung (siehe install.sh).
-$InstallerVersion = "1.32.0"
+$InstallerVersion = "1.33.0"
 $RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
 
@@ -553,7 +553,7 @@ if ($dashOptin -eq "ja") {
     # #87: Sicherheitspruefungen mitliefern (siehe install.sh).
     foreach ($f in @("test_dashboard.py","test_petra.py","conftest.py")) { Fetch-File "dashboard\$f" (Join-Path $DashDir $f) }
     foreach ($f in @("index.html","app.js","style.css")) { Fetch-File "dashboard\static\$f" (Join-Path $DashDir "static\$f") }
-    foreach ($f in @("dienst_start.py","pruefung.py","diagnose.py","abnahme.py","m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mcp_client.py","schleuse.py","werkzeuge.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
+    foreach ($f in @("dienst_start.py","pruefung.py","diagnose.py","abnahme.py","m365.py","gdrive.py","mcp_m365.py","vault.py","mcp_n8n.py","pseudonym.py","pseudonym_daemon.py","migrate_sessions.py","llm_runner.py","mcp_client.py","schleuse.py","werkzeuge.py","anbieter.py","mail_watch.py")) { Fetch-File $f (Join-Path $BotDir $f) }
     if (-not (Secret-Has "token-key")) { Secret-Set "token-key" (Rand-Hex) }
     if (-not (Test-Path (Join-Path $BotDir "dashboard.json"))) {
         $dtok = Rand-Hex; Secret-Set "dashboard-token" $dtok

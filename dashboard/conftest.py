@@ -22,8 +22,8 @@ beim Import. Eine session-scoped Fixture liefe zu spät.
 
 Was bewusst NICHT umgelenkt wird
 --------------------------------
-* Die Auslieferungs-Repos ``/tmp/_diff_op``, ``/tmp/_rel10``, ``/tmp/_rel10gh`` und
-  ``/tmp/operator-site`` — absolute Pfade ohne HOME-Bezug. Diese Tests **sollen** gegen
+* Die Auslieferungs-Repos ``/Users/Shared/operator-release/_diff_op``, ``/Users/Shared/operator-release/_rel10``, ``/Users/Shared/operator-release/_rel10gh`` und
+  ``/Users/Shared/operator-release/operator-site`` — absolute Pfade ohne HOME-Bezug. Diese Tests **sollen** gegen
   das echte Auslieferungsergebnis laufen; ``test_isolation_fasst_die_auslieferung_nicht_an``
   hält das fest.
 * Das venv (1 GB) wird verlinkt statt kopiert — sonst kostet jeder Lauf eine Minute und
@@ -49,7 +49,7 @@ AKTIV = os.environ.get("OPERATOR_TEST_NO_ISOLATION") != "1" and os.path.isdir(EC
 
 # Diese Pfade sind absolut und dürfen niemals in die Kopie zeigen — sie prüfen, was
 # tatsächlich an Kunden ausgeliefert wird.
-AUSLIEFERUNG = ("/tmp/_diff_op", "/tmp/_rel10", "/tmp/_rel10gh", "/tmp/operator-site")
+AUSLIEFERUNG = (("/Users/Shared/operator-release/_diff_op"), ("/Users/Shared/operator-release/_rel10"), ("/Users/Shared/operator-release/_rel10gh"), ("/Users/Shared/operator-release/operator-site"))
 
 # Was nicht mitkopiert wird. Logs und Laufzeitstände sind genau das, was der laufende
 # Betrieb unter uns verändert; das venv ist 1 GB und wird stattdessen verlinkt.
