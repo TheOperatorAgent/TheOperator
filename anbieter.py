@@ -51,7 +51,11 @@ class Antwort:
         self.text = text
         self.werkzeug_aufrufe = werkzeug_aufrufe or []
         self.stopgrund = stopgrund
-        self.verbrauch = verbrauch or {"ein": 0, "aus": 0}
+        # »cache_ein« = wieviel des Prompts aus dem Zwischenspeicher kam (billig),
+        # »cache_neu« = wieviel dafür neu abgelegt wurde (einmalig teurer als normal).
+        # Ohne diese beiden Zahlen ist die Kostenfrage aus #153 nicht zu beantworten:
+        # »ein« allein sieht mit und ohne Caching praktisch gleich aus.
+        self.verbrauch = verbrauch or {"ein": 0, "aus": 0, "cache_ein": 0, "cache_neu": 0}
         self.fehler = fehler
         # Eigenes Kennzeichen, weil es eine eigene Behandlung braucht: Der Nutzer muss
         # sich anmelden, kein Wiederholen hilft. Siehe #151.
@@ -88,7 +92,8 @@ def _anmeldeproblem(text):
 class Anbieter:
     name = "?"
 
-    def antworten(self, nachrichten, werkzeuge=None, modell="", max_zeichen=4096):
+    def antworten(self, nachrichten, werkzeuge=None, modell="", max_zeichen=4096,
+                  cachen=True):
         raise NotImplementedError
 
 
@@ -120,7 +125,11 @@ class OpenAIArtig(Anbieter):
                 for a in n["werkzeug_aufrufe"]]
         return raus
 
-    def antworten(self, nachrichten, werkzeuge=None, modell="", max_zeichen=4096):
+    def antworten(self, nachrichten, werkzeuge=None, modell="", max_zeichen=4096,
+                  cachen=True):
+        # `cachen` ist hier ohne Wirkung: OpenAI cacht automatisch, Ollama gar nicht.
+        # Der Schalter existiert trotzdem, damit der Messlauf beide Anbieter gleich
+        # aufrufen kann.
         koerper = {"model": modell,
                    "messages": [self._nachricht(n) for n in nachrichten],
                    "max_tokens": max_zeichen}
@@ -151,10 +160,15 @@ class OpenAIArtig(Anbieter):
             aufrufe.append({"id": a.get("id", ""), "name": f.get("name", ""),
                             "argumente": args})
         v = d.get("usage") or {}
+        # OpenAI cacht von selbst und meldet es hier; Ollama und LM Studio kennen das
+        # Feld nicht und liefern 0. Beides ist richtig — nur muss man es unterscheiden
+        # können, sonst hält man »kein Caching« für »Caching wirkt nicht«.
+        gecacht = (v.get("prompt_tokens_details") or {}).get("cached_tokens", 0)
         return Antwort(text=(m.get("content") or "").strip(), werkzeug_aufrufe=aufrufe,
                        stopgrund=wahl.get("finish_reason", ""),
                        verbrauch={"ein": v.get("prompt_tokens", 0),
-                                  "aus": v.get("completion_tokens", 0)})
+                                  "aus": v.get("completion_tokens", 0),
+                                  "cache_ein": gecacht, "cache_neu": 0})
 
 
 class AnthropicArtig(Anbieter):
@@ -172,7 +186,8 @@ class AnthropicArtig(Anbieter):
         self.schluessel = schluessel or ""
         self.basis = basis_url.rstrip("/")
 
-    def antworten(self, nachrichten, werkzeuge=None, modell="", max_zeichen=4096):
+    def antworten(self, nachrichten, werkzeuge=None, modell="", max_zeichen=4096,
+                  cachen=True):
         system = " ".join(n.get("text", "") for n in nachrichten
                           if n["rolle"] == "system").strip()
         verlauf = []
@@ -197,13 +212,24 @@ class AnthropicArtig(Anbieter):
 
         koerper = {"model": modell, "messages": verlauf, "max_tokens": max_zeichen}
         if system:
-            koerper["system"] = system
+            # Anthropic cacht nicht von selbst — man muss den Teil markieren, der
+            # gleich bleibt. Das ist genau der teure Anfang: Verhalten, Persona,
+            # Gedächtnis und die Werkzeugliste gehen bei JEDER Nachricht mit.
+            koerper["system"] = ([{"type": "text", "text": system,
+                                   "cache_control": {"type": "ephemeral"}}]
+                                 if cachen else system)
         if werkzeuge:
             koerper["tools"] = [
                 {"name": w["function"]["name"],
                  "description": w["function"].get("description", ""),
                  "input_schema": w["function"].get("parameters") or {"type": "object"}}
                 if "function" in w else w for w in werkzeuge]
+            if cachen:
+                # Die Marke sitzt am LETZTEN Werkzeug: Sie cacht alles davor mit.
+                # Am ersten wäre sie fast wirkungslos — ein verbreiteter Irrtum, der
+                # aussieht, als sei Caching an, und im Verbrauch nichts ändert.
+                koerper["tools"][-1] = dict(koerper["tools"][-1],
+                                            cache_control={"type": "ephemeral"})
         kopf = {"x-api-key": self.schluessel, "anthropic-version": "2023-06-01"}
         try:
             d = _post(f"{self.basis}/messages", kopf, koerper)
@@ -225,7 +251,9 @@ class AnthropicArtig(Anbieter):
         return Antwort(text=text.strip(), werkzeug_aufrufe=aufrufe,
                        stopgrund=d.get("stop_reason", ""),
                        verbrauch={"ein": v.get("input_tokens", 0),
-                                  "aus": v.get("output_tokens", 0)})
+                                  "aus": v.get("output_tokens", 0),
+                                  "cache_ein": v.get("cache_read_input_tokens", 0),
+                                  "cache_neu": v.get("cache_creation_input_tokens", 0)})
 
 
 # ------------------------------------------------------------------ Auswahl --
@@ -257,7 +285,7 @@ def aus_einstellungen(name):
 
 
 def mit_wechsel(reihenfolge, nachrichten, werkzeuge=None, modelle=None,
-                max_zeichen=4096, protokoll=None):
+                max_zeichen=4096, protokoll=None, cachen=True):
     """Der Reihe nach probieren, bis einer antwortet.
 
     **Ein Anbieter, der sich nicht anmelden kann, gilt als ausgefallen** — nicht als
@@ -273,7 +301,8 @@ def mit_wechsel(reihenfolge, nachrichten, werkzeuge=None, modelle=None,
         except Exception as e:
             versuche.append((name, f"nicht einsatzbereit: {e}"))
             continue
-        antwort = a.antworten(nachrichten, werkzeuge, modelle.get(name, ""), max_zeichen)
+        antwort = a.antworten(nachrichten, werkzeuge, modelle.get(name, ""),
+                              max_zeichen, cachen=cachen)
         if not antwort.fehler:
             antwort.verbrauch["anbieter"] = name
             if versuche and protokoll:

@@ -98,14 +98,22 @@ class Kern:
     """Ein Gespräch. Hält den Verlauf, führt die Schleife, gibt Text zurück."""
 
     def __init__(self, umgebung, anbieter_reihenfolge=None, modelle=None,
-                 mcp=None, protokoll=None):
+                 mcp=None, protokoll=None, cachen=True):
         self.umgebung = umgebung
         self.reihenfolge = anbieter_reihenfolge or ["anthropic"]
         self.modelle = modelle or {}
         self.mcp = mcp
         self.protokoll = protokoll or (lambda *_: None)
+        # Abschaltbar allein für die Gegenprobe in #153. Im Betrieb bleibt es an:
+        # Ein Prompt-Anfang, der sich nicht ändert, jedes Mal neu zu bezahlen, ist
+        # ein Kostenfaktor, der niemandem auffällt — bis die Abrechnung kommt.
+        self.cachen = cachen
         self.nachrichten = []
         self.schritte = []
+        # Summiert über ALLE Schritte einer Frage. Je Einzelaufruf sagt der Verbrauch
+        # wenig — die Kosten einer Agentenschleife entstehen daraus, dass der System-
+        # Prompt bei jedem Schritt erneut mitgeht (#153).
+        self.verbrauch = {"ein": 0, "aus": 0, "cache_ein": 0, "cache_neu": 0}
 
     # ------------------------------------------------------------- Werkzeuge --
     def werkzeugliste(self):
@@ -161,7 +169,9 @@ class Kern:
 
             antwort = anbieter.mit_wechsel(self.reihenfolge, self.nachrichten,
                                            self.werkzeugliste(), self.modelle,
-                                           protokoll=self.protokoll)
+                                           protokoll=self.protokoll, cachen=self.cachen)
+            for k in self.verbrauch:
+                self.verbrauch[k] += antwort.verbrauch.get(k, 0)
             if antwort.fehler:
                 if antwort.anmeldung_fehlt:
                     return ("Ich komme gerade an kein Sprachmodell heran, weil keine "

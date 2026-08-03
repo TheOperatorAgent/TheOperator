@@ -6395,7 +6395,9 @@ def test_beide_formate_ergeben_dieselbe_antwortform():
     for antwort in (o, a):
         assert antwort.werkzeug_aufrufe == [
             {"id": "a1", "name": "lies", "argumente": {"pfad": "x.txt"}}]
-        assert antwort.verbrauch == {"ein": 11, "aus": 3}
+        # Seit #153 stehen zusaetzlich die Cache-Zahlen drin; hier interessiert nur,
+        # dass beide Formate dieselben Grundwerte liefern.
+        assert (antwort.verbrauch["ein"], antwort.verbrauch["aus"]) == (11, 3)
 
 
 def test_anthropic_bekommt_system_als_eigenes_feld():
@@ -6408,7 +6410,10 @@ def test_anthropic_bekommt_system_als_eigenes_feld():
             [{"rolle": "system", "text": "Du bist knapp."},
              {"rolle": "nutzer", "text": "hallo"}], modell="m")
         koerper = s.empfangen[0]["koerper"]
-    assert koerper["system"] == "Du bist knapp."
+    # Seit #153 wird der System-Prompt als Block mit Cache-Marke gesendet. Der Punkt
+    # dieses Tests bleibt derselbe: Er ist ein EIGENES Feld und steht nicht im Verlauf.
+    system = koerper["system"]
+    assert (system[0]["text"] if isinstance(system, list) else system) == "Du bist knapp."
     assert [n["role"] for n in koerper["messages"]] == ["user"]
 
 
@@ -6584,7 +6589,10 @@ class _ModellAttrappe:
         self.gefragt = []
 
     def __call__(self, reihenfolge, nachrichten, werkzeuge=None, modelle=None,
-                 max_zeichen=4096, protokoll=None):
+                 max_zeichen=4096, protokoll=None, **rest):
+        # `**rest` mit Absicht: Die Attrappe soll an einem neuen Schalter im echten
+        # Aufruf (z. B. `cachen`, #153) nicht zerbrechen. Sie prueft die Schleife,
+        # nicht die Signatur — dafuer gibt es eigene Tests.
         self.gefragt.append(list(nachrichten))
         return self.folge.pop(0) if self.folge else _antwort(text="fertig")
 
@@ -7215,3 +7223,110 @@ def test_nachweis_export_enthaelt_keine_inhalte():
     assert "kunde@firma.de" not in md and "sk-abcdefgh12345" not in md
     assert "[entfernt]" in md
     assert "| Zeit | Urteil |" in md, "Rohtabelle fehlt — extern nicht nachrechenbar"
+
+
+# ------------------------------------------- Prompt-Caching messen (#153) --
+def _anbieter_mit_attrappe(antwort_json):
+    """Ersetzt nur den HTTP-Aufruf. Alles darüber ist echter Code — genau die Stelle,
+    an der `anbieter.py` schon einmal durchgefallen ist: acht grüne Tests gegen
+    Attrappen, und die Verdrahtung rief eine Funktion auf, die es nicht gab."""
+    import importlib
+    anbieter = importlib.import_module("anbieter")
+    gesehen = {}
+
+    def falsch_post(url, kopf, koerper, zeitlimit=120):
+        gesehen.clear()
+        gesehen.update(koerper)
+        return antwort_json
+
+    anbieter._post = falsch_post
+    return anbieter, gesehen
+
+
+def test_caching_marken_landen_wirklich_im_koerper():
+    """Anthropic cacht NICHT von selbst. Ohne die Marke `cache_control` passiert
+    nichts — ein Messlauf hätte »Caching bringt nichts« ergeben, richtig gemessen
+    und falsch geschlossen."""
+    anbieter, gesehen = _anbieter_mit_attrappe(
+        {"content": [], "usage": {"input_tokens": 1, "output_tokens": 1}})
+    a = anbieter.AnthropicArtig("x")
+    wz = [{"function": {"name": n, "description": "d", "parameters": {"type": "object"}}}
+          for n in ("lies", "schreib")]
+    n = [{"rolle": "system", "text": "SYS"}, {"rolle": "nutzer", "text": "hi"}]
+
+    a.antworten(n, wz, "m", cachen=True)
+    assert isinstance(gesehen["system"], list), "System-Prompt nicht als Block gesendet"
+    assert gesehen["system"][0].get("cache_control"), "keine Marke am System-Prompt"
+    # Die Marke gehoert ans LETZTE Werkzeug: sie cacht alles davor mit. Am ersten
+    # waere sie fast wirkungslos und saehe trotzdem nach »Caching an« aus.
+    assert "cache_control" not in gesehen["tools"][0]
+    assert "cache_control" in gesehen["tools"][-1]
+
+    a.antworten(n, wz, "m", cachen=False)
+    assert isinstance(gesehen["system"], str), "Abschalten wirkt nicht"
+    assert not any("cache_control" in t for t in gesehen["tools"])
+
+
+def test_cache_zahlen_werden_nicht_weggeworfen():
+    """Der Fund, der #153 ueberhaupt erst messbar machte: Beide Schnittstellen
+    liefern die Zahlen, und `anbieter.py` hat sie gelesen und verworfen. Uebrig
+    blieben »ein« und »aus« — die sehen mit und ohne Caching fast gleich aus."""
+    anbieter, _ = _anbieter_mit_attrappe(
+        {"content": [], "usage": {"input_tokens": 10, "output_tokens": 5,
+                                  "cache_read_input_tokens": 900,
+                                  "cache_creation_input_tokens": 40}})
+    v = anbieter.AnthropicArtig("x").antworten([{"rolle": "nutzer", "text": "hi"}]).verbrauch
+    assert v["cache_ein"] == 900 and v["cache_neu"] == 40
+
+    anbieter, _ = _anbieter_mit_attrappe(
+        {"choices": [{"message": {"content": "ok"}}],
+         "usage": {"prompt_tokens": 10, "completion_tokens": 5,
+                   "prompt_tokens_details": {"cached_tokens": 700}}})
+    v = anbieter.OpenAIArtig("o", "http://x").antworten(
+        [{"rolle": "nutzer", "text": "hi"}]).verbrauch
+    assert v["cache_ein"] == 700
+
+
+def test_kern_summiert_den_verbrauch_ueber_alle_schritte():
+    """Je Einzelaufruf sagt der Verbrauch wenig. Die Kosten einer Agentenschleife
+    entstehen daraus, dass der Prompt-Anfang bei JEDEM Schritt erneut mitgeht."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/kern.py"), encoding="utf-8").read()
+    assert "self.verbrauch" in src
+    schleife = src.split("def frage")[1]
+    assert "self.verbrauch[k] += antwort.verbrauch" in schleife, \
+        "Verbrauch wird nicht ueber die Schritte summiert"
+
+
+def test_kostenmessung_meldet_kein_ergebnis_ohne_messgeraet():
+    """Ollama liefert keine Cache-Zahlen. Ein Bericht, der daraus »0 % Ersparnis«
+    macht, ist eine Falschaussage — »hier ist nichts messbar« ist die richtige."""
+    import importlib.util
+    pfad = os.path.expanduser("~/.claude/matrix-bot/pruefstand/kosten.py")
+    spec = importlib.util.spec_from_file_location("kosten_test", pfad)
+    k = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(k)
+
+    leer = [[{"ein": 100, "aus": 10, "cache_ein": 0, "cache_neu": 0, "schritte": 0}]]
+    text, _ = k.bericht(leer, leer, "ollama")
+    assert "KEINE Cache-Zahlen" in text
+    assert "Ersparnis" not in text and "%" not in text, \
+        "meldet eine Kennzahl, obwohl nichts gemessen wurde"
+
+    # Gegenprobe: mit Zahlen kommt sehr wohl ein Ergebnis.
+    voll = [[{"ein": 100, "aus": 10, "cache_ein": 900, "cache_neu": 0, "schritte": 1}]]
+    text2, _ = k.bericht(voll, leer, "anthropic")
+    assert "Anteil aus dem Cache" in text2
+
+
+def test_schrittkosten_sind_ohne_cache_zahlen_auswertbar():
+    """Der eigentliche Befund braucht gar keine Cache-Zahlen: Wie oft wird derselbe
+    Anfang bezahlt? Diese Auswertung muss bei jedem Anbieter funktionieren."""
+    import importlib.util
+    pfad = os.path.expanduser("~/.claude/matrix-bot/pruefstand/kosten.py")
+    spec = importlib.util.spec_from_file_location("kosten_test2", pfad)
+    k = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(k)
+    laeufe = [[{"ein": 2000, "schritte": 0}, {"ein": 4000, "schritte": 1},
+               {"ein": 6000, "schritte": 2}]]
+    text = k._stufen(laeufe)
+    assert "1.0×" in text and "2.0×" in text and "3.0×" in text

@@ -1,5 +1,5 @@
 {
- "version": "1.41.0",
+ "version": "1.42.0",
  "files": [
   {
    "src": "listener.py",
@@ -239,12 +239,12 @@
   {
    "src": "anbieter.py",
    "dst": "anbieter.py",
-   "sha256": "8667ec838b7e3547187143fa49b3392449bef8e7cd3dd67febd29fe43df97064"
+   "sha256": "7b8b239c04885b0b0e636719c1067b73c27b7e752cb66d024732f0b2da4416d5"
   },
   {
    "src": "kern.py",
    "dst": "kern.py",
-   "sha256": "59a4c35d8e1f8a02a979bd36480478c7ae29ba134a07cb73ee5eb85467245942"
+   "sha256": "70e9b3c6ee44a803a763f3b68dbf22fde85e83fd0a74f00f51be12356d89c74b"
   },
   {
    "src": "protokoll.py",
@@ -324,7 +324,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "83fdd46f12835a555fc178caa6fd1ae9a390e5024f25274681bbb7af6da516a3"
+   "sha256": "9e4da5e7c8d61435137123773fd0a7ab1b256d7569c9072bd7ea1324f8095204"
   },
   {
    "src": "dienst_start.py",
@@ -349,7 +349,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "daf66e6562a140a7e21342ae8c2cb08c616ae378b800cb0b97a371af490e898a"
+   "sha256": "f83fb8eba67d05a9baf29eedf24c138f17a8a1d81976b4a2a41a9bf927d96b5d"
   },
   {
    "src": "dashboard/test_petra.py",
