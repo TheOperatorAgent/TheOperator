@@ -31,6 +31,31 @@ def log(msg):
         pass
 
 
+def _protokoll(urteil, tool, grund):
+    """Jede Entscheidung festhalten — auch und gerade die abgelehnten (#146).
+
+    Bewusst hier und nicht im Broker: Der Hook ist die Stelle, an der die Entscheidung
+    WIRKT. Was der Broker denkt, ist eine Meinung; was der Hook zurückgibt, ist die Tat.
+    """
+    try:
+        import protokoll
+        protokoll.eintragen(urteil, art="werkzeug", werkzeug=tool, grund=grund,
+                            agent=os.environ.get("OPERATOR_AGENT", "operator"),
+                            ziel=_ziel(tool), herkunft="modell")
+    except Exception:
+        pass          # Ein Nachweis darf den Betrieb nie anhalten.
+
+
+def _ziel(tool):
+    """Wohin gehen bei diesem Werkzeug Daten? Für den Bericht an den Datenschutz."""
+    for muster, name in (("__m365__", "Microsoft 365"), ("__n8n__", "n8n"),
+                         ("__learn__", "Microsoft Learn"), ("WebFetch", "Internet"),
+                         ("WebSearch", "Internet")):
+        if muster in (tool or ""):
+            return name
+    return ""
+
+
 def _antwort(erlauben, grund):
     return {"hookSpecificOutput": {
         "hookEventName": "PreToolUse",
@@ -69,6 +94,7 @@ def main():
     if riskant == pb.BLOCK:
         # #82: Zugriff ins eigene Netz — nicht verhandelbar, also gar nicht erst fragen.
         log(f"Netz-Wächter: {beschreibung}")
+        _protokoll("gesperrt", tool, beschreibung)
         print(json.dumps(_antwort(False, f"{beschreibung}. Der Operator darf nur ins "
                                          "öffentliche Internet, nicht ins Heimnetz. Sag dem "
                                          "Nutzer freundlich Bescheid.")))
@@ -76,6 +102,7 @@ def main():
 
     if not riskant:
         # Der Normalfall: nichts sagen, nichts bremsen.
+        _protokoll("ausgefuehrt", tool, "unkritisch")
         print(json.dumps(_antwort(True, "unkritisch")))
         return 0
 
@@ -93,6 +120,7 @@ def main():
     except Exception as e:
         log(f"Rückfrage fehlgeschlagen ({e}) — Aktion abgelehnt")
         ok = False
+    _protokoll("ausgefuehrt" if ok else "abgelehnt", tool, beschreibung)
     print(json.dumps(_antwort(
         ok,
         "Vom Nutzer im Matrix-Chat freigegeben." if ok else

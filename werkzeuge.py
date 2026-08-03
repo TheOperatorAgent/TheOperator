@@ -229,8 +229,29 @@ def ausfuehren(name, argumente, umgebung, herkunft="modell"):
         handlung["argumente"]["befehl"] = str(argumente.get(w["befehlsfeld"]) or "")
 
     urteil = schleuse.pruefen(handlung, umgebung)
+    _protokollieren(urteil, w["art"], name, herkunft, umgebung)
     if not urteil["erlaubt"]:
         return {"fehler": urteil["grund"], "urteil": urteil}
     if urteil["bestaetigung_noetig"]:
         return {"bestaetigung_noetig": True, "grund": urteil["grund"], "urteil": urteil}
     return {"ergebnis": w["fn"](argumente, umgebung), "urteil": urteil}
+
+
+def _protokollieren(urteil, art, name, herkunft, umgebung):
+    """Nachweis fuehren (#146) — auch fuer Abgelehntes, das ist der Punkt.
+
+    Faellt still aus, wenn kein Protokoll da ist: Ein Nachweis ist keine
+    Sicherheitsschranke, die steht in der Schleuse.
+    """
+    if umgebung.get("kein_protokoll"):
+        return
+    try:
+        import protokoll
+        protokoll.eintragen(
+            "ausgefuehrt" if (urteil["erlaubt"] and not urteil["bestaetigung_noetig"])
+            else ("bestaetigung" if urteil["bestaetigung_noetig"] else "gesperrt"),
+            art=art, werkzeug=name, grund=urteil.get("grund", ""),
+            agent=umgebung.get("agent", ""), herkunft=herkunft,
+            datei=umgebung.get("protokoll_datei"))
+    except Exception:
+        pass

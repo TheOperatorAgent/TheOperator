@@ -2135,10 +2135,20 @@ def test_broker_geaenderte_argumente_neue_freigabe(tmp_path, monkeypatch):
 
 
 def test_broker_ist_stdlib_only():
-    """Der Hook läuft ohne venv — Broker muss stdlib-only bleiben."""
+    """Der Hook läuft ohne venv — Broker muss stdlib-only bleiben.
+
+    `protokoll` ist seit #146 dabei (der Hook schreibt den Compliance-Nachweis).
+    Die Erlaubnis wird nur zusammen mit dem Nachweis erweitert, dass das Modul
+    selbst bordmittelrein ist — sonst wäre die Zusage über die Hintertür aufgeweicht.
+    """
     import ast
     erlaubt = {"hashlib", "json", "os", "re", "time", "urllib", "sys",
-               "secretstore", "net_guard", "platform_compat"}
+               "secretstore", "net_guard", "platform_compat", "protokoll"}
+    pk_src = open(os.path.expanduser("~/.claude/matrix-bot/protokoll.py")).read()
+    pk_imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(pk_src))
+                  if isinstance(n, ast.Import) for a in n.names}
+    assert pk_imports <= {"hashlib", "json", "os", "re", "time", "sys"}, \
+        f"protokoll.py ist nicht mehr stdlib-only: {pk_imports}"
     for datei in ("permission_broker.py", "claude_tool_hook.py"):
         src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
         imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
@@ -6846,3 +6856,149 @@ def test_schleuse_und_broker_kennen_dieselben_geheimnisse():
                    "sessions.db", "x.pem"):
         assert schleuse._GEHEIM.search(geheim), f"Schleuse kennt {geheim} nicht"
         assert pb.GEHEIM_MUSTER.search(geheim), f"Broker kennt {geheim} nicht"
+
+
+# ============================================ Compliance-Protokoll (#146, K8) --
+def _pk():
+    sys.path.insert(0, os.path.expanduser("~/.claude/matrix-bot"))
+    import protokoll
+    return protokoll
+
+
+def test_protokoll_haelt_auch_das_fest_was_NICHT_passiert_ist():
+    """Der ganze Sinn: Weder OpenClaw noch Hermes beantworten »was hat es versucht und
+    nicht gedurft?«. Sie protokollieren Ausführung, nicht Ablehnung."""
+    pk = _pk()
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "p.jsonl")
+        pk.eintragen("ausgefuehrt", "werkzeug", "mail_list", "unkritisch", datei=f)
+        pk.eintragen("bestaetigung", "werkzeug", "mail_send", "wirkt nach außen", datei=f)
+        pk.eintragen("abgelehnt", "werkzeug", "mail_send", "keine Zustimmung", datei=f)
+        pk.eintragen("gesperrt", "befehl", "befehl", "Dateien löschen", datei=f)
+        urteile = [e["urteil"] for e in pk.lesen(f)]
+    assert urteile == ["ausgefuehrt", "bestaetigung", "abgelehnt", "gesperrt"]
+
+
+def test_protokoll_kette_bricht_sichtbar_wenn_eine_zeile_verschwindet():
+    """Ohne Verkettung ist ein Protokoll wertlos: Wer etwas zu verbergen hat, löscht
+    die Zeile. Die Prüfsumme des Vorgängers macht das sichtbar."""
+    pk = _pk()
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "p.jsonl")
+        for i in range(5):
+            pk.eintragen("ausgefuehrt", "werkzeug", f"w{i}", datei=f)
+        assert pk.kette_pruefen(f)[0] is True
+
+        zeilen = open(f, encoding="utf-8").read().splitlines()
+        open(f, "w", encoding="utf-8").write("\n".join(zeilen[:2] + zeilen[3:]) + "\n")
+        heil, meldung = pk.kette_pruefen(f)
+    assert heil is False and "verändert" in meldung
+
+
+def test_protokoll_kette_bricht_auch_bei_veraenderter_zeile():
+    """Löschen ist der eine Fall, Umschreiben der gefährlichere: »abgelehnt« still zu
+    »ausgefuehrt« zu machen, wäre die perfekte Vertuschung."""
+    pk = _pk()
+    import tempfile, json as _j
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "p.jsonl")
+        pk.eintragen("ausgefuehrt", "werkzeug", "a", datei=f)
+        pk.eintragen("abgelehnt", "werkzeug", "mail_send", "keine Zustimmung", datei=f)
+        zeilen = open(f, encoding="utf-8").read().splitlines()
+        e = _j.loads(zeilen[1]); e["urteil"] = "ausgefuehrt"
+        zeilen[1] = _j.dumps(e, ensure_ascii=False)
+        open(f, "w", encoding="utf-8").write("\n".join(zeilen) + "\n")
+        assert pk.kette_pruefen(f)[0] is False
+
+
+def test_kein_geheimnis_im_protokoll():
+    """Ein Protokoll, das Passwörter enthält, ist ein Schaden und kein Nachweis —
+    genau die dokumentierte Schwäche von OpenClaw. Auch E-Mail-Adressen bleiben
+    draußen: Das Protokoll hält Handlungen fest, keine Personen."""
+    pk = _pk()
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "p.jsonl")
+        for gift in ("sk-abc123def456ghi789", "ghp_geheimtoken12345",
+                     "Bearer eyJhbGciOiJIUzI1NiJ9xxxx",
+                     "an petra.mayr@firma.de senden"):
+            pk.eintragen("abgelehnt", "werkzeug", "x", grund=gift, datei=f)
+        roh = open(f, encoding="utf-8").read()
+    for gift in ("sk-abc123def456", "ghp_geheimtoken", "petra.mayr@firma.de"):
+        assert gift not in roh, f"»{gift}« steht im Protokoll"
+    assert "[entfernt]" in roh
+
+
+def test_protokoll_doppelt_nicht_den_gespraechsverlauf():
+    """`sessions.db` hält den Verlauf. Hier stehen Handlungen und Urteile — sonst
+    entstünde eine zweite Kopie der Gespräche, also ein zweites Datenschutzproblem."""
+    pk = _pk()
+    felder = set()
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "p.jsonl")
+        e = pk.eintragen("ausgefuehrt", "werkzeug", "lies", "unkritisch", datei=f)
+        felder = set(e)
+    for verboten in ("inhalt", "text", "antwort", "nachricht", "prompt", "argumente"):
+        assert verboten not in felder, f"Feld »{verboten}« speichert Inhalte"
+
+
+def test_aufraeumen_behaelt_die_kette_heil():
+    """Löschen alter Einträge ist Pflicht (Aufbewahrungsdauer), nicht Angriff. Die
+    Kette wird dabei neu gebildet — sonst wäre jedes Aufräumen von einer Manipulation
+    nicht zu unterscheiden."""
+    pk = _pk()
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "p.jsonl")
+        for i in range(4):
+            pk.eintragen("ausgefuehrt", "werkzeug", f"w{i}", datei=f)
+        # Ein alter Eintrag von Hand dazu — realistischer als eine Tagesgrenze von 0,
+        # bei der Einträge aus derselben Sekunde zu Recht bleiben.
+        import json as _j
+        alt = {"zeit": "2020-01-01T00:00:00", "urteil": "ausgefuehrt", "art": "werkzeug",
+               "werkzeug": "uralt", "grund": "", "agent": "", "modell": "", "ziel": "",
+               "herkunft": "", "pruefsumme": "x"}
+        with open(f, "a", encoding="utf-8") as fh:
+            fh.write(_j.dumps(alt, ensure_ascii=False) + "\n")
+        assert pk.aufraeumen(tage=3650, datei=f) == 5      # alles behalten
+        assert pk.aufraeumen(tage=30, datei=f) == 4        # der Uralte fliegt
+        assert pk.kette_pruefen(f)[0] is True, \
+            "Aufräumen muss die Kette neu bilden — sonst ist Pflichtlöschung von " \
+            "Manipulation nicht zu unterscheiden"
+
+
+def test_bericht_ist_ein_absatz_und_kein_datenhaufen():
+    """Der Absatz, der im Verkaufsgespräch die Datenschutzfrage beendet — kein
+    Rohdatenexport, den niemand liest."""
+    pk = _pk()
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "p.jsonl")
+        for _ in range(7):
+            pk.eintragen("ausgefuehrt", "werkzeug", "mail_list", ziel="Microsoft 365",
+                         datei=f)
+        pk.eintragen("bestaetigung", "werkzeug", "mail_send", "wirkt nach außen", datei=f)
+        pk.eintragen("gesperrt", "befehl", "befehl", "Dateien löschen", datei=f)
+        text = pk.bericht(datei=f)
+    assert "7 Handlungen ausgeführt" in text
+    assert "1 zur Bestätigung vorgelegt" in text
+    assert "selbst verweigert" in text
+    assert "Microsoft 365" in text
+    assert "lückenlos" in text
+    assert len(text) < 900, "Bericht ist zu lang für einen Blick"
+
+
+def test_der_hook_schreibt_jede_entscheidung_mit():
+    """Der Claude-Weg ist der, der HEUTE läuft. Ein Protokoll, das nur den neuen Kern
+    abdeckt, wäre für den Nachweis wertlos."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/claude_tool_hook.py"),
+               encoding="utf-8").read()
+    for urteil in ("gesperrt", "ausgefuehrt", "abgelehnt"):
+        assert urteil in src, f"Urteil »{urteil}« wird nirgends protokolliert"
+    assert src.count("_protokoll(") >= 4, "nicht alle Entscheidungswege protokollieren"
+    # Die Rückfrage-Entscheidung ist die interessanteste: Sie muss das Ergebnis der
+    # Nachfrage festhalten, nicht die Absicht.
+    assert '_protokoll("ausgefuehrt" if ok else "abgelehnt"' in src

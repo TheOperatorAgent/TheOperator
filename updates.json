@@ -1,9 +1,10 @@
 {
- "version": "1.36.0",
+ "version": "1.37.0",
  "date": "2026-08-03",
  "highlights": [
-  "🛡️ Eine Lücke geschlossen, die ein Test allein nie gefunden hätte: Der Operator prüfte bei Befehlen nur das Befehlswort, nicht den Pfad. »cat« ist harmlos, »cat ~/.ssh/id_ed25519« nicht — jetzt wird beides unterschieden.",
-  "🔍 Aufgefallen ist es beim ersten echten Durchlauf des neuen Prüfstands: Ein Sprachmodell umging den Schutz, indem es statt »Datei lesen« einfach einen Befehl nahm.",
-  "🙂 Deine Alltagsarbeit bleibt unbehelligt: Lesen und Schreiben im Arbeitsordner sowie Blicke in Systemordner fragen weiterhin nie nach."
+  "📋 Neu: ein Nachweis darüber, was der Operator getan hat — und vor allem, was er versucht und NICHT gedurft hat. Genau die Frage, die dir ein Datenschutzbeauftragter stellt.",
+  "🔗 Die Einträge sind miteinander verkettet: Wer nachträglich eine Zeile herausnimmt oder ändert, macht das sichtbar. Der Operator sagt dir selbst, ob sein Protokoll lückenlos ist.",
+  "🔐 Im Protokoll stehen Handlungen und Urteile — keine Dateiinhalte, keine Mailtexte, keine Passwörter, keine E-Mail-Adressen. Ein Nachweis darf kein zweites Datenschutzproblem sein.",
+  "🗓️ Alte Einträge verschwinden nach 90 Tagen von selbst. Die Dauer lässt sich ändern."
  ]
 }

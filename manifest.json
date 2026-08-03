@@ -1,5 +1,5 @@
 {
- "version": "1.36.0",
+ "version": "1.37.0",
  "files": [
   {
    "src": "listener.py",
@@ -119,7 +119,7 @@
   {
    "src": "claude_tool_hook.py",
    "dst": "claude_tool_hook.py",
-   "sha256": "ce8976dc70672c4fdef97f518bab5eb25509428052f74726fdd09392ef3ded5b"
+   "sha256": "bc60aa711ae3d559488121ab21db4260f703cbe738040804019bf3889914b757"
   },
   {
    "src": "net_guard.py",
@@ -234,7 +234,7 @@
   {
    "src": "werkzeuge.py",
    "dst": "werkzeuge.py",
-   "sha256": "e3da26e3995165c41149ed1564478c9cce8c76be5104f7210685d188f4182d13"
+   "sha256": "13942ca135ee488a9184025a425a25dac7629af3783e6523d02ad372285154e2"
   },
   {
    "src": "anbieter.py",
@@ -245,6 +245,11 @@
    "src": "kern.py",
    "dst": "kern.py",
    "sha256": "59a4c35d8e1f8a02a979bd36480478c7ae29ba134a07cb73ee5eb85467245942"
+  },
+  {
+   "src": "protokoll.py",
+   "dst": "protokoll.py",
+   "sha256": "87902dd5f64db6605343397eddf51ed61193c223d29bd9d8a5b0728731a9ce9e"
   },
   {
    "src": "schleuse.py",
@@ -319,7 +324,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "8ee37189badff8557a3f76850c1be19dbaf3642e5c5c66afb3c44f029e89e3fb"
+   "sha256": "fbfda2117eb5b2ed303ae73dbc55f71c3080cf120fcf78aab3959d1502b9ded6"
   },
   {
    "src": "dienst_start.py",
@@ -344,7 +349,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "53c6b9c55d34cecb8226d35512ec4872092bdfddefd9843e9a1ecf0480a37eab"
+   "sha256": "43b797343bb0bb3f855431b0d235a7275d9d480e8054fed09b76233a44f5e139"
   },
   {
    "src": "dashboard/test_petra.py",
