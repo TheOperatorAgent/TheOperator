@@ -553,7 +553,7 @@ def _mcp_umgebung():
     aus dem Broker — eine zweite Liste waere eine zweite Wahrheit."""
     try:
         import permission_broker as pb
-        return {"stufe": pb.stufe(), "lesende_werkzeuge": pb.MCP_LESEND,
+        return {"stufe": pb.stufe(), "lesende_werkzeuge": pb.lesende_werkzeuge(),
                 "immer_erlaubt": pb.MCP_LESEND}
     except Exception:
         return {"stufe": "streng"}      # fail-closed: im Zweifel alles bestaetigen

@@ -2143,12 +2143,17 @@ def test_broker_ist_stdlib_only():
     """
     import ast
     erlaubt = {"hashlib", "json", "os", "re", "time", "urllib", "sys",
-               "secretstore", "net_guard", "platform_compat", "protokoll"}
-    pk_src = open(os.path.expanduser("~/.claude/matrix-bot/protokoll.py")).read()
-    pk_imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(pk_src))
-                  if isinstance(n, ast.Import) for a in n.names}
-    assert pk_imports <= {"hashlib", "json", "os", "re", "time", "sys"}, \
-        f"protokoll.py ist nicht mehr stdlib-only: {pk_imports}"
+               "secretstore", "net_guard", "platform_compat", "protokoll",
+               # seit #158: die bestaetigten Leserechte je MCP-Server
+               "mcp_rechte"}
+    # Jedes Eigenmodul in dieser Liste muss selbst bordmittelrein sein — sonst waere
+    # die Zusage »der Hook laeuft ohne venv« ueber die Hintertuer aufgeweicht.
+    for modul in ("protokoll.py", "mcp_rechte.py"):
+        pk_src = open(os.path.expanduser("~/.claude/matrix-bot/" + modul)).read()
+        pk_imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(pk_src))
+                      if isinstance(n, ast.Import) for a in n.names}
+        assert pk_imports <= {"hashlib", "json", "os", "re", "time", "sys"}, \
+            f"{modul} ist nicht mehr stdlib-only: {pk_imports}"
     for datei in ("permission_broker.py", "claude_tool_hook.py"):
         src = open(os.path.expanduser(f"~/.claude/matrix-bot/{datei}")).read()
         imports = {a.name.split(".")[0] for n in ast.walk(ast.parse(src))
@@ -7330,3 +7335,122 @@ def test_schrittkosten_sind_ohne_cache_zahlen_auswertbar():
                {"ein": 6000, "schritte": 2}]]
     text = k._stufen(laeufe)
     assert "1.0×" in text and "2.0×" in text and "3.0×" in text
+
+
+# ------------------------------------ Leserechte je MCP-Server (#158) --
+def _rechte(tmp):
+    """mcp_rechte mit umgelenkter Datei — niemals gegen die echte Einrichtung testen."""
+    import importlib
+    os.environ["OPERATOR_MCP_RECHTE"] = os.path.join(tmp, "rechte.json")
+    m = importlib.import_module("mcp_rechte")
+    return m
+
+
+def test_readonlyhint_darf_niemals_allein_freigeben():
+    """Die Auskunft »ich lese nur« kommt von genau der Stelle, vor der die Schleuse
+    schuetzt. Ein uebernommener Server braeuchte sonst ein Feld im JSON, um an der
+    Bestaetigungspflicht vorbeizukommen."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        m = _rechte(tmp)
+        v = {w["name"]: w for w in m.vorschlag([
+            {"name": "mail_list_delete", "annotations": {"readOnlyHint": True}},
+            {"name": "alles_loeschen", "annotations": {"readOnlyHint": True}},
+            {"name": "kalender_freibelegt", "annotations": {"readOnlyHint": True}}])}
+    assert v["mail_list_delete"]["lesend"] is False, "Schreibwort verliert gegen den Hinweis"
+    assert v["alles_loeschen"]["lesend"] is False
+    assert v["kalender_freibelegt"]["lesend"] is True
+    # Und: Der Vorschlag ist nur ein Vorschlag — er schreibt nichts.
+    with tempfile.TemporaryDirectory() as tmp:
+        m = _rechte(tmp)
+        m.vorschlag([{"name": "mail_list"}])
+        assert m.alle() == {}, "vorschlag() hat etwas gespeichert"
+
+
+def test_unbekannte_werkzeuge_bleiben_bestaetigungspflichtig():
+    """Fail-closed: Was nicht ausdruecklich eingetragen ist, wird gefragt."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        m = _rechte(tmp)
+        m.setzen("buero", ["mail_list"])
+        assert m.lesend("mcp__buero__mail_list") is True
+        assert m.lesend("mcp__buero__mail_send") is False
+        assert m.lesend("mcp__anderer__mail_list") is False, "Server verwechselt"
+        assert m.lesend("Bash") is False and m.lesend("") is False
+
+
+def test_freigabe_kann_bekannte_gefahren_nicht_aufheben():
+    """Auch wenn jemand »mail_send« als lesend eintraegt: RISKY_TOOLS wird zuerst
+    geprueft. Diese Liste kann nur erlauben, was ohnehin harmlos ist."""
+    import importlib, tempfile
+    with tempfile.TemporaryDirectory() as tmp:
+        m = _rechte(tmp)
+        m.setzen("m365", ["mail_send"])
+        pb = importlib.import_module("permission_broker")
+        riskant, _ = pb.classify("mcp__m365__mail_send", {})
+    assert riskant is True
+
+
+def test_rueckfrage_behauptet_nicht_veraenderung_wenn_sie_es_nicht_weiss():
+    """Fuer »mail_list« stand hier bis 1.42.0 »etwas veraendern« — schlicht falsch.
+    Wer lernt, dass die Frage danebenliegt, hoert auf, sie zu lesen."""
+    import importlib
+    pb = importlib.import_module("permission_broker")
+    _, text = pb.classify("mcp__einunbekannterdienst__mail_list", {})
+    assert "verändern" not in text, f"behauptet weiterhin eine Änderung: {text}"
+    # Bei den eigenen, eingestuften Diensten bleibt die klare Ansage erhalten.
+    _, text2 = pb.classify("mcp__m365__mail_send", {})
+    assert "versenden" in text2 or "verändern" in text2
+
+
+def test_leseliste_kommt_aus_einer_einzigen_quelle():
+    """Der erste Anlauf reparierte nur classify() — und der eigene Kern geht gar nicht
+    darueber, sondern fragt die Schleuse mit einer uebergebenen Liste. Die Reparatur
+    wirkte im Broker und blieb im Kern folgenlos."""
+    import importlib
+    pb = importlib.import_module("permission_broker")
+    assert hasattr(pb, "lesende_werkzeuge")
+    for datei in ("llm_runner.py", "pruefstand.py"):
+        src = open(os.path.expanduser("~/.claude/matrix-bot/" + datei),
+                   encoding="utf-8").read()
+        assert '"lesende_werkzeuge": pb.lesende_werkzeuge()' in src, \
+            f"{datei} setzt die Leseliste selbst zusammen — das driftet"
+        assert '"lesende_werkzeuge": pb.MCP_LESEND' not in src
+
+
+def test_ablageort_wird_bei_jedem_zugriff_gelesen():
+    """Der erste Anlauf las die Umgebungsvariable auf Modulebene. Wer das Modul frueher
+    importiert, als sie gesetzt wird, schreibt fuer den Rest des Laufs in die falsche
+    Datei — genau so schrieb der Pruefstand weiter in die Betriebsdatei."""
+    import importlib, tempfile
+    m = importlib.import_module("mcp_rechte")
+    with tempfile.TemporaryDirectory() as a, tempfile.TemporaryDirectory() as b:
+        os.environ["OPERATOR_MCP_RECHTE"] = os.path.join(a, "r.json")
+        m.setzen("eins", ["x"])
+        os.environ["OPERATOR_MCP_RECHTE"] = os.path.join(b, "r.json")
+        assert m.alle() == {}, "Umlenkung wirkt erst nach Neustart"
+        m.setzen("zwei", ["y"])
+        assert os.path.exists(os.path.join(b, "r.json"))
+        os.environ["OPERATOR_MCP_RECHTE"] = os.path.join(a, "r.json")
+        assert "eins" in m.alle()
+
+
+def test_pruefstand_schreibt_rechte_nie_in_die_betriebsdatei():
+    """Dieselbe Lehre wie #157, eine Ebene weiter: Ein Messlauf, der die echte
+    Einrichtung veraendert, ist ein Messlauf, der Schaden anrichtet."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pruefstand.py"),
+               encoding="utf-8").read()
+    assert "OPERATOR_MCP_RECHTE" in src
+    for weg in ("weg_kern", "weg_operator"):
+        teil = src.split(f"def {weg}")[1].split("\ndef ")[0]
+        assert "OPERATOR_MCP_RECHTE" in teil, f"{weg} lenkt die Rechtedatei nicht um"
+        assert "arbeitsordner" in teil
+
+
+def test_geloeschter_server_verliert_seine_freigaben():
+    """Bliebe der Eintrag stehen, wuerde ein spaeter gleichnamiger Server stillschweigend
+    fremde Freigaben erben."""
+    srv = open(os.path.expanduser("~/.claude/matrix-bot/dashboard/server.py"),
+               encoding="utf-8").read()
+    teil = srv.split("def api_mcp_delete")[1].split("\n@app.")[0]
+    assert "mcp_rechte" in teil and "vergessen" in teil

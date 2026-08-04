@@ -518,6 +518,39 @@ def _shorten(s, n=110):
     return s if len(s) <= n else s[:n - 1] + "…"
 
 
+def lesende_werkzeuge():
+    """Die vollständige Leseliste für die Schleuse — fest verdrahtet plus bestätigt.
+
+    **Es gibt sie genau einmal.** Der erste Anlauf zu #158 reparierte nur `classify()`
+    und übersah, dass der eigene Kern gar nicht darüber geht: Er fragt die Schleuse, und
+    die bekommt ihre Liste als `umgebung["lesende_werkzeuge"]` gereicht — bis dahin
+    schlicht `MCP_LESEND`. Die Reparatur wirkte im Broker und blieb im Kern folgenlos.
+
+    Zwei Aufrufer bauen diese Umgebung (`llm_runner.py`, `pruefstand.py`). Zwei Stellen,
+    die dasselbe zusammensetzen, driften — siehe die zwei Installer (#126). Deshalb
+    hier, an einer Stelle.
+    """
+    try:
+        import mcp_rechte
+        return set(MCP_LESEND) | mcp_rechte.alle_lesenden()
+    except Exception:
+        return set(MCP_LESEND)
+
+
+def _mcp_lesend_bestaetigt(tool):
+    """Hat der Nutzer dieses Werkzeug beim Einrichten als »liest nur« bestätigt? (#158)
+
+    Fail-open waere hier falsch herum: Ist die Datei kaputt oder das Modul weg, gilt
+    »nicht bestaetigt« — dann wird gefragt. Lieber eine Rueckfrage zu viel als eine
+    stille Freigabe, weil eine JSON-Datei nicht lesbar war.
+    """
+    try:
+        import mcp_rechte
+        return mcp_rechte.lesend(tool)
+    except Exception:
+        return False
+
+
 def classify(tool, tool_input):
     """→ (riskant?, klartext_beschreibung). Konservativ: im Zweifel NICHT fragen,
     außer es passt auf ein bekanntes Risiko-Muster."""
@@ -529,12 +562,27 @@ def classify(tool, tool_input):
     # Werkzeugkasten hinterher, und zwar zulasten der Zusage.
     if (tool.startswith(BESTAETIGUNGSPFLICHTIGE_MCP)
             and not tool.startswith(MCP_NUR_LESEQUELLE)
-            and tool not in MCP_LESEND):
+            and tool not in MCP_LESEND
+            # #158: Was der Nutzer beim Einrichten des Servers ausdrücklich als
+            # »liest nur« bestätigt hat. Einmal entscheiden statt fünfzigmal fragen —
+            # ohne das galten 18 von 21 Stopps reinen Lesezugriffen. Bleibt
+            # fail-closed: Diese Liste kann nur erlauben, was nicht schon oben in
+            # RISKY_TOOLS steht, und sie füllt sich nur durch eine Nutzerentscheidung.
+            and not _mcp_lesend_bestaetigt(tool)):
         teile = tool.split("__")
         was = teile[-1].replace("_", " ")
         dienst = {"m365": "Microsoft 365", "n8n": "n8n"}.get(
             teile[1] if len(teile) > 2 else "", teile[1] if len(teile) > 2 else "einem Dienst")
-        return True, f"in {dienst} etwas verändern: »{was}«"
+        # Bewusst NICHT mehr »etwas verändern«: Bei einem unbekannten Server wissen wir
+        # gar nicht, ob das Werkzeug schreibt — für »mail_list« stand hier bis 1.42.0
+        # »etwas verändern«, und das war schlicht falsch. Wer lernt, dass die Frage
+        # danebenliegt, hört auf, sie zu lesen. Eine Schutzfrage, der man nicht glauben
+        # kann, ist keine.
+        sicher = tool in RISKY_TOOLS or any(
+            tool.startswith(p) for p in ("mcp__m365__", "mcp__n8n__"))
+        return True, (f"in {dienst} etwas verändern: »{was}«" if sicher
+                      else f"»{was}« in {dienst} ausführen — dieser Dienst ist noch "
+                           f"nicht eingestuft, deshalb frage ich sicherheitshalber")
     if tool in WEB_TOOLS:
         # #82: Adressen ins eigene Netz gar nicht erst anbieten — direkt ablehnen.
         try:

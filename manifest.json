@@ -1,5 +1,5 @@
 {
- "version": "1.42.0",
+ "version": "1.43.0",
  "files": [
   {
    "src": "listener.py",
@@ -129,7 +129,7 @@
   {
    "src": "permission_broker.py",
    "dst": "permission_broker.py",
-   "sha256": "2a95a74c16ed653fea8d97170f4abfd1ccd52e327d0168a27de6cf68177b084e"
+   "sha256": "57f13087bddcfc02f7cbe54226855bfc0053aeb271be3d23819d7d91ca3d7d34"
   },
   {
    "src": "sandbox.py",
@@ -224,7 +224,7 @@
   {
    "src": "llm_runner.py",
    "dst": "llm_runner.py",
-   "sha256": "28572359498f5bd693df174acf9d1775f58d77b6f06a87edd132ff6397777faa"
+   "sha256": "997cd9fb37d190aa15d8e5a912254c91237525893db1d879834cd0511ad55644"
   },
   {
    "src": "mcp_client.py",
@@ -252,6 +252,11 @@
    "sha256": "861f19d82409f9118fc37715c915193b43953f7a372889c165800f761a06dc61"
   },
   {
+   "src": "mcp_rechte.py",
+   "dst": "mcp_rechte.py",
+   "sha256": "b445eae741029308cd9a956aee8ec7df0ee92e6cd83ec2d5cfe16a71133c15ef"
+  },
+  {
    "src": "schleuse.py",
    "dst": "schleuse.py",
    "sha256": "4bf86a95af6cef9fff74faf68393f1b0c5f1104cfe4b52e71f3ef82423545185"
@@ -264,7 +269,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "bf692066b47938819fc835ae34260b541de032d1127d510957cfdc5288994371"
+   "sha256": "794946dc554ab37a18597fed6a948ce0748e3aa4d9b53cf95b3cc85b64de34d7"
   },
   {
    "src": "dashboard/tokens.py",
@@ -304,7 +309,7 @@
   {
    "src": "dashboard/static/app.js",
    "dst": "dashboard/static/app.js",
-   "sha256": "2facaf61edfdfa34a778d3a665d91c22eef30e4adc25483288a3deb7aea47a87"
+   "sha256": "e3bfc7a9d930e914baea22d538c6e3dd82cbc4873e520cd2389353cb55a41f63"
   },
   {
    "src": "dashboard/static/dock.js",
@@ -324,7 +329,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "9e4da5e7c8d61435137123773fd0a7ab1b256d7569c9072bd7ea1324f8095204"
+   "sha256": "a6ba533e6c4d49cd4234965e9684ec7c48746cf8f3144676aa8434090f413cf5"
   },
   {
    "src": "dienst_start.py",
@@ -349,7 +354,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "f83fb8eba67d05a9baf29eedf24c138f17a8a1d81976b4a2a41a9bf927d96b5d"
+   "sha256": "ff2b01acc295a9da60beaa6dbba1ab861be4e859db169880579c2d0be1816296"
   },
   {
    "src": "dashboard/test_petra.py",

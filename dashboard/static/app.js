@@ -1560,14 +1560,81 @@ async function loadSystem() {
     <div class="agent-row" style="padding:8px 14px">
       <div><strong>${esc(s.name)}</strong> <span class="pill">${esc(s.transport)}</span>
         <span class="mono small">${esc(s.command || s.url)}</span></div>
-      <button class="danger" onclick="deleteMcp('${s.name}')">Entfernen</button>
-    </div>`).join("") || "<p class='hint'>Keine MCP-Server konfiguriert.</p>";
+      <div class="row" style="gap:8px">
+        <button class="ghost" onclick="mcpRechte('${s.name}')">Was darf er lesen?</button>
+        <button class="danger" onclick="deleteMcp('${s.name}')">Entfernen</button>
+      </div>
+    </div>
+    <div id="rechte-${s.name}" class="hidden" style="padding:0 14px 12px"></div>`
+  ).join("") || "<p class='hint'>Keine MCP-Server konfiguriert.</p>";
   $("#mcp-list").innerHTML =
     `<p class="small" style="margin:2px 0 6px"><strong>Empfohlene Integrationen</strong> — geprüfte Server. Sie laufen mit deinen Rechten; Zugangsdaten landen in der lokalen <span class="mono">.mcp.json</span>.</p>`
     + catHtml
     + `<p class="small" style="margin:14px 0 6px"><strong>Eingerichtete MCP-Server</strong></p>`
     + listHtml;
 }
+// ------------------------------------------- Leserechte je MCP-Server (#158) --
+// Ohne diese Karte gilt bei einem fremden Server JEDES Werkzeug als schreibend — auch
+// »Postfach anzeigen«. Dann fragt der Operator vor jedem Blick nach, und wer fünfzigmal
+// gefragt wird, winkt irgendwann alles durch. Eine Schranke, die zu oft fragt, wird zur
+// Schranke, die niemand mehr liest.
+async function mcpRechte(name) {
+  const box = document.getElementById("rechte-" + name);
+  if (!box) return;
+  if (!box.classList.contains("hidden")) { box.classList.add("hidden"); return; }
+  box.classList.remove("hidden");
+  box.textContent = "Ich sehe kurz nach, welche Werkzeuge dieser Dienst anbietet …";
+  let d;
+  try {
+    d = await api("GET", `/api/mcp/${encodeURIComponent(name)}/rechte`);
+  } catch (e) { box.textContent = friendlyError(e); return; }
+
+  box.innerHTML =
+    `<p class="small" style="margin:6px 0 10px">Hier legst du <strong>einmal</strong> fest,
+     was dieser Dienst ohne Rückfrage nachsehen darf. Alles andere fragt weiterhin —
+     auch alles, was hier nicht angehakt ist.</p>` +
+    (d.entschieden ? "" :
+     `<p class="small muted" style="margin:0 0 10px">Mein Vorschlag steht schon da.
+      Schau ihn dir an und ändere, was dir nicht passt.</p>`);
+
+  const liste = document.createElement("div");
+  d.werkzeuge.forEach((w) => {
+    const zeile = document.createElement("label");
+    zeile.style.cssText = "display:flex;gap:9px;align-items:flex-start;padding:5px 0";
+    const box2 = document.createElement("input");
+    box2.type = "checkbox"; box2.checked = !!w.lesend; box2.dataset.name = w.name;
+    box2.style.marginTop = "4px";
+    const txt = document.createElement("div");
+    const t1 = document.createElement("div");
+    t1.innerHTML = "";                       // niemals HTML aus dem Dienst rendern:
+    t1.textContent = w.name;                 // Name und Text kommen von einem fremden
+    t1.className = "mono";                   // Programm und sind reine Daten.
+    const t2 = document.createElement("div");
+    t2.className = "small muted";
+    t2.textContent = (w.beschreibung ? w.beschreibung + " — " : "") + w.grund;
+    txt.appendChild(t1); txt.appendChild(t2);
+    zeile.appendChild(box2); zeile.appendChild(txt);
+    liste.appendChild(zeile);
+  });
+  box.appendChild(liste);
+
+  const knopf = document.createElement("button");
+  knopf.className = "primary";
+  knopf.style.marginTop = "10px";
+  knopf.textContent = "Das passt so";
+  knopf.onclick = async () => {
+    const lesend = [...liste.querySelectorAll("input:checked")].map((i) => i.dataset.name);
+    try {
+      await api("PUT", `/api/mcp/${encodeURIComponent(name)}/rechte`, { lesend });
+      toast(lesend.length
+        ? `Gemerkt — ${lesend.length} Werkzeuge dürfen jetzt ohne Nachfrage nachsehen.`
+        : "Gemerkt — dieser Dienst fragt weiterhin vor jedem Schritt nach.");
+      box.classList.add("hidden");
+    } catch (e) { toast(friendlyError(e), 1); }
+  };
+  box.appendChild(knopf);
+}
+
 async function addCatalogMcp(id) {
   const st = $("#cat-" + id + "-status");
   const inputs = document.querySelectorAll(`[id^="cat-${id}-"]`);

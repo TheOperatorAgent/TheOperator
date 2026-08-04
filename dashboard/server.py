@@ -1958,6 +1958,59 @@ async def api_mcp_catalog_add(cid: str, request: Request):
     return {"ok": True, "name": cid}
 
 
+@app.get("/api/mcp/{name}/rechte")
+def api_mcp_rechte_lesen(name: str):
+    """Welche Werkzeuge dieses Servers dürfen ohne Rückfrage lesen? (#158)
+
+    Startet den Server einmal, holt seine Werkzeugliste und liefert einen **Vorschlag**
+    zum Bestätigen. Ohne diesen Schritt gilt jedes Werkzeug eines fremden Servers als
+    schreibend — im Prüfstand galten dadurch 18 von 21 Rückfragen reinen Lesezugriffen.
+    """
+    import mcp_client
+    import mcp_rechte
+    cfg = (load_mcp().get("mcpServers") or {}).get(name)
+    if cfg is None:
+        return err("notfound", "MCP-Server nicht gefunden", 404)
+    if not cfg.get("command"):
+        return err("nur_stdio", "Für Server über eine Adresse (http) ist das noch nicht "
+                                "möglich — dort bleibt es bei der Rückfrage.")
+
+    s = mcp_client.Server(name, cfg.get("command", ""), cfg.get("args"), cfg.get("env"))
+    try:
+        if not s.starten():
+            return err("start", f"»{name}« ließ sich nicht starten. 👉 Prüfe im Tab "
+                                f"»Logs«, ob das Kommando stimmt.")
+        werkzeuge = list(s.werkzeuge or [])
+    finally:
+        try:
+            if s.prozess:
+                s.prozess.terminate()
+        except Exception:
+            pass
+
+    gespeichert = mcp_rechte.alle().get(name, {}).get("lesend")
+    vorschlag = mcp_rechte.vorschlag(werkzeuge)
+    if gespeichert is not None:
+        # Schon entschieden → die Entscheidung des Nutzers gewinnt über den Vorschlag.
+        for w in vorschlag:
+            w["lesend"] = w["name"] in gespeichert
+            w["grund"] = "von dir festgelegt"
+    return {"server": name, "entschieden": mcp_rechte.bekannt(name),
+            "werkzeuge": vorschlag}
+
+
+@app.put("/api/mcp/{name}/rechte")
+async def api_mcp_rechte_setzen(name: str, request: Request):
+    import mcp_rechte
+    b = await request.json()
+    namen = b.get("lesend")
+    if not isinstance(namen, list):
+        return err("validate", "Bitte eine Liste von Werkzeugnamen angeben.")
+    erg = mcp_rechte.setzen(name, namen)
+    audit("dashboard", "mcp.rechte", f"{name}: {len(erg['lesend'])} lesend")
+    return {"ok": True, "lesend": erg["lesend"]}
+
+
 @app.delete("/api/mcp/{name}")
 def api_mcp_delete(name: str):
     data = load_mcp()
@@ -1965,6 +2018,13 @@ def api_mcp_delete(name: str):
         return err("notfound", "MCP-Server nicht gefunden", 404)
     del data["mcpServers"][name]
     open(MCP_FILE, "w").write(json.dumps(data, indent=1))
+    # Mit dem Server gehen auch seine Leserechte. Bliebe der Eintrag stehen, würde ein
+    # später gleichnamiger Server stillschweigend fremde Freigaben erben (#158).
+    try:
+        import mcp_rechte
+        mcp_rechte.vergessen(name)
+    except Exception:
+        pass
     audit("dashboard", "mcp.delete", name)
     return {"ok": True}
 
