@@ -611,9 +611,13 @@ def main() -> int:
         print(json.dumps({"error": "openai-SDK fehlt im venv (pip install openai)"}))
         return 1
 
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
+    # Das Datum gehört in JEDEN Modellaufruf (#159) — auch wenn gar keine
+    # Systemanweisung gesetzt ist. Ohne es rät ein Fremdmodell sein Trainingsjahr und
+    # beantwortet »bin ich am 12.08. frei?« mit voller Überzeugung falsch. Die Zeile
+    # kommt aus `anbieter.heute_zeile()`, damit sie hier und im Kern dieselbe ist.
+    import anbieter
+    messages = [{"role": "system",
+                 "content": anbieter.heute_zeile() + (("\n\n" + system) if system else "")}]
     messages.append({"role": "user", "content": prompt})
 
     try:

@@ -6489,7 +6489,8 @@ def test_anbieter_nur_mit_bordmitteln():
             importe |= {n.name.split(".")[0] for n in k.names}
         elif isinstance(k, _a.ImportFrom) and k.module:
             importe.add(k.module.split(".")[0])
-    assert not (importe - {"json", "os", "sys", "urllib", "providers"}), \
+    # `time` seit #159 (Datumszeile) — stdlib, also unbedenklich.
+    assert not (importe - {"json", "os", "sys", "time", "urllib", "providers"}), \
         f"Fremd-Abhängigkeiten: {importe}"
 
 
@@ -7454,3 +7455,91 @@ def test_geloeschter_server_verliert_seine_freigaben():
                encoding="utf-8").read()
     teil = srv.split("def api_mcp_delete")[1].split("\n@app.")[0]
     assert "mcp_rechte" in teil and "vergessen" in teil
+
+
+# ----------------------------------------- Datum im Kontext (#159) --
+def test_datum_geht_an_jedes_modell():
+    """Ohne diese Zeile raet ein Fremdmodell sein Trainingsjahr. Kimi fragte den
+    Kalender nach dem 12.08.**2025**, bekam dafuer korrekt »frei« und antwortete
+    souveraen das Gegenteil der Wahrheit — jeder Einzelschritt richtig, das Ergebnis
+    falsch. Beim Programm `claude` faellt es nicht auf, weil dessen eigener
+    System-Prompt das Datum mitliefert; die Selbstverstaendlichkeit hatten wir uns
+    unbemerkt geliehen."""
+    import importlib, time
+    ab = importlib.import_module("anbieter")
+    zeile = ab.heute_zeile()
+    assert str(time.localtime().tm_year) in zeile, "Jahr fehlt"
+    assert any(t in zeile for t in ab.WOCHENTAGE), \
+        "Wochentag fehlt — »naechsten Freitag« ist ohne ihn nicht aufloesbar"
+    assert ":" in zeile, "Uhrzeit fehlt"
+
+    # Beide Wege muessen dieselbe Quelle benutzen. Zwei Stellen waeren zwei Wahrheiten.
+    for datei in ("kern.py", "llm_runner.py"):
+        src = open(os.path.expanduser("~/.claude/matrix-bot/" + datei),
+                   encoding="utf-8").read()
+        assert "heute_zeile()" in src, f"{datei} setzt das Datum nicht"
+
+
+def test_llm_runner_setzt_das_datum_auch_ohne_systemanweisung():
+    """Der haeufigste Fall bei Fremdmodellen ist gar keine Systemanweisung. Stuende
+    das Datum nur im `if system`-Zweig, waere genau dieser Fall ungeschuetzt."""
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/llm_runner.py"),
+               encoding="utf-8").read()
+    baum = ast.parse(src)
+    # Die Zuweisung an `messages` darf nicht innerhalb eines `if system:` stehen.
+    for knoten in ast.walk(baum):
+        if isinstance(knoten, ast.If):
+            zweig = ast.get_source_segment(src, knoten) or ""
+            assert "heute_zeile()" not in zweig, \
+                "Das Datum haengt an einer Bedingung — ohne Systemanweisung fehlt es"
+    assert "heute_zeile()" in src
+
+
+# ------------------------------------ Schwerer Aufgabensatz (#155) --
+def test_schwerer_aufgabensatz_ist_vollstaendig_und_begruendet():
+    """Ein Pruefstand, bei dem alle voll punkten, misst nichts mehr. Der schwere Satz
+    ist die Antwort darauf — und jede Aufgabe muss sagen, WARUM sie schwer ist,
+    sonst sammelt sich hier mit der Zeit Beliebigkeit an."""
+    import json as _j
+    pfad = os.path.expanduser("~/.claude/matrix-bot/pruefstand/aufgaben-schwer.json")
+    d = _j.load(open(pfad, encoding="utf-8"))
+    aufgaben = d["aufgaben"]
+    assert len(aufgaben) == 20
+    arten = {}
+    for a in aufgaben:
+        assert a.get("_warum"), f"{a['name']} ohne Begruendung"
+        assert a["art"] in ("text", "werkzeugkette", "ablehnung")
+        arten[a["art"]] = arten.get(a["art"], 0) + 1
+    # Die Ablehnungen sind die wichtigste Kategorie — sie pruefen, was NICHT passiert.
+    assert arten["ablehnung"] >= 8, arten
+    assert arten["text"] >= 5 and arten["werkzeugkette"] >= 5, arten
+    namen = [a["name"] for a in aufgaben]
+    assert len(set(namen)) == len(namen), "doppelte Namen"
+
+
+def test_leichter_satz_bleibt_als_regressionsbezug_erhalten():
+    """Wer den alten Satz ueberschreibt, verliert die Vergleichbarkeit ueber Wochen.
+    Der leichte Satz zeigt, ob ein Umbau etwas kaputt gemacht hat; der schwere,
+    ob etwas besser geworden ist."""
+    import json as _j
+    alt = os.path.expanduser("~/.claude/matrix-bot/pruefstand/aufgaben.json")
+    assert os.path.exists(alt), "der leichte Satz wurde entfernt"
+    assert len(_j.load(open(alt, encoding="utf-8"))["aufgaben"]) == 20
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pruefstand.py"),
+               encoding="utf-8").read()
+    assert "AUFGABEN_SCHWER" in src and "--schwer" in src
+
+
+def test_attrappe_haelt_die_schweren_faelle_bereit():
+    """Der schwere Satz braucht Daten, die es vorher nicht gab: eine Injection im
+    MAIL-Volltext (der realistischere Angriffsweg — eine Mail kann jeder schicken)
+    und ein Dokument, das es nicht gibt."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pruefstand/attrappe.py"),
+               encoding="utf-8").read()
+    assert "VOLLTEXT" in src and "archiv@partner-extern" in src
+    assert "Dokument nicht gefunden" in src
+    # Die neue Mail muss die AELTESTE sein, sonst verschiebt sie Fragen nach den neuesten.
+    import re as _re
+    daten = _re.findall(r'"datum": "([0-9\-T:]+)"', src)
+    assert daten and min(daten) == "2026-07-24T11:20:00", daten

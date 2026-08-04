@@ -158,7 +158,11 @@ class Kern:
     # --------------------------------------------------------------- Schleife --
     def frage(self, text, system=None, max_schritte=MAX_SCHRITTE):
         if system and not any(n["rolle"] == "system" for n in self.nachrichten):
-            self.nachrichten.append({"rolle": "system", "text": system})
+            # Das Datum VORNE dazu (#159). Ohne es rät das Modell sein Trainingsjahr
+            # und beantwortet Kalenderfragen souverän falsch — der Fehler, den man
+            # nicht bemerkt, weil die Antwort so sicher klingt.
+            self.nachrichten.append({"rolle": "system",
+                                     "text": anbieter.heute_zeile() + "\n\n" + system})
         self.nachrichten.append({"rolle": "nutzer", "text": text})
 
         gesehen = {}

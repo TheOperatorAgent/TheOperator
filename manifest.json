@@ -1,5 +1,5 @@
 {
- "version": "1.43.0",
+ "version": "1.44.0",
  "files": [
   {
    "src": "listener.py",
@@ -224,7 +224,7 @@
   {
    "src": "llm_runner.py",
    "dst": "llm_runner.py",
-   "sha256": "997cd9fb37d190aa15d8e5a912254c91237525893db1d879834cd0511ad55644"
+   "sha256": "26119f774281179cb142c0a3b3f1416b7c025f058feb295812eef9dc9aff331e"
   },
   {
    "src": "mcp_client.py",
@@ -239,12 +239,12 @@
   {
    "src": "anbieter.py",
    "dst": "anbieter.py",
-   "sha256": "7b8b239c04885b0b0e636719c1067b73c27b7e752cb66d024732f0b2da4416d5"
+   "sha256": "bba65bbdab1b3ee4da56ae5ef97e63dcd6df08b670b6d675a3733e3b78ae478a"
   },
   {
    "src": "kern.py",
    "dst": "kern.py",
-   "sha256": "70e9b3c6ee44a803a763f3b68dbf22fde85e83fd0a74f00f51be12356d89c74b"
+   "sha256": "74627a6c878c9603b686b71aeca72106bb7bbb416814a47d3d2417ab5093b6db"
   },
   {
    "src": "protokoll.py",
@@ -329,7 +329,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "a6ba533e6c4d49cd4234965e9684ec7c48746cf8f3144676aa8434090f413cf5"
+   "sha256": "eb10cb79829ed5bf2eae31d5cb79806d3ebef533bd220fb63c56c9de378a3a29"
   },
   {
    "src": "dienst_start.py",
@@ -354,7 +354,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "ff2b01acc295a9da60beaa6dbba1ab861be4e859db169880579c2d0be1816296"
+   "sha256": "3479c133cc110e8f9ca4f907598948a0be88deeef1f02715fe1dd5f92e313d7c"
   },
   {
    "src": "dashboard/test_petra.py",
@@ -365,6 +365,11 @@
    "src": "dashboard/conftest.py",
    "dst": "dashboard/conftest.py",
    "sha256": "edd214c114a77ffb8897c972c6de1135e3f8afc1e8d8c2fd4844669f7bae9c8e"
+  },
+  {
+   "src": "pruefstand/aufgaben-schwer.json",
+   "dst": "pruefstand/aufgaben-schwer.json",
+   "sha256": "fa848ce73d1df62fde4511ffd9adbaf1d316ea5a2c5c20b4458ee4974e197892"
   }
  ]
 }

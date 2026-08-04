@@ -34,6 +34,7 @@ Das Nachrichtenformat
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -41,6 +42,36 @@ BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
 
 ZEITLIMIT = 120
+
+
+WOCHENTAGE = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag",
+              "Samstag", "Sonntag")
+MONATE = ("Januar", "Februar", "März", "April", "Mai", "Juni", "Juli",
+          "August", "September", "Oktober", "November", "Dezember")
+
+
+def heute_zeile():
+    """»Heute ist Montag, der 4. August 2026, 09:41 Uhr.« (#159)
+
+    Warum das hier steht und warum es wichtig ist
+    ---------------------------------------------
+    Ein Sprachmodell weiß nicht, welcher Tag ist. Ohne diese Zeile rät es sein
+    Trainingsdatum: Kimi fragte den Kalender nach dem **12.08.2025** statt 2026,
+    bekam für 2025 korrekt »frei« zurück und antwortete souverän das Gegenteil der
+    Wahrheit. Jeder Einzelschritt richtig, das Ergebnis falsch.
+
+    Beim Programm `claude` fällt das nicht auf — dessen eigener System-Prompt liefert
+    das Datum mit. Wir hatten uns diese Selbstverständlichkeit unbemerkt geliehen.
+
+    **Der Wochentag steht ausgeschrieben da**, weil »nächsten Freitag« sonst nicht
+    auflösbar ist und Modelle Wochentage aus einem Datum notorisch falsch ausrechnen.
+
+    Eine Stelle für alle Wege — `kern.py` und `llm_runner.py` holen sie hier. Zwei
+    Stellen wären zwei Wahrheiten, von denen eine veraltet (#126, #158).
+    """
+    t = time.localtime()
+    return (f"Heute ist {WOCHENTAGE[t.tm_wday]}, der {t.tm_mday}. "
+            f"{MONATE[t.tm_mon - 1]} {t.tm_year}, {t.tm_hour:02d}:{t.tm_min:02d} Uhr.")
 
 
 class Antwort:
