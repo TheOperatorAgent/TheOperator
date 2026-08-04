@@ -1,10 +1,10 @@
 {
- "version": "1.45.0",
+ "version": "1.46.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "9d24dc7ab8318dea7aac3de8adcd57f71d665e38ddca81a1c71111b52e09c1d0"
+   "sha256": "5941c17727f8882dd67ccec5e5bc42910aec701eeea8ccca03c609c30359f17b"
   },
   {
    "src": "matrix_room.py",
@@ -84,7 +84,7 @@
   {
    "src": "servicemgr.py",
    "dst": "servicemgr.py",
-   "sha256": "38db647bee50ccef9550b276b3bf34d65280a3cbc193904a703eabc7ed9f779c"
+   "sha256": "c7a53151285e244c3c31d527e89db8007d249713de7bc64ad66a979f154a3504"
   },
   {
    "src": "providers.py",
@@ -329,12 +329,12 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "3945e77f2ab85b2c66fe93334fb45f0008944df4761074cdfb6ade32f45e61e6"
+   "sha256": "bc07d9b22382afd3914e52d6599ff2252718bdba078c15663d56598ad61aaf95"
   },
   {
    "src": "dienst_start.py",
    "dst": "dienst_start.py",
-   "sha256": "1b981d5518c1228aef151f480c78e1446c4e3d26ff69e49cbe6795b3e671d9bb"
+   "sha256": "b0456114fca3e38376ae7bdfc1270996b6a44bbd569406b4c7b8def2f54e8dd6"
   },
   {
    "src": "pruefung.py",
@@ -354,7 +354,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "a456a6194267b3e5bcf0e6d4bf9e32de520620f4e2d4494f5dcc022cb9d67e6e"
+   "sha256": "fcd9b9a86b14f0a8949a87702f921fa6e5c466f9229c4e14792b661405e3363c"
   },
   {
    "src": "dashboard/test_petra.py",

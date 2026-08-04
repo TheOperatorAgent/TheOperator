@@ -36,11 +36,19 @@ def _protokoll(name):
 
 
 def _schreib(datei, text):
-    """Schreiben darf nie der Grund sein, dass ein Dienst nicht startet."""
+    """Schreiben darf nie der Grund sein, dass ein Dienst nicht startet.
+
+    Zeichensatz mit Vorzeichen (`utf-8-sig`): Windows PowerShell 5.1 liest Dateien
+    ohne Vorzeichen als cp1252 — dann steht in unserer eigenen Diagnosedatei
+    »Es lÃ¤uft bereits ein Operator« statt »läuft«, und die Umrandungen werden zu
+    »â”€â”€«. Nachgewiesen am 04.08.2026 auf Michis Rechner. **Eine Diagnosedatei,
+    die man nicht lesen kann, ist keine** — und sie wird ausgerechnet dann gebraucht,
+    wenn ohnehin schon nichts geht.
+    """
     try:
         if os.path.exists(datei) and os.path.getsize(datei) > 1_000_000:
             os.replace(datei, datei + ".alt")
-        with open(datei, "a", encoding="utf-8") as f:
+        with open(datei, "a", encoding="utf-8-sig") as f:
             f.write(text)
             f.flush()
     except OSError:
@@ -63,7 +71,7 @@ def main():
     for kanal in ("stdout", "stderr"):
         if getattr(sys, kanal, None) is None:
             try:
-                setattr(sys, kanal, open(datei, "a", encoding="utf-8", buffering=1))
+                setattr(sys, kanal, open(datei, "a", encoding="utf-8-sig", buffering=1))
             except OSError:
                 try:
                     setattr(sys, kanal, open(os.devnull, "w"))

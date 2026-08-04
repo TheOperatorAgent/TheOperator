@@ -1916,16 +1916,36 @@ LOCK_DATEI = os.path.join(BOT_DIR, "run", "listener.pid")
 
 
 def _prozess_laeuft(pid):
-    """Läuft dieser Prozess noch? Plattformübergreifend, ohne Fremdpakete."""
+    """Läuft **unser** Listener unter dieser Nummer noch? Ohne Fremdpakete.
+
+    Die Betonung liegt auf *unser*. Bis 1.45.0 wurde nur gefragt, ob irgendein Prozess
+    mit dieser Nummer existiert — und **Windows vergibt Prozessnummern nach einem
+    Neustart wieder**. Eine verwaiste Sperrdatei (etwa vom Dienst, den ein geschlossenes
+    Konsolenfenster erschlagen hat, #126) trifft dann irgendwann auf einen fremden
+    Prozess mit derselben Nummer. Ab da startet der Listener **nie wieder** — bei jeder
+    Anmeldung, dauerhaft, und die Begründung lautet »es läuft ja schon einer«.
+
+    Deshalb wird jetzt die Befehlszeile mitgeprüft: Steht dort nicht unser Skript,
+    ist die Sperre verwaist und wird entfernt.
+    """
     if pid <= 0:
         return False
     if os.name == "nt":
         try:
-            r = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"],
-                               capture_output=True, text=True, timeout=10)
-            return str(pid) in (r.stdout or "")
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}')"
+                 f".CommandLine"],
+                capture_output=True, text=True, timeout=15)
+            zeile = (r.stdout or "").strip()
+            if not zeile:
+                return False                  # Nummer gibt es nicht mehr
+            return "listener.py" in zeile.lower()
         except Exception:
-            return True          # im Zweifel: als laufend behandeln, nicht doppelt starten
+            # Im Zweifel NICHT blockieren. Ein doppelter Listener ist ein Ärgernis,
+            # ein dauerhaft blockierter ist ein Totalausfall — und genau der war auf
+            # Michis Rechner fünf Tage lang unsichtbar.
+            return False
     try:
         os.kill(pid, 0)          # Signal 0 prüft nur die Existenz
         return True

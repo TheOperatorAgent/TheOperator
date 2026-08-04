@@ -43,22 +43,34 @@ def status(logical: str) -> bool:
             # stand im Dashboard "läuft nicht", obwohl der Dienst nachweislich lief).
             # /fo csv liefert eine stabile Spalte, aber ebenfalls lokalisierte Werte;
             # eindeutig sprachfrei ist nur: läuft = hat eine Prozess-ID != 0.
-            r = subprocess.run(["schtasks", "/query", "/tn", _WIN[logical], "/v",
-                                "/fo", "csv", "/nh"],
-                               capture_output=True, text=True)
-            if r.returncode != 0:
-                return False                     # Aufgabe existiert nicht
-            import csv as _csv
-            import io as _io
-            for reihe in _csv.reader(_io.StringIO(r.stdout)):
-                for feld in reihe:
-                    f = feld.strip()
-                    if f.isdigit() and f != "0":     # Spalte "Prozess-ID"
-                        return True
-            # Fallback: bekannte Zustandswörter mehrerer Sprachen
-            low = r.stdout.lower()
-            return any(w in low for w in ("running", "wird ausgeführt", "wird ausgefuehrt",
-                                          "en cours", "in esecuzione"))
+            # Gefragt ist, ob ein PROZESS läuft — nicht, ob eine Aufgabe eingetragen ist.
+            #
+            # Bis 1.45.0 stand hier: »irgendein Feld, das eine Zahl ungleich null ist,
+            # heißt läuft«. Die Begründung war eine Spalte »Prozess-ID« — **die es bei
+            # `schtasks` gar nicht gibt**. Was es gibt, ist das letzte Ergebnis, und das
+            # ist im Fehlerfall eine große Zahl. Damit galt: **je schlimmer der Dienst
+            # gescheitert war, desto sicherer meldete er »ok«.**
+            #
+            # Bewiesen am 04.08.2026 auf Michis Rechner: `LastTaskResult 2147946720`
+            # (0x800710E0, Start abgelehnt) — und `operator status` sagte dreimal [ok],
+            # während seit fünf Tagen keine Logzeile geschrieben wurde.
+            #
+            # Deshalb jetzt die einzige Frage, die zählt: Läuft ein Python-Prozess mit
+            # unserem Skript? `tasklist` ist sprachunabhängig, und der Skriptname steht
+            # in der Befehlszeile.
+            skript = {"listener": "listener.py", "dashboard": "server.py",
+                      "pseudonym": "pseudonym_daemon.py"}.get(logical, "")
+            r = subprocess.run(
+                ["powershell", "-NoProfile", "-Command",
+                 "Get-CimInstance Win32_Process -Filter \"Name like 'py%'\" "
+                 "| Select-Object -ExpandProperty CommandLine"],
+                capture_output=True, text=True)
+            if skript and skript.lower() in (r.stdout or "").lower():
+                return True
+            # Kein Prozess gefunden → die Aufgabe mag eingetragen sein, sie LÄUFT aber
+            # nicht. Ein »ok« wäre hier genau die Falschauskunft, die fünf Tage gekostet
+            # hat: Der Nutzer sieht grün und wartet auf Antworten, die nie kommen.
+            return False
     except Exception:
         return False
     return False

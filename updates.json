@@ -1,9 +1,9 @@
 {
- "version": "1.45.0",
+ "version": "1.46.0",
  "date": "2026-08-04",
  "highlights": [
-  "💬 Vier neue Fragen im Chat — auch vom Handy: »läuft alles?«, »was hast du zuletzt gemacht?«, »welche version?« und »was weißt du über mich?«. Damit musst du fürs Nachschauen nicht mehr ans Dashboard.",
-  "🔒 Diese vier Fragen schauen nur nach. Alles, was etwas verändert, bleibt im Dashboard — dort siehst du, was du tust.",
-  "🕵️ Datenschutz-Korrektur: Bei sehr langen Gesprächen mit vielen Namen wurde die Zuordnung der Platzhalter komplett zurückgesetzt. Danach bekam dieselbe Person einen zweiten Decknamen, und du hast im schlimmsten Fall einen erfundenen Namen gelesen. Jetzt weichen nur noch die ältesten Einträge, und du siehst es im Protokoll."
+  "🩺 Windows: »operator status« hat OK gemeldet, obwohl der Dienst gescheitert war — und zwar umso zuverlässiger, je schlimmer der Fehler. Die Prüfung war versehentlich umgekehrt. Jetzt zählt nur noch, ob wirklich ein Operator läuft.",
+  "🔓 Windows: Nach einem Neustart konnte eine übrig gebliebene Sperrdatei deinen Operator dauerhaft am Starten hindern — mit der Begründung, er laufe ja schon. Windows vergibt Prozessnummern wieder; das haben wir nicht berücksichtigt.",
+  "📄 Die Startprotokolle sind auf Windows jetzt lesbar. Vorher stand dort »Es lÃ¤uft bereits ein Operator« — ausgerechnet in der Datei, die man liest, wenn nichts mehr geht."
  ]
 }

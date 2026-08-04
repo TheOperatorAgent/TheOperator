@@ -4150,7 +4150,12 @@ def test_dienststatus_ist_nicht_von_der_windows_sprache_abhaengig():
     teil = src.split("def status(")[1].split("\ndef ")[0]
     assert 'return r.returncode == 0 and "Running" in r.stdout' not in teil, \
         "prüft wieder auf ein englisches Wort"
-    assert "isdigit()" in teil, "keine sprachfreie Prüfung über die Prozess-ID"
+    # Bis 1.45.0 stand hier »isdigit()« — die vermeintlich sprachfreie Pruefung ueber
+    # eine Spalte »Prozess-ID«, DIE ES BEI schtasks NIE GAB. Sie traf stattdessen den
+    # Fehlercode und meldete »laeuft«, je schlimmer der Dienst gescheitert war (#160).
+    # Sprachfrei UND richtig ist nur: Laeuft ein Prozess mit unserem Skript?
+    assert "Win32_Process" in teil, "keine sprachfreie Pruefung ueber den Prozess"
+    assert "isdigit" not in teil, "schliesst wieder von einer Zahl auf »laeuft«"
     assert "wird ausgeführt" in teil.lower(), "kein Fallback für deutsche Ausgabe"
 
 
@@ -5750,7 +5755,10 @@ def test_einmal_sperre_verhindert_zwei_listener():
     assert "👉" in teil, "kein naechster Schritt fuer den Nutzer"
     # Windows braucht einen eigenen Weg — os.kill(pid, 0) gibt es dort nicht sinnvoll.
     proc = src.split("def _prozess_laeuft")[1].split("\ndef ")[0]
-    assert 'os.name == "nt"' in proc and "tasklist" in proc
+    # »tasklist« sagte nur, DASS eine Nummer existiert. Windows vergibt Prozessnummern
+    # nach einem Neustart wieder — eine verwaiste Sperre blockierte den Listener damit
+    # dauerhaft (#160). Jetzt wird die Befehlszeile mitgeprueft.
+    assert 'os.name == "nt"' in proc and "listener.py" in proc
 
 
 def test_diagnose_macht_einen_echten_lauf():
@@ -7656,3 +7664,71 @@ def test_selbstauskunft_haengt_am_owner():
     src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
                encoding="utf-8").read()
     assert 'wants_selbstauskunft(bodies) if self.kind == "owner"' in src
+
+
+def test_windows_status_meldet_nie_ok_wegen_eines_fehlercodes():
+    """Am 04.08.2026 meldete `operator status` dreimal [ok], waehrend der Listener seit
+    fuenf Tagen keine Zeile geschrieben hatte. Der Grund stand im Code: »irgendein Feld
+    mit einer Zahl ungleich null heisst laeuft« — begruendet mit einer Spalte
+    »Prozess-ID«, **die schtasks gar nicht ausgibt**. Was es ausgibt, ist das letzte
+    Ergebnis: bei Michi 2147946720 (Start abgelehnt).
+
+    **Je schlimmer der Dienst gescheitert war, desto sicherer meldete er ok.**"""
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/servicemgr.py"),
+               encoding="utf-8").read()
+    baum = ast.parse(src)
+    fn = next(k for k in ast.walk(baum)
+              if isinstance(k, ast.FunctionDef) and k.name == "status")
+    # Docstring entfernen, damit die Begruendung im Text den Test nicht bedient.
+    rumpf = "\n".join(ast.get_source_segment(src, k) or "" for k in fn.body[1:])
+    assert "isdigit" not in rumpf, \
+        "Status schliesst wieder von einer Zahl auf »laeuft« — Fehlercodes sind Zahlen"
+    # Der einzige belastbare Nachweis ist ein laufender Prozess mit unserem Skript.
+    assert "listener.py" in rumpf and "pseudonym_daemon.py" in rumpf
+    assert "Win32_Process" in rumpf or "tasklist" in rumpf
+
+
+def test_sperre_prueft_ob_es_UNSER_prozess_ist():
+    """Windows vergibt Prozessnummern nach einem Neustart wieder. Eine verwaiste
+    Sperrdatei trifft dann irgendwann auf einen fremden Prozess mit derselben Nummer —
+    und ab da startet der Listener NIE WIEDER, bei jeder Anmeldung, mit der Begruendung
+    »es laeuft ja schon einer«. Ein Totalausfall, den niemand sieht."""
+    import ast
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
+               encoding="utf-8").read()
+    fn = next(k for k in ast.walk(ast.parse(src))
+              if isinstance(k, ast.FunctionDef) and k.name == "_prozess_laeuft")
+    rumpf = "\n".join(ast.get_source_segment(src, k) or "" for k in fn.body[1:])
+    assert "listener.py" in rumpf, \
+        "Die Sperre prueft nur die Nummer, nicht ob es unser Prozess ist"
+    assert "tasklist" not in rumpf, \
+        "tasklist sagt nur, DASS eine Nummer existiert — nicht, wem sie gehoert"
+    # Im Zweifel darf der WINDOWS-Zweig nicht blockieren: ein doppelter Listener ist
+    # ein Aergernis, ein dauerhaft blockierter ein Ausfall. (Der POSIX-Zweig darf
+    # weiterhin True liefern — dort heisst PermissionError »existiert, gehoert anderen«,
+    # und os.kill verwechselt keine Prozesse.)
+    win = rumpf.split('os.name == "nt"')[1].split("try:")[0] + \
+        rumpf.split('os.name == "nt"')[1].split("except Exception")[1].split("\n    try:")[0]
+    assert "return False" in win, "der Windows-Zweig blockiert im Zweifel weiterhin"
+
+
+def test_startprotokoll_ist_unter_windows_lesbar():
+    """»Es lÃ¤uft bereits ein Operator« — so las Michi am 04.08. unsere eigene
+    Diagnosedatei. Windows PowerShell 5.1 liest Dateien ohne Vorzeichen als cp1252.
+    Eine Diagnosedatei, die man nicht lesen kann, ist keine — und sie wird
+    ausgerechnet dann gebraucht, wenn ohnehin schon nichts geht."""
+    import importlib.util, tempfile
+    pfad = os.path.expanduser("~/.claude/matrix-bot/dienst_start.py")
+    spec = importlib.util.spec_from_file_location("ds_test", pfad)
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    with tempfile.TemporaryDirectory() as tmp:
+        f = os.path.join(tmp, "t.log")
+        m._schreib(f, "Es läuft — 👉 ok\n")
+        assert open(f, "rb").read().startswith(b"\xef\xbb\xbf"), "kein Vorzeichen (BOM)"
+        assert open(f, encoding="utf-8-sig").read().strip() == "Es läuft — 👉 ok"
+    # Auch die umgebogenen Ausgabekanaele muessen es setzen, sonst mischen sich
+    # Zeilen mit und ohne Vorzeichen in derselben Datei.
+    src = open(pfad, encoding="utf-8").read()
+    assert src.count("utf-8-sig") >= 2, "die Ausgabekanaele schreiben noch ohne Vorzeichen"
