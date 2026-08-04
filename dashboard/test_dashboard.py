@@ -7543,3 +7543,116 @@ def test_attrappe_haelt_die_schweren_faelle_bereit():
     import re as _re
     daten = _re.findall(r'"datum": "([0-9\-T:]+)"', src)
     assert daten and min(daten) == "2026-07-24T11:20:00", daten
+
+
+# ------------------------------ Surrogat-Zuordnung laeuft nicht mehr leer (#134) --
+def _daemon():
+    import importlib
+    return importlib.import_module("pseudonym_daemon")
+
+
+def test_zuordnung_wird_beim_ueberlauf_nicht_geleert():
+    """Vorher wurde die ganze Zuordnung weggeworfen. Ab dem Moment bekam derselbe
+    Kontakt ein NEUES Surrogat — das Modell hielt eine Person fuer zwei — und die
+    alten Platzhalter im Verlauf waren unuebersetzbar. **Der Nutzer las einen
+    erfundenen Namen fuer einen echten Menschen.**"""
+    pd = _daemon()
+    alt = pd.MAX_ENTRIES
+    try:
+        pd.MAX_ENTRIES = 5
+        pd._CONV.clear(); pd._CONV_ORDER.clear()
+        m = pd._conv_mapping("raum-test")
+        for i in range(9):
+            m["s2r"][f"S{i}"] = f"E{i}"
+            m["r2s"][f"E{i}"] = f"S{i}"
+        m2 = pd._conv_mapping("raum-test")
+        assert m2["s2r"], "die Zuordnung wurde geleert statt verdraengt"
+        assert len(m2["s2r"]) == 5
+        assert "S8" in m2["s2r"], "der juengste Kontakt wurde verdraengt"
+        assert "S0" not in m2["s2r"], "der aelteste blieb"
+        # Beide Richtungen muessen zusammenpassen, sonst haengt eine Haelfte in der Luft.
+        assert set(m2["r2s"].values()) == set(m2["s2r"]), "r2s und s2r driften"
+        assert all(m2["s2r"][s] == e for e, s in m2["r2s"].items())
+    finally:
+        pd.MAX_ENTRIES = alt
+        pd._CONV.clear(); pd._CONV_ORDER.clear()
+
+
+def test_werkzeug_pii_hat_eine_eigene_zuordnung():
+    """Eine einzige gelesene Kundenliste kann dutzende Namen enthalten. Ohne eigenen
+    Namensraum laeuft davon die GESPRAECHS-Zuordnung voll — und mit ihr die Namen,
+    ueber die gerade geredet wird."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pseudonym_daemon.py"),
+               encoding="utf-8").read()
+    teil = src.split("def _handle")[1].split("\ndef ")[0]
+    assert ':"werkzeug"' in teil.replace(" ", "") or 'mode == "werkzeug"' in teil
+    assert '":werkzeug"' in teil, "kein eigener Namensraum fuer Werkzeug-Ergebnisse"
+
+    pd = _daemon()
+    pd._CONV.clear(); pd._CONV_ORDER.clear()
+    a = pd._conv_mapping("raum9")
+    b = pd._conv_mapping("raum9:werkzeug")
+    a["s2r"]["nur-gespraech"] = "X"
+    assert "nur-gespraech" not in b["s2r"], "beide Zuordnungen sind dieselbe"
+    pd._CONV.clear(); pd._CONV_ORDER.clear()
+
+
+def test_ueberlauf_wird_protokolliert():
+    """Bisher passierte er vollkommen still — gefunden nur beim Lesen des Codes."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/pseudonym_daemon.py"),
+               encoding="utf-8").read()
+    teil = src.split("def _verdraengen")[1].split("\ndef ")[0]
+    assert "_log(" in teil, "der Ueberlauf bleibt unsichtbar"
+
+
+# --------------------------------- Selbstauskuenfte im Chat (#125) --
+def test_selbstauskunft_loest_nur_bei_klarer_frage_aus():
+    """»Wie viel weisst du ueber Photovoltaik?« ist eine Frage ans MODELL. Wuerde sie
+    den Kurzbefehl ausloesen, bekaeme der Nutzer statt einer Antwort eine Statistik —
+    und der Operator waere kaputt, ohne dass ein Test rot wird."""
+    import importlib
+    li = importlib.import_module("listener")
+    for satz, erwartet in (
+            ("läuft alles?", "zustand"),
+            ("Was hast du zuletzt gemacht", "letzte"),
+            ("welche version", "version"),
+            ("was weißt du über mich", "gedaechtnis"),
+            ("Wie viel weißt du über Photovoltaik?", None),
+            ("erzähl mir was über die version 2 des vertrags", None),
+            ("was hast du zuletzt gemacht, als der Kunde anrief", None),
+            ("", None)):
+        assert li.wants_selbstauskunft([satz]) == erwartet, satz
+
+
+def test_selbstauskuenfte_lesen_nur():
+    """Alles Veraendernde bleibt im Dashboard, wo man sieht, was man tut. Eine
+    Fernbedienung, die per Chat Dienste neu startet, waere ein zweiter Weg an der
+    Bestaetigung vorbei."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
+               encoding="utf-8").read()
+    teil = src.split("def selbstauskunft")[1].split("\ndef ")[0]
+    for verboten in ("restart", "servicemgr", "apply(", "delete", "subprocess.Popen"):
+        assert verboten not in teil, f"Selbstauskunft kann {verboten} ausloesen"
+
+
+def test_selbstauskunft_liefert_echte_werte():
+    """Die Lehre aus `anbieter.py`: Ein Aufruf, den es nicht gibt, faellt in einem
+    `except Exception` nicht auf — die Auskunft sagt dann hoeflich »konnte ich nicht
+    pruefen« und niemand merkt, dass sie NIE etwas pruefen konnte."""
+    import importlib
+    li = importlib.import_module("listener")
+    v = li.selbstauskunft("version")
+    assert "Fassung" in v and "unbekannt" not in v
+    z = li.selbstauskunft("zustand")
+    assert "konnte ich nicht prüfen" not in z, z
+    assert "Speicherplatz" in z
+    g = li.selbstauskunft("gedaechtnis")
+    assert "komme gerade nicht an mein Gedächtnis" not in g, g
+
+
+def test_selbstauskunft_haengt_am_owner():
+    """Ein Mitbenutzer eines Agentenraums darf nicht erfahren, was der Operator
+    zuletzt fuer den Besitzer getan hat."""
+    src = open(os.path.expanduser("~/.claude/matrix-bot/listener.py"),
+               encoding="utf-8").read()
+    assert 'wants_selbstauskunft(bodies) if self.kind == "owner"' in src

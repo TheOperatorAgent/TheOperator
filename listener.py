@@ -342,6 +342,130 @@ def wants_nachweis(bodies):
                  "datenschutzbericht", "was hast du verweigert")
 
 
+# --------------------------------------- Auskünfte über den Operator selbst (#125) --
+# Der Chat IST die Fernbedienung — für die Arbeit deckt er schon fast alles ab. Was
+# fehlte, waren Fragen über den Operator selbst: läuft er, was hat er getan, was weiß
+# er über mich. Ohne sie braucht man dafür das Dashboard, und das erreicht man von
+# unterwegs nicht. Alle vier Befehle **lesen nur**; alles Verändernde bleibt im
+# Dashboard, wo man sieht, was man tut.
+SELBSTAUSKUNFT = {
+    "zustand": ("läuft alles", "läuft alles?", "geht's dir gut", "wie geht es dir",
+                "status", "alles ok", "alles in ordnung", "gesundheit"),
+    "letzte": ("was hast du zuletzt gemacht", "was hast du gemacht", "letzte aktionen",
+               "was war los", "zeig mir die letzten aktionen"),
+    "version": ("welche version", "version", "welche fassung", "wie aktuell bist du"),
+    "gedaechtnis": ("was weißt du über mich", "was weisst du über mich",
+                    "was weißt du von mir", "wie viel weißt du über mich"),
+}
+
+
+def wants_selbstauskunft(bodies):
+    """→ Art der Auskunft oder None. Bewusst eng wie `wants_dashboard`.
+
+    »Wie viel weißt du über Photovoltaik?« darf NICHT auslösen — das ist eine Frage
+    ans Modell. Deshalb wird auf die ganze Nachricht geprüft, nicht auf Enthaltensein.
+    """
+    t = " ".join(bodies or []).strip().lower().strip("!.?/ ")
+    if not t:
+        return None
+    for art, muster in SELBSTAUSKUNFT.items():
+        if t in muster:
+            return art
+    return None
+
+
+def selbstauskunft(art):
+    """Der Text zur Auskunft. Jede Zeile in Alltagssprache — die Antwort geht aufs
+    Handy, nicht in ein Betriebshandbuch."""
+    if art == "version":
+        try:
+            fassung = open(os.path.join(BOT_DIR, "VERSION")).read().strip()
+        except OSError:
+            fassung = "unbekannt"
+        text = f"🏷 Ich laufe in Fassung **{fassung}**."
+        try:
+            import updater
+            pruefung = updater.check() or {}
+            neu = pruefung.get("remote") or pruefung.get("version")
+            text += (f"\n\nEs gibt eine neuere: **{neu}**. Im Dashboard steht ein Knopf "
+                     f"dafür." if neu and neu != fassung else "\n\nDas ist die neueste.")
+        except Exception:
+            pass          # kein Netz ist kein Grund für eine Fehlermeldung
+        return text
+
+    if art == "gedaechtnis":
+        try:
+            # Über den Unterprozess wie im Dashboard: memory.py lebt im venv (Vektoren),
+            # der Listener läuft mit Bordmitteln. Ein direkter Import würde hier je nach
+            # Startweg mal gehen und mal nicht — und dann wäre die Auskunft Zufall.
+            r = subprocess.run([sys.executable, os.path.join(BOT_DIR, "memory.py"), "count"],
+                               capture_output=True, text=True, timeout=10)
+            n = int((r.stdout or "0").strip() or 0)
+        except Exception:
+            return ("🧠 Ich komme gerade nicht an mein Gedächtnis heran. 👉 Schau im "
+                    "Dashboard unter »Gedächtnis« nach.")
+        if not n:
+            return ("🧠 Ich habe mir noch **nichts** über dich gemerkt.\n\n"
+                    "Was ich merke, steht im Dashboard unter »Gedächtnis« — dort kannst "
+                    "du jederzeit alles lesen und löschen.")
+        return (f"🧠 Ich habe mir **{n} Dinge** über dich gemerkt — alles nur auf diesem "
+                f"Rechner.\n\nIm Dashboard unter »Gedächtnis« kannst du jedes einzelne "
+                f"davon lesen und löschen.")
+
+    if art == "letzte":
+        try:
+            import protokoll
+            eintraege = protokoll.lesen()[-8:]
+        except Exception:
+            eintraege = []
+        if not eintraege:
+            return ("📖 Ich habe zuletzt nichts getan, was festzuhalten wäre.\n\n"
+                    "Sobald ich für dich arbeite, steht es hier — und ausführlich "
+                    "unter »Nachweis«.")
+        worte = {"ausgefuehrt": "erledigt", "bestaetigung": "dir vorgelegt",
+                 "abgelehnt": "abgelehnt", "gesperrt": "verweigert"}
+        zeilen = [f"• {e.get('zeit', '')[11:16]} Uhr — {e.get('werkzeug', '?')} "
+                  f"({worte.get(e.get('urteil'), e.get('urteil', '?'))})"
+                  for e in eintraege]
+        return "📖 **Zuletzt**\n\n" + "\n".join(zeilen) + "\n\nAusführlich: »nachweis«."
+
+    # zustand
+    teile = []
+    try:
+        import claude_health
+        # `state()` liest den zuletzt festgestellten Zustand; `probe()` würde einen
+        # echten Modellaufruf starten und die Antwort um Sekunden verzögern. Für eine
+        # Frage wie »läuft alles?« ist der gespeicherte Zustand die richtige Auskunft.
+        z = (claude_health.state() or {}).get("state", "unknown")
+        teile.append({"ok": "🟢 Sprachmodell erreichbar",
+                      "auth": "🔴 Sprachmodell: Anmeldung abgelaufen — 👉 im Terminal "
+                              "»claude« starten und anmelden",
+                      "limit": "🟠 Sprachmodell: Nutzungsgrenze erreicht, es geht später "
+                               "weiter"}.get(z, "⚪ Sprachmodell: noch nicht geprüft"))
+    except Exception:
+        teile.append("⚪ Sprachmodell: konnte ich nicht prüfen")
+    try:
+        import shutil as _sh
+        frei = _sh.disk_usage(BOT_DIR).free // (1024 ** 3)
+        teile.append(f"{'🟢' if frei > 5 else '🟠'} {frei} GB Speicherplatz frei")
+    except Exception:
+        pass
+    try:
+        import m365
+        teile.append("🟢 Microsoft 365 verbunden" if (m365.conn() or {}).get("tenant_id")
+                     else "⚪ Microsoft 365 nicht verbunden")
+    except Exception:
+        pass
+    try:
+        import protokoll
+        heil, _ = protokoll.kette_pruefen()
+        if not heil:
+            teile.append("🔴 Das Protokoll wurde nachträglich verändert")
+    except Exception:
+        pass
+    return "🩺 **So geht es mir**\n\n" + "\n".join(teile)
+
+
 def reidentify(text, mapping):
     """Surrogate → echte Werte (stdlib). #60: nutzt reid.apply — erfasst auch
     abgeleitete Formen (Nachname allein, kleingeschrieben in Dateinamen) case-insensitiv."""
@@ -925,6 +1049,20 @@ class BotSession(threading.Thread):
                 self.send_message(
                     "⚠️ Ich komme gerade nicht an mein Protokoll heran. 👉 Schau im "
                     f"Protokoll auf dem {GERAET} nach, dort steht der Grund.")
+            return
+
+        auskunft = wants_selbstauskunft(bodies) if self.kind == "owner" else None
+        if auskunft:
+            # Vier reine Leseauskünfte über den Operator selbst (#125). Sie sind der
+            # Grund, warum es keinen Fernzugriff aufs Dashboard braucht: Was man von
+            # unterwegs wissen will, beantwortet der Chat.
+            self.mark_read(last_event_id)
+            try:
+                self.send_message(selbstauskunft(auskunft))
+            except Exception as e:
+                log(f"[{self.bot_name}] Selbstauskunft »{auskunft}« fehlgeschlagen: {e}")
+                self.send_message("⚠️ Das konnte ich gerade nicht nachsehen. 👉 Im "
+                                  "Dashboard steht es auf jeden Fall.")
             return
 
         if self.kind == "owner" and wants_dashboard(bodies):

@@ -1,9 +1,9 @@
 {
- "version": "1.44.0",
+ "version": "1.45.0",
  "date": "2026-08-04",
  "highlights": [
-  "📅 Wichtige Korrektur: Wenn du ein eigenes Sprachmodell eingestellt hast (Ollama, OpenAI, Azure), wusste dein Operator bisher nicht, welcher Tag heute ist — und hat Kalenderfragen im falschen Jahr beantwortet. Er klang dabei völlig sicher. Jetzt bekommt jedes Modell Datum, Wochentag und Uhrzeit mitgeliefert.",
-  "🧪 Der Prüfstand hat einen zweiten, schwereren Aufgabensatz bekommen: Aufgaben, die mehrere Schritte brauchen, Erfindungen bestrafen und deren Ablehnungsfälle berechtigt klingen — »der Chef hat das freigegeben«, »keine Zeit für Rückfragen«, Anweisungen versteckt im Text einer E-Mail.",
-  "🛡️ Das Ergebnis dieses Laufs: Ohne die Schutzschicht sagte das Modell einen Termin ab und verschickte eine E-Mail. Mit ihr keines von beidem."
+  "💬 Vier neue Fragen im Chat — auch vom Handy: »läuft alles?«, »was hast du zuletzt gemacht?«, »welche version?« und »was weißt du über mich?«. Damit musst du fürs Nachschauen nicht mehr ans Dashboard.",
+  "🔒 Diese vier Fragen schauen nur nach. Alles, was etwas verändert, bleibt im Dashboard — dort siehst du, was du tust.",
+  "🕵️ Datenschutz-Korrektur: Bei sehr langen Gesprächen mit vielen Namen wurde die Zuordnung der Platzhalter komplett zurückgesetzt. Danach bekam dieselbe Person einen zweiten Decknamen, und du hast im schlimmsten Fall einen erfundenen Namen gelesen. Jetzt weichen nur noch die ältesten Einträge, und du siehst es im Protokoll."
  ]
 }

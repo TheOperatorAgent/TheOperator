@@ -1,10 +1,10 @@
 {
- "version": "1.44.0",
+ "version": "1.45.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "3e6a3122c472540e569c5d6729f8f26a5718d114c0f3df438cf2531eead574d5"
+   "sha256": "9d24dc7ab8318dea7aac3de8adcd57f71d665e38ddca81a1c71111b52e09c1d0"
   },
   {
    "src": "matrix_room.py",
@@ -214,7 +214,7 @@
   {
    "src": "pseudonym_daemon.py",
    "dst": "pseudonym_daemon.py",
-   "sha256": "bf4246dd5a65c3422837b805e6b82a13aa46cbe57d63b35635ea1d4494277b53"
+   "sha256": "9e3ec05f2b0b88d205a5f97afa5fa0617ef2715e10168f29b0206333f78223e5"
   },
   {
    "src": "migrate_sessions.py",
@@ -329,7 +329,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "eb10cb79829ed5bf2eae31d5cb79806d3ebef533bd220fb63c56c9de378a3a29"
+   "sha256": "3945e77f2ab85b2c66fe93334fb45f0008944df4761074cdfb6ade32f45e61e6"
   },
   {
    "src": "dienst_start.py",
@@ -354,7 +354,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "3479c133cc110e8f9ca4f907598948a0be88deeef1f02715fe1dd5f92e313d7c"
+   "sha256": "a456a6194267b3e5bcf0e6d4bf9e32de520620f4e2d4494f5dcc022cb9d67e6e"
   },
   {
    "src": "dashboard/test_petra.py",

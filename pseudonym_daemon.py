@@ -25,6 +25,12 @@ _plat.ensure_std_streams(
 # Cross-Turn-Konsistenz (Issue #34): pro Konversation ein fortgeführtes Mapping im RAM,
 # damit derselbe Kontakt über mehrere Nachrichten denselben Platzhalter behält.
 # NUR im Speicher, nie persistiert; begrenzt gegen unbegrenztes Wachstum.
+def _log(text: str) -> None:
+    """Ins Daemon-Log. `ensure_std_streams` leitet stdout bereits dorthin um."""
+    import time
+    print(f"[{time.strftime('%F %T')}] {text}", flush=True)
+
+
 _CONV: dict = {}
 _CONV_ORDER: list = []
 MAX_CONV = 50            # max. gleichzeitige Konversationen (LRU)
@@ -44,16 +50,58 @@ def _conv_mapping(conv_id: str) -> dict:
     else:  # LRU-Refresh
         _CONV_ORDER.remove(conv_id)
         _CONV_ORDER.append(conv_id)
-    if len(m["s2r"]) > MAX_ENTRIES:   # zu groß → frisch, kein Speicherleck
-        m = {"r2s": {}, "s2r": {}}
-        _CONV[conv_id] = m
+    _verdraengen(conv_id, m)
     return m
+
+
+def _verdraengen(conv_id: str, m: dict) -> int:
+    """Beim Überlauf die ÄLTESTEN Einträge einzeln entfernen — nicht alles wegwerfen (#134).
+
+    Vorher wurde die Zuordnung beim Überschreiten komplett geleert. Ab diesem Moment
+    bekam derselbe Kontakt ein neues Surrogat: Das Modell hielt »Frauke Jäkel« und
+    »Beate Kunz« für zwei Personen, obwohl beide Frau Zimmermann waren. Und schlimmer —
+    die Surrogate aus der alten Zuordnung standen weiter im Gesprächsverlauf, ihre
+    Übersetzung war weg. **Der Nutzer las dann einen erfundenen Namen für einen echten
+    Menschen.** Genau der Fehler, den #88 gerade beseitigt hatte, nur durch eine andere Tür.
+
+    Verdrängen macht den Fehler nicht unmöglich — ein verdrängtes Surrogat im Verlauf
+    bleibt unübersetzbar. Aber es trifft dann den ältesten Kontakt statt aller auf einmal,
+    und die aktiven Kontakte eines Gesprächs bleiben stabil.
+
+    Python-Wörterbücher behalten die Einfügereihenfolge; das älteste steht vorn.
+    """
+    entfernt = 0
+    while len(m["s2r"]) > MAX_ENTRIES:
+        surrogat = next(iter(m["s2r"]))
+        echt = m["s2r"].pop(surrogat, None)
+        if echt is not None:
+            m["r2s"].pop(echt, None)
+        entfernt += 1
+    if entfernt:
+        # Bisher passierte der Überlauf vollkommen still. Gefunden habe ich ihn nur,
+        # weil ich den Code gelesen habe — nicht, weil irgendwo etwas aufgefallen wäre.
+        _log(f"Zuordnung »{conv_id[:24]}« voll: {entfernt} alte Einträge verdrängt "
+             f"(Grenze {MAX_ENTRIES}). Ältere Platzhalter im Verlauf sind ab jetzt "
+             f"nicht mehr rückübersetzbar.")
+    return entfernt
 
 
 def _handle(req: dict, pseudonym) -> dict:
     conv_id = req.get("conversation", "")
-    mapping = _conv_mapping(conv_id) if conv_id else req.get("mapping", {})
     mode = req.get("mode", "standard")
+    # #134: Werkzeug-Ergebnisse bekommen eine EIGENE Zuordnung. Eine einzige gelesene
+    # Kundenliste kann dutzende Namen enthalten und würde sonst die Gesprächs-Zuordnung
+    # in wenigen Schritten volllaufen lassen — mit ihr die Namen, über die gerade
+    # gesprochen wird. Getrennt bleibt der Gesprächsfaden stabil, auch wenn ein Agent
+    # hundert Dateien liest.
+    #
+    # Preis: Ein Name, der in beiden vorkommt, hat zwei Platzhalter — für das Modell
+    # zwei Personen. Das ist der harmlosere Fehler, weil beide korrekt zurückübersetzt
+    # werden. Der andere Weg (eine Zuordnung, die überläuft) macht Platzhalter
+    # unübersetzbar, und dann liest der Nutzer einen erfundenen Namen.
+    if conv_id and mode == "werkzeug":
+        conv_id += ":werkzeug"
+    mapping = _conv_mapping(conv_id) if conv_id else req.get("mapping", {})
     allow, deny = req.get("allow", []), req.get("deny", [])
     out_texts, total = [], {}
     for txt in req.get("texts", []):
