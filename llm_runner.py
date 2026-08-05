@@ -20,6 +20,7 @@ import sys
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
+import platform_compat as _plat      # noqa: E402  (fensterlose Unterprozesse, #163)
 import net_guard                     # noqa: E402  (#82 Schutz vor Zugriffen ins eigene Netz)
 
 # ---------------------------------------------------------------- Werkzeuge (optional) --
@@ -215,7 +216,7 @@ def _exec_tool(name: str, args: dict, workdir: str, actions: list) -> str:
             except Exception:
                 pass
             r = subprocess.run(argv, cwd=workdir, capture_output=True,
-                               text=True, timeout=CMD_TIMEOUT)
+                               text=True, timeout=CMD_TIMEOUT, **_plat.OHNE_FENSTER)
             out = (r.stdout or "") + (("\n[stderr]\n" + r.stderr) if r.stderr else "")
             return f"exit={r.returncode}\n{out[:8000]}"
         if name == "write_file":

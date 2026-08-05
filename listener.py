@@ -122,7 +122,7 @@ def redact_text(text):
         import os as _os
         if _os.path.exists(f"{BOT_DIR}/secrets/vault.enc") and _os.path.exists(VENV_PY):
             r = subprocess.run([VENV_PY, f"{BOT_DIR}/vault.py", "redact"],
-                               input=text, capture_output=True, text=True, timeout=10)
+                               input=text, capture_output=True, text=True, timeout=10, **_plat.OHNE_FENSTER)
             if r.returncode == 0 and r.stdout:
                 return r.stdout
     except Exception:
@@ -155,7 +155,7 @@ def datenschutz_angebot(session):
         # Läuft der Filter auf diesem Rechner überhaupt? Erst prüfen, dann anbieten —
         # nichts versprechen, was die Maschine nicht kann.
         r = subprocess.run([VENV_PY, f"{BOT_DIR}/pseudonym.py", "selftest"],
-                           capture_output=True, text=True, timeout=180)
+                           capture_output=True, text=True, timeout=180, **_plat.OHNE_FENSTER)
         laeuft = "SELFTEST OK" in (r.stdout or "")
         os.makedirs(os.path.dirname(marke), exist_ok=True)
         with open(marke, "w") as f:
@@ -264,7 +264,7 @@ def pseudonymize_segments(segments, conv=""):
         raw = _pseudonym_via_daemon(req)
         if raw is None:   # Daemon nicht da → Subprozess-Fallback (lädt Modell einmalig)
             r = subprocess.run([VENV_PY, f"{BOT_DIR}/pseudonym.py", "run"],
-                               input=req, capture_output=True, text=True, timeout=60)
+                               input=req, capture_output=True, text=True, timeout=60, **_plat.OHNE_FENSTER)
             if r.returncode != 0 or not r.stdout:
                 log(f"Pseudonymisierung fehlgeschlagen (rc={r.returncode}): {r.stderr[-200:]}")
                 return None, None
@@ -399,7 +399,7 @@ def selbstauskunft(art):
             # der Listener läuft mit Bordmitteln. Ein direkter Import würde hier je nach
             # Startweg mal gehen und mal nicht — und dann wäre die Auskunft Zufall.
             r = subprocess.run([sys.executable, os.path.join(BOT_DIR, "memory.py"), "count"],
-                               capture_output=True, text=True, timeout=10)
+                               capture_output=True, text=True, timeout=10, **_plat.OHNE_FENSTER)
             n = int((r.stdout or "0").strip() or 0)
         except Exception:
             return ("🧠 Ich komme gerade nicht an mein Gedächtnis heran. 👉 Schau im "
@@ -651,8 +651,18 @@ def _lauf_mit_wartezuschlag(argv, prompt, env, grundlimit=600, warte_max=900):
         with open(p_in, encoding="utf-8") as fi, \
                 open(p_out, "w", encoding="utf-8") as fo, \
                 open(p_err, "w", encoding="utf-8") as fe:
+            # **_plat.OHNE_FENSTER: Auf Windows öffnet jeder Start eines
+            # Konsolenprogramms ein eigenes schwarzes Fenster — auch wenn der
+            # Listener selbst fensterlos läuft. Bei JEDER Chat-Nachricht poppte
+            # eines auf, blieb stehen, solange das Modell schrieb, und verschwand
+            # wieder (Michi, 05.08.: »das darf nicht sein«).
+            #
+            # Doppelt ärgerlich: Es ist genau die Sorte Fenster, deren Schließen
+            # am 30.07. den Dienst erschlagen hat (#126, Fehler 6). Wir haben dem
+            # Nutzer also einen Knopf hingestellt, mit dem er sich selbst abschaltet.
             proc = subprocess.Popen(argv, stdin=fi, stdout=fo, stderr=fe,
-                                    cwd=WORKSPACE, env=env, text=True)
+                                    cwd=WORKSPACE, env=env, text=True,
+                                    **_plat.OHNE_FENSTER)
             start = time.time()
             while True:
                 try:
@@ -727,7 +737,7 @@ def _mail_watch_tick(log_fn, interval=300):
     def _poll():
         try:
             r = subprocess.run([VENV_PY, f"{BOT_DIR}/mail_watch.py", "check"],
-                               capture_output=True, text=True, timeout=120)
+                               capture_output=True, text=True, timeout=120, **_plat.OHNE_FENSTER)
             out = (r.stdout or "").strip()
             if out and "nichts Neues" not in out:
                 log_fn(f"Mail-Watch: {out}")
@@ -839,7 +849,7 @@ class BotSession(threading.Thread):
     def recall(self, text, k=5):
         try:
             r = subprocess.run([sys.executable, f"{BOT_DIR}/memory.py", "search", text, "-k", str(k)],
-                               capture_output=True, text=True, timeout=15)
+                               capture_output=True, text=True, timeout=15, **_plat.OHNE_FENSTER)
             hits = r.stdout.strip()
             if hits:
                 return f"Relevante Einträge aus deinem Gedächtnis:\n{hits}\n\n"
@@ -1435,7 +1445,7 @@ class BotSession(threading.Thread):
         try:
             r = subprocess.run([VENV_PY, f"{BOT_DIR}/llm_runner.py"], input=req,
                                capture_output=True, text=True, timeout=run_timeout,
-                               env=dict(os.environ))
+                               env=dict(os.environ), **_plat.OHNE_FENSTER)
         except subprocess.TimeoutExpired:
             self.send_message(f"⚠️ Das Modell {label} hat zu lange gebraucht — abgebrochen.")
             return
@@ -1492,7 +1502,7 @@ class BotSession(threading.Thread):
                                   "prompt": user, "system": system, "max_tokens": 1024})
                 r = subprocess.run([VENV_PY, f"{BOT_DIR}/llm_runner.py"], input=req,
                                    capture_output=True, text=True, timeout=180,
-                                   env=dict(os.environ))
+                                   env=dict(os.environ), **_plat.OHNE_FENSTER)
                 return json.loads(r.stdout).get("text")
             # Claude als Prüfer: headless, keine Werkzeuge
             cmd = [CLAUDE, "-p", "--output-format", "json"]
@@ -1502,7 +1512,7 @@ class BotSession(threading.Thread):
                 # Prompt via Standardeingabe — auf Windows sonst »Befehlszeile zu lang«
                 r = subprocess.run(cmd, input=f"{system}\n\n{user}", capture_output=True,
                                    text=True, timeout=180, cwd=WORKSPACE,
-                                   env=dict(os.environ))
+                                   env=dict(os.environ), **_plat.OHNE_FENSTER)
             return str(json.loads(r.stdout).get("result", "")) or None
         except Exception as e:
             log(f"[{self.bot_name}] Verifier-Aufruf fehlgeschlagen (fail-open): {e}")
@@ -1547,7 +1557,7 @@ class BotSession(threading.Thread):
                 log(f"[{self.bot_name}] Merken: schon bekannt, nichts gespeichert")
                 return
             r = subprocess.run([sys.executable, f"{BOT_DIR}/memory.py", "add", fakt],
-                               capture_output=True, text=True, timeout=60)
+                               capture_output=True, text=True, timeout=60, **_plat.OHNE_FENSTER)
             if r.returncode != 0:
                 log(f"[{self.bot_name}] Merken fehlgeschlagen: {r.stderr[:120]}")
                 return
@@ -1565,7 +1575,7 @@ class BotSession(threading.Thread):
         """Bestehende Fakten als Textliste — Grundlage der Dublettenprüfung."""
         try:
             r = subprocess.run([sys.executable, f"{BOT_DIR}/memory.py", "list", "-n", str(n)],
-                               capture_output=True, text=True, timeout=30)
+                               capture_output=True, text=True, timeout=30, **_plat.OHNE_FENSTER)
             aus = []
             for z in (r.stdout or "").splitlines():
                 t = z.strip()
@@ -1936,7 +1946,7 @@ def _prozess_laeuft(pid):
                 ["powershell", "-NoProfile", "-Command",
                  f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}')"
                  f".CommandLine"],
-                capture_output=True, text=True, timeout=15)
+                capture_output=True, text=True, timeout=15, **_plat.OHNE_FENSTER)
             zeile = (r.stdout or "").strip()
             if not zeile:
                 return False                  # Nummer gibt es nicht mehr

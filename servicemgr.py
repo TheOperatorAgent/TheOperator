@@ -31,11 +31,11 @@ def status(logical: str) -> bool:
     try:
         if _plat.IS_MAC:
             r = subprocess.run(["launchctl", "print", f"gui/{os.getuid()}/{_MAC[logical]}"],
-                               capture_output=True)
+                               capture_output=True, **_plat.OHNE_FENSTER)
             return r.returncode == 0
         if _plat.IS_LINUX:
             r = subprocess.run(["systemctl", "--user", "is-active", _LINUX[logical]],
-                               capture_output=True, text=True)
+                               capture_output=True, text=True, **_plat.OHNE_FENSTER)
             return r.stdout.strip() == "active"
         if _plat.IS_WIN:
             # NICHT auf das Wort "Running" prüfen: schtasks ist lokalisiert und meldet
@@ -64,7 +64,7 @@ def status(logical: str) -> bool:
                 ["powershell", "-NoProfile", "-Command",
                  "Get-CimInstance Win32_Process -Filter \"Name like 'py%'\" "
                  "| Select-Object -ExpandProperty CommandLine"],
-                capture_output=True, text=True)
+                capture_output=True, text=True, **_plat.OHNE_FENSTER)
             if skript and skript.lower() in (r.stdout or "").lower():
                 return True
             # Kein Prozess gefunden → die Aufgabe mag eingetragen sein, sie LÄUFT aber
@@ -81,15 +81,15 @@ def restart(logical: str) -> bool:
     try:
         if _plat.IS_MAC:
             subprocess.run(["launchctl", "kickstart", "-k", f"gui/{os.getuid()}/{_MAC[logical]}"],
-                           capture_output=True, check=True)
+                           capture_output=True, check=True, **_plat.OHNE_FENSTER)
             return True
         if _plat.IS_LINUX:
             subprocess.run(["systemctl", "--user", "restart", _LINUX[logical]],
-                           capture_output=True, check=True)
+                           capture_output=True, check=True, **_plat.OHNE_FENSTER)
             return True
         if _plat.IS_WIN:
-            subprocess.run(["schtasks", "/end", "/tn", _WIN[logical]], capture_output=True)
-            subprocess.run(["schtasks", "/run", "/tn", _WIN[logical]], capture_output=True, check=True)
+            subprocess.run(["schtasks", "/end", "/tn", _WIN[logical]], capture_output=True, **_plat.OHNE_FENSTER)
+            subprocess.run(["schtasks", "/run", "/tn", _WIN[logical]], capture_output=True, check=True, **_plat.OHNE_FENSTER)
             return True
     except Exception:
         return False

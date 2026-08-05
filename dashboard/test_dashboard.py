@@ -7815,3 +7815,59 @@ def test_jeder_befehl_den_wir_empfehlen_existiert_auch():
     assert not fehlend, (
         "Diese Befehle empfiehlt der Operator, aber der Kurzbefehl setzt sie nicht um: "
         + ", ".join(fehlend))
+
+def test_kein_unterprozess_oeffnet_ein_fenster():
+    """Auf Windows oeffnet JEDER Start eines Konsolenprogramms ein eigenes schwarzes
+    Fenster — auch wenn der Aufrufer fensterlos laeuft. Bei jeder Chat-Nachricht poppte
+    ein »claude«-Fenster auf und blieb stehen, solange das Modell schrieb
+    (Michi, 05.08.: »das darf nicht sein«).
+
+    Doppelt schlimm: Es ist genau die Sorte Fenster, deren Schliessen am 30.07. den
+    Dienst erschlagen hat (#126, Fehler 6). Wir haben dem Nutzer einen Knopf
+    hingestellt, mit dem er sich selbst abschaltet.
+
+    Geprueft wird per Syntaxbaum — der erste Reparaturversuch zaehlte Klammern im Text,
+    verschob sich nach der ersten Ersetzung und schnitt mitten in fremde Funktionen
+    (`servicemgr.py` endete mit »return logical, **_plat.OHNE_FENSTER)«)."""
+    import ast
+    bot = os.path.expanduser("~/.claude/matrix-bot")
+    for datei in ("listener.py", "dashboard/server.py", "servicemgr.py", "llm_runner.py"):
+        quelle = open(os.path.join(bot, datei), encoding="utf-8").read()
+        baum = ast.parse(quelle)
+        # 1) Der Name muss auf MODULEBENE gebunden sein — sonst ist er in Funktionen
+        #    nicht da, und der Aufruf stirbt zur Laufzeit mit NameError. Genau das
+        #    passierte in llm_runner.py: syntaktisch gueltig, im Betrieb ein Absturz.
+        modulweit = {a.asname or a.name.split(".")[0]
+                     for k in baum.body if isinstance(k, ast.Import) for a in k.names}
+        assert "platform_compat" in modulweit or "_plat" in modulweit, \
+            f"{datei}: platform_compat nicht auf Modulebene importiert"
+        # 2) Jeder Prozessstart muss die Fensterunterdrueckung mitgeben.
+        ohne = []
+        for k in ast.walk(baum):
+            if (isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)
+                    and k.func.attr in ("run", "Popen")
+                    and isinstance(k.func.value, ast.Name)
+                    and k.func.value.id == "subprocess"):
+                if not any(kw.arg is None
+                           and getattr(kw.value, "attr", "") == "OHNE_FENSTER"
+                           for kw in k.keywords):
+                    ohne.append(f"{datei}:{k.lineno}")
+        assert not ohne, ("Diese Prozessstarts oeffnen auf Windows ein Fenster: "
+                          + ", ".join(ohne))
+
+
+def test_fensterunterdrueckung_gilt_nur_fuer_windows():
+    """Auf macOS und Linux gibt es CREATE_NO_WINDOW nicht — ein Schalter dort waere ein
+    TypeError bei jedem Prozessstart. Das Woerterbuch ist deshalb anderswo leer."""
+    import importlib
+    p = importlib.import_module("platform_compat")
+    assert isinstance(p.OHNE_FENSTER, dict)
+    if os.name == "nt":
+        assert p.OHNE_FENSTER == {"creationflags": 0x08000000}
+    else:
+        assert p.OHNE_FENSTER == {}, "auf dieser Plattform muss es leer sein"
+    # Gegenprobe: leer eingesetzt aendert einen Aufruf nicht.
+    import subprocess
+    r = subprocess.run([sys.executable, "-c", "print('ok')"],
+                       capture_output=True, text=True, **p.OHNE_FENSTER)
+    assert r.stdout.strip() == "ok"

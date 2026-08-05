@@ -294,3 +294,22 @@ def workspace_migrieren(log=lambda *_: None):
     except OSError as e:
         log(f"Arbeitsordner konnte nicht umziehen ({e}) — alles läuft weiter wie bisher")
         return False
+
+
+# ---------------------------------------------------- Fensterlos starten (#163) --
+# Auf Windows oeffnet JEDER Start eines Konsolenprogramms ein eigenes schwarzes
+# Fenster — auch wenn der Aufrufer selbst fensterlos laeuft (pythonw). Beim Operator
+# hiess das: bei jeder einzelnen Chat-Nachricht ploppte ein »claude«-Fenster auf,
+# blieb zwei Minuten stehen und verschwand wieder.
+#
+# Michi am 05.08.2026: »das terminal fenster geht immer von selber auf, das nervt,
+# das darf nicht sein.« Er hat recht — ein Assistent, der im Hintergrund arbeiten
+# soll, darf die Arbeit des Nutzers nicht unterbrechen. Und ein Fenster, das man
+# wegklicken moechte, ist genau das Fenster, dessen Schliessen am 30.07. den Dienst
+# erschlagen hat (#126, Fehler 6).
+#
+# CREATE_NO_WINDOW gibt es nur auf Windows; anderswo ist das Woerterbuch leer und
+# der Aufruf bleibt unveraendert. Deshalb ein Woerterbuch statt eines Schalters:
+# `subprocess.run(..., **platform_compat.OHNE_FENSTER)` ist auf allen Plattformen
+# dieselbe Zeile.
+OHNE_FENSTER = {"creationflags": 0x08000000} if os.name == "nt" else {}

@@ -1,10 +1,10 @@
 {
- "version": "1.48.0",
+ "version": "1.49.0",
  "files": [
   {
    "src": "listener.py",
    "dst": "listener.py",
-   "sha256": "5941c17727f8882dd67ccec5e5bc42910aec701eeea8ccca03c609c30359f17b"
+   "sha256": "319a05a3db08f10b05ce05cb348e5f3abd741fdf043a52f7ed7bcd28db95c780"
   },
   {
    "src": "matrix_room.py",
@@ -74,7 +74,7 @@
   {
    "src": "platform_compat.py",
    "dst": "platform_compat.py",
-   "sha256": "4b3f1d9eaf0d9da9fc17e11c965227293a7fa295ed45d872f443acbed3c51f1e"
+   "sha256": "cadd2c4f262dddc78b9e4e0752d748e1d7b4868e113a4b7a8cc568295119b4bc"
   },
   {
    "src": "secretstore.py",
@@ -84,7 +84,7 @@
   {
    "src": "servicemgr.py",
    "dst": "servicemgr.py",
-   "sha256": "c7a53151285e244c3c31d527e89db8007d249713de7bc64ad66a979f154a3504"
+   "sha256": "e71a6e08411a1f2433b163462918bf6bbd2ebcf4aa9c7ed06a4bfd66c34f3450"
   },
   {
    "src": "providers.py",
@@ -224,7 +224,7 @@
   {
    "src": "llm_runner.py",
    "dst": "llm_runner.py",
-   "sha256": "26119f774281179cb142c0a3b3f1416b7c025f058feb295812eef9dc9aff331e"
+   "sha256": "f82f09a2c618b3143cb1617a9abe1110fbbad47dafa1a9938c850bb28ae2e8cc"
   },
   {
    "src": "mcp_client.py",
@@ -269,7 +269,7 @@
   {
    "src": "dashboard/server.py",
    "dst": "dashboard/server.py",
-   "sha256": "794946dc554ab37a18597fed6a948ce0748e3aa4d9b53cf95b3cc85b64de34d7"
+   "sha256": "661bf1a0d6057ea875e71f1a12612a264785be407df584e85e4bd9802f6ff0eb"
   },
   {
    "src": "dashboard/tokens.py",
@@ -329,7 +329,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "036b68b208328d529be40f63e0dec9c435187d7e5b56bbe375adc0a59fc5d8c2"
+   "sha256": "9761904ed5231958f3c472e68f320bc7cc644171390018375e0b92fcb360b5f1"
   },
   {
    "src": "dienst_start.py",
@@ -354,7 +354,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "2e0ecd45b98f7be168fc86b961a5919afebb2c890a35f601bb035fa2f65794fe"
+   "sha256": "923db51d18bbe3535315b9e9db745cd10a9f118c477f4aa237fd3cb3e775b4d9"
   },
   {
    "src": "dashboard/test_petra.py",

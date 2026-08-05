@@ -1,8 +1,8 @@
 {
- "version": "1.48.0",
+ "version": "1.49.0",
  "date": "2026-08-05",
  "highlights": [
-  "🛑 »operator stop« gibt es jetzt wirklich — zusammen mit »operator start« und »operator neustart«. Der Operator hat diesen Befehl bisher selbst empfohlen, ohne dass es ihn gab: Wer ihn eingab, bekam nur eine Liste der möglichen Befehle und stand im Regen.",
-  "🔍 Ein Wächter stellt sicher, dass jeder Befehl, den dein Operator dir empfiehlt, auch tatsächlich existiert."
+  "🪟 Windows: Schluss mit den schwarzen Fenstern. Bei jeder Nachricht öffnete sich eines und blieb stehen, solange dein Operator nachdachte. Ab jetzt arbeitet er wirklich im Hintergrund.",
+  "🛡️ Das war nicht nur lästig: Es war genau die Sorte Fenster, deren Schließen den Dienst beendet — man konnte sich also versehentlich selbst abschalten."
  ]
 }

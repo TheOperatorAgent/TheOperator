@@ -269,7 +269,7 @@ def api_selbsttest():
         # ein Schrecken über ein Problem, das gar nicht seines ist.
         r = subprocess.run([py, "-m", "pytest", *tests, "-q", "--tb=no",
                             "-m", "not lieferkette"],
-                           capture_output=True, text=True, timeout=600, cwd=BOT_DIR)
+                           capture_output=True, text=True, timeout=600, cwd=BOT_DIR, **platform_compat.OHNE_FENSTER)
     except subprocess.TimeoutExpired:
         return err("selbsttest", "Die Prüfung hat zu lange gebraucht und wurde "
                                  "abgebrochen. 👉 Bitte später noch einmal versuchen.")
@@ -316,7 +316,7 @@ def api_update_apply():
     try:
         subprocess.Popen([py, os.path.join(BOT_DIR, "updater.py"), "apply"],
                          start_new_session=True, cwd=BOT_DIR,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **platform_compat.OHNE_FENSTER)
     except Exception as e:
         print(f"[update] Start fehlgeschlagen: {e}")
         return err("update", "Das Update ließ sich gerade nicht starten. 👉 Bitte in einer Minute erneut versuchen.")
@@ -344,7 +344,7 @@ def api_status():
     mem_count = 0
     try:
         r = subprocess.run([sys.executable, os.path.join(BOT_DIR, "memory.py"), "count"],
-                           capture_output=True, text=True, timeout=10)
+                           capture_output=True, text=True, timeout=10, **platform_compat.OHNE_FENSTER)
         mem_count = int(r.stdout.strip() or 0)
     except Exception:
         pass
@@ -537,7 +537,7 @@ def api_dock_fenster(request: Request):
     try:
         subprocess.Popen([sys.executable, os.path.join(BOT_DIR, "dock_fenster.py")],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True)
+                         start_new_session=True, **platform_compat.OHNE_FENSTER)
     except Exception:
         audit("dashboard", "dock.fenster", ok=False)
         return err("dock", "Fenster-Start fehlgeschlagen", 500)
@@ -1030,7 +1030,7 @@ def _semantik_status():
 def api_memory_reindex():
     """Fehlende Vektoren nachziehen (nach dem Einschalten der semantischen Suche)."""
     r = subprocess.run([sys.executable, os.path.join(BOT_DIR, "memory.py"), "reindex"],
-                       capture_output=True, text=True, timeout=600)
+                       capture_output=True, text=True, timeout=600, **platform_compat.OHNE_FENSTER)
     audit("dashboard", "memory.reindex", ok=r.returncode == 0)
     if r.returncode != 0:
         return err("memory", "Nachtragen fehlgeschlagen — läuft dein Embedding-Anbieter?", 500)
@@ -1692,7 +1692,7 @@ async def api_assistant(request: Request):
         cmd = [_claude_bin(), "-p", "--output-format", "json"]
         r = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=180,
                            cwd=WORKSPACE_DIR if os.path.isdir(WORKSPACE_DIR) else BOT_DIR,
-                           env=os.environ)
+                           env=os.environ, **platform_compat.OHNE_FENSTER)
     except subprocess.TimeoutExpired:
         return err("timeout", "Der Assistent hat zu lange gebraucht — bitte nochmal.")
     except Exception as e:
