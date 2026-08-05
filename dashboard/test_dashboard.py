@@ -7732,3 +7732,43 @@ def test_startprotokoll_ist_unter_windows_lesbar():
     # Zeilen mit und ohne Vorzeichen in derselben Datei.
     src = open(pfad, encoding="utf-8").read()
     assert src.count("utf-8-sig") >= 2, "die Ausgabekanaele schreiben noch ohne Vorzeichen"
+
+
+def test_jede_manifest_datei_steht_in_BEIDEN_installern():
+    """Der teuerste Fund des 05.08.: **Vier ausgelieferte Dateien fehlten in beiden
+    Installern.** Sie standen im Manifest, wurden also beim Update nachgezogen — aber
+    eine FRISCHE Installation bekam sie nie:
+
+      merker.py   → automatisches Merken (#110) gab es beim Kunden nicht
+      anhaenge.py → Bilder und Dateien im Chat (#95) gab es beim Kunden nicht
+      dock.js/.html → das Satellitenfenster (#82) oeffnete nichts
+
+    Drei ausgelieferte Funktionen, die auf keinem Kundenrechner existierten — auf
+    KEINER Plattform, nicht nur Windows. Aufgefallen ist es nur, weil Michis
+    Diagnose-Bericht die Pruefsummen gegen das Manifest hielt.
+
+    `test_manifest_covers_all_runtime_imports` konnte das nicht sehen: Es prueft
+    Importe, nicht die Abholliste der Installer. Genau diese Luecke schliesst dieser
+    Test — und zwar in der Richtung, die zaehlt: **vom Manifest ZU den Installern.**"""
+    import json as _j
+    bot = os.path.expanduser("~/.claude/matrix-bot")
+    rel = os.environ.get("OPERATOR_RELEASE_DIR", "/Users/Shared/operator-release")
+    ps_pfad = os.path.join(rel, "_diff_op", "install.ps1")
+    sh_pfad = os.path.join(rel, "_diff_op", "install.sh")
+    if not (os.path.exists(ps_pfad) and os.path.exists(sh_pfad)):
+        raise AssertionError(
+            f"Installer nicht gefunden unter {rel} — dieser Test darf NICHT still "
+            f"uebersprungen werden (Lehre aus dem /tmp-Wipe: ein uebersprungener Test "
+            f"sieht aus wie ein bestandener).")
+    ps = open(ps_pfad, encoding="utf-8").read()
+    sh = open(sh_pfad, encoding="utf-8").read()
+    m = _j.load(open(os.path.join(bot, "manifest.json"), encoding="utf-8"))
+
+    fehlend = []
+    for f in m["files"]:
+        name = f["src"].split("/")[-1]
+        if name not in ps or name not in sh:
+            fehlend.append(f"{f['src']} (ps1={name in ps}, sh={name in sh})")
+    assert not fehlend, (
+        "Diese Dateien werden ausgeliefert, aber von einer frischen Installation nie "
+        "geholt:\n  " + "\n  ".join(fehlend))

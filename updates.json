@@ -1,9 +1,9 @@
 {
- "version": "1.46.0",
- "date": "2026-08-04",
+ "version": "1.47.0",
+ "date": "2026-08-05",
  "highlights": [
-  "🩺 Windows: »operator status« hat OK gemeldet, obwohl der Dienst gescheitert war — und zwar umso zuverlässiger, je schlimmer der Fehler. Die Prüfung war versehentlich umgekehrt. Jetzt zählt nur noch, ob wirklich ein Operator läuft.",
-  "🔓 Windows: Nach einem Neustart konnte eine übrig gebliebene Sperrdatei deinen Operator dauerhaft am Starten hindern — mit der Begründung, er laufe ja schon. Windows vergibt Prozessnummern wieder; das haben wir nicht berücksichtigt.",
-  "📄 Die Startprotokolle sind auf Windows jetzt lesbar. Vorher stand dort »Es lÃ¤uft bereits ein Operator« — ausgerechnet in der Datei, die man liest, wenn nichts mehr geht."
+  "📦 Wichtig für neue Installationen: Drei ausgelieferte Funktionen wurden bei einer frischen Installation nie mitgeholt — das automatische Merken, das Verarbeiten von Bildern und Dateien im Chat, und das Chat-Fenster als eigenes Fenster. Wer den Operator neu installiert hat, hatte sie schlicht nicht.",
+  "🔍 Ein neuer Wächter stellt sicher, dass jede ausgelieferte Datei auch wirklich beim Kunden ankommt. Diese Lücke konnte vorher niemand sehen.",
+  "🩺 Windows: Der Dienststatus meldet jetzt die Wahrheit, eine übrig gebliebene Sperrdatei blockiert den Start nicht mehr dauerhaft, und die Startprotokolle sind lesbar."
  ]
 }

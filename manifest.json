@@ -1,5 +1,5 @@
 {
- "version": "1.46.0",
+ "version": "1.47.0",
  "files": [
   {
    "src": "listener.py",
@@ -329,7 +329,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "bc07d9b22382afd3914e52d6599ff2252718bdba078c15663d56598ad61aaf95"
+   "sha256": "e1cc6c45ce8e971720bedcb6899d914d837581d3d33793f175bc10db4052bc4b"
   },
   {
    "src": "dienst_start.py",
@@ -354,7 +354,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "fcd9b9a86b14f0a8949a87702f921fa6e5c466f9229c4e14792b661405e3363c"
+   "sha256": "602eeedded1507611731a5c71cd3c72706035bec0f23ac25665afdb69ccd4df1"
   },
   {
    "src": "dashboard/test_petra.py",
@@ -365,11 +365,6 @@
    "src": "dashboard/conftest.py",
    "dst": "dashboard/conftest.py",
    "sha256": "edd214c114a77ffb8897c972c6de1135e3f8afc1e8d8c2fd4844669f7bae9c8e"
-  },
-  {
-   "src": "pruefstand/aufgaben-schwer.json",
-   "dst": "pruefstand/aufgaben-schwer.json",
-   "sha256": "fa848ce73d1df62fde4511ffd9adbaf1d316ea5a2c5c20b4458ee4974e197892"
   }
  ]
 }
