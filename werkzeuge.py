@@ -27,6 +27,7 @@ import os
 import re
 import subprocess
 import sys
+import platform_compat as _plat
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
@@ -157,7 +158,7 @@ def _hier_ausfuehren(cmd, arbeitsordner):
     """Voreinstellung: auf diesem Rechner. Sandbox und Fernausführung docken hier an,
     indem die Umgebung ein anderes `ausfuehren` mitgibt — kein Docker-Zwang."""
     r = subprocess.run(cmd, shell=True, cwd=arbeitsordner, capture_output=True,
-                       text=True, timeout=BEFEHL_ZEITLIMIT, errors="replace")
+                       text=True, timeout=BEFEHL_ZEITLIMIT, errors="replace", **_plat.OHNE_FENSTER)
     ausgabe = (r.stdout or "") + (("\n[Fehlerausgabe]\n" + r.stderr) if r.stderr else "")
     return ausgabe if ausgabe.strip() else f"(keine Ausgabe, Rückgabewert {r.returncode})"
 

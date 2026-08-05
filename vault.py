@@ -527,7 +527,7 @@ def _run_with_values(argv: list, values: dict, timeout: int, redact_all: list,
     shell = ["cmd", "/c", cmd] if _plat.IS_WIN else [shutil.which("bash") or "/bin/sh", "-c", cmd]
     try:
         r = subprocess.run(shell, env=env, capture_output=True,
-                           text=True, timeout=timeout)
+                           text=True, timeout=timeout, **_plat.OHNE_FENSTER)
     except subprocess.TimeoutExpired:
         print(f"Kommando nach {timeout}s abgebrochen", file=sys.stderr)
         return 124

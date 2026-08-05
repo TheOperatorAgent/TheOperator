@@ -36,6 +36,7 @@ import subprocess
 import sys
 import threading
 import time
+import platform_compat as _plat
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
@@ -114,7 +115,7 @@ class Server:
             self.prozess = subprocess.Popen(
                 self.befehl, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                 stderr=subprocess.DEVNULL, text=True, encoding="utf-8",
-                errors="replace", env=self.umgebung, bufsize=1)
+                errors="replace", env=self.umgebung, bufsize=1, **_plat.OHNE_FENSTER)
             kennung = self._senden("initialize", {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},

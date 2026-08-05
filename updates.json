@@ -1,9 +1,8 @@
 {
- "version": "1.50.0",
+ "version": "1.51.0",
  "date": "2026-08-05",
  "highlights": [
-  "🩺 »operator status« sagt endlich die Wahrheit. Er meldete bisher »ok«, sobald ein Dienst nur eingetragen war — auch wenn er gar nicht lief. Jetzt zählt allein, ob wirklich ein Operator arbeitet.",
-  "🪟 Windows: keine schwarzen Fenster mehr bei jeder Nachricht.",
-  "🛑 »operator stop«, »start« und »neustart« gibt es jetzt wirklich."
+  "🪟 Windows: das letzte Blinken ist weg. Der Login-Check (alle 15 Minuten) und der Geheimnisspeicher öffneten weiter kurz ein Konsolenfenster — jetzt sind alle 18 übrigen Prozessstarts fensterlos, und ein Wächter-Test prüft das ab sofort für jede ausgelieferte Datei.",
+  "🩺 »operator diagnose« prüft wieder die richtigen Merkmale: zwei veraltete Prüfmarken meldeten fälschlich NEIN, obwohl die Fixes drin sind."
  ]
 }

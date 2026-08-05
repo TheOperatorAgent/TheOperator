@@ -1989,7 +1989,9 @@ def test_claude_health_is_stdlib_only():
                if isinstance(n, ast.Import) for a in n.names}
     imports |= {n.module.split(".")[0] for n in ast.walk(ast.parse(src))
                 if isinstance(n, ast.ImportFrom) and n.module}
-    assert imports <= {"json", "os", "subprocess", "time", "sys"}
+    # platform_compat ist unser eigenes stdlib-Modul, liegt immer daneben —
+    # gebraucht für OHNE_FENSTER (der Login-Check öffnete alle 15 min ein Fenster).
+    assert imports <= {"json", "os", "subprocess", "time", "sys", "platform_compat"}
 
 
 def test_version_fields_consistent():
@@ -6105,7 +6107,7 @@ def test_mcp_client_nur_bordmittel():
         elif isinstance(k, _a.ImportFrom) and k.module:
             importe.add(k.module.split(".")[0])
     fremd = importe - {"json", "os", "subprocess", "sys", "threading", "time",
-                       "schleuse"}
+                       "schleuse", "platform_compat"}
     assert not fremd, f"Fremd-Abhängigkeiten im MCP-Client: {fremd}"
 
 
@@ -7828,32 +7830,50 @@ def test_kein_unterprozess_oeffnet_ein_fenster():
 
     Geprueft wird per Syntaxbaum — der erste Reparaturversuch zaehlte Klammern im Text,
     verschob sich nach der ersten Ersetzung und schnitt mitten in fremde Funktionen
-    (`servicemgr.py` endete mit »return logical, **_plat.OHNE_FENSTER)«)."""
-    import ast
+    (`servicemgr.py` endete mit »return logical, **_plat.OHNE_FENSTER)«).
+
+    Die Dateiliste kommt aus dem MANIFEST, nicht aus einer Handliste: Die erste
+    Fassung prüfte vier fest verdrahtete Dateien — und übersah damit genau den
+    Login-Check (claude_health.py, alle 15 Minuten ein Fenster) und den
+    Windows-Geheimnisspeicher (secretstore.py). Eine Handliste ist eine
+    Prüfung dessen, woran man ohnehin gedacht hat."""
+    import ast, json
     bot = os.path.expanduser("~/.claude/matrix-bot")
-    for datei in ("listener.py", "dashboard/server.py", "servicemgr.py", "llm_runner.py"):
+    manifest = json.load(open(os.path.join(bot, "manifest.json"), encoding="utf-8"))
+    dateien = [e["src"] for e in manifest["files"]
+               if e["src"].endswith(".py")
+               and not os.path.basename(e["src"]).startswith(("test_", "conftest"))]
+    assert len(dateien) >= 60, "Manifest-Liste unerwartet kurz — Test prueft ins Leere"
+    for datei in dateien:
         quelle = open(os.path.join(bot, datei), encoding="utf-8").read()
         baum = ast.parse(quelle)
-        # 1) Der Name muss auf MODULEBENE gebunden sein — sonst ist er in Funktionen
-        #    nicht da, und der Aufruf stirbt zur Laufzeit mit NameError. Genau das
-        #    passierte in llm_runner.py: syntaktisch gueltig, im Betrieb ein Absturz.
-        modulweit = {a.asname or a.name.split(".")[0]
-                     for k in baum.body if isinstance(k, ast.Import) for a in k.names}
-        assert "platform_compat" in modulweit or "_plat" in modulweit, \
-            f"{datei}: platform_compat nicht auf Modulebene importiert"
-        # 2) Jeder Prozessstart muss die Fensterunterdrueckung mitgeben.
-        ohne = []
+        # 1) Jeder Prozessstart muss die Fensterunterdrueckung mitgeben.
+        starts, ohne = [], []
         for k in ast.walk(baum):
             if (isinstance(k, ast.Call) and isinstance(k.func, ast.Attribute)
-                    and k.func.attr in ("run", "Popen")
+                    and k.func.attr in ("run", "Popen", "check_output", "check_call", "call")
                     and isinstance(k.func.value, ast.Name)
                     and k.func.value.id == "subprocess"):
+                starts.append(k)
                 if not any(kw.arg is None
-                           and getattr(kw.value, "attr", "") == "OHNE_FENSTER"
+                           and "OHNE_FENSTER" in (getattr(kw.value, "attr", ""),
+                                                  getattr(kw.value, "id", ""))
                            for kw in k.keywords):
                     ohne.append(f"{datei}:{k.lineno}")
         assert not ohne, ("Diese Prozessstarts oeffnen auf Windows ein Fenster: "
                           + ", ".join(ohne))
+        if not starts:
+            continue
+        # 2) Der Name muss auf MODULEBENE gebunden sein — sonst ist er in Funktionen
+        #    nicht da, und der Aufruf stirbt zur Laufzeit mit NameError. Genau das
+        #    passierte in llm_runner.py: syntaktisch gueltig, im Betrieb ein Absturz.
+        #    (platform_compat.py selbst definiert OHNE_FENSTER — braucht keinen Import.)
+        if datei == "platform_compat.py":
+            continue
+        modulweit = {a.asname or a.name.split(".")[0]
+                     for k in baum.body if isinstance(k, ast.Import) for a in k.names}
+        assert "platform_compat" in modulweit or "_plat" in modulweit, \
+            f"{datei}: platform_compat nicht auf Modulebene importiert"
 
 
 def test_fensterunterdrueckung_gilt_nur_fuer_windows():

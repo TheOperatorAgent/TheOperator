@@ -1,5 +1,5 @@
 {
- "version": "1.50.0",
+ "version": "1.51.0",
  "files": [
   {
    "src": "listener.py",
@@ -14,7 +14,7 @@
   {
    "src": "dock_fenster.py",
    "dst": "dock_fenster.py",
-   "sha256": "ac5dced7aaebd92a6137ef346fd390aabf2992e02e4e4d3b39ae80ef7f928045"
+   "sha256": "b557259e9e3ec83be8e73a17c80545912e9284aa46eaa245770f730dafd436dd"
   },
   {
    "src": "send.py",
@@ -69,17 +69,17 @@
   {
    "src": "vaultwarden.py",
    "dst": "vaultwarden.py",
-   "sha256": "9680603b0fb0da38cfe54123f095fd4580cede4b4b0f57dac92604bca923c355"
+   "sha256": "90a8ae8e5da57e8a620028323806dda3341de167a720eef9f4e0263f0d922130"
   },
   {
    "src": "platform_compat.py",
    "dst": "platform_compat.py",
-   "sha256": "cadd2c4f262dddc78b9e4e0752d748e1d7b4868e113a4b7a8cc568295119b4bc"
+   "sha256": "a9b70a644d3bca3aabca3d6029b146292e6c9117afefdf785e1bb22c48a9da59"
   },
   {
    "src": "secretstore.py",
    "dst": "secretstore.py",
-   "sha256": "317e9a8c7ac148e8ee376c43ed5a344749e7aecd233335cd803673d33c4183f0"
+   "sha256": "665c0c52204faebcc69e2cb6d13410bba12a4e93dab5cb20e85edc84582fc502"
   },
   {
    "src": "servicemgr.py",
@@ -94,7 +94,7 @@
   {
    "src": "claude_health.py",
    "dst": "claude_health.py",
-   "sha256": "9a799186ad50e4ed71c2974c39ffdf22ca687ce818c587a727eb9728771bcbdd"
+   "sha256": "7030ef048806a4a9e0baa74f1cec84ca22b93c126c35c405d23e983f30764b4c"
   },
   {
    "src": "raumwaechter.py",
@@ -134,7 +134,7 @@
   {
    "src": "sandbox.py",
    "dst": "sandbox.py",
-   "sha256": "ce56630dcb7381547f6023f04512c8949116b85195adf5c67d381ac467804da3"
+   "sha256": "755503acececfd98430e52be4cde5ef5300f4fcf9e1ab4a704590ec94f1a0446"
   },
   {
    "src": "persona.py",
@@ -164,7 +164,7 @@
   {
    "src": "updater.py",
    "dst": "updater.py",
-   "sha256": "f73cef235cc4d2517451ddf02f88e72dc5595e081a6e71d91a15befaac7657ae"
+   "sha256": "88e42d6afe41adfb76f77ed50bff31ebdc1fd5cef8fcbee445d1ef2f7eaf91e8"
   },
   {
    "src": "update_pubkey.txt",
@@ -199,7 +199,7 @@
   {
    "src": "vault.py",
    "dst": "vault.py",
-   "sha256": "2646f0ac52cce8e07088aea3996fdd4bb356a676c5e597f48bd89402846b65f9"
+   "sha256": "7af4b2eaadebe185a07a5639315e2dd7d852664a3863b71d062a6ba5fea337e6"
   },
   {
    "src": "mcp_n8n.py",
@@ -229,12 +229,12 @@
   {
    "src": "mcp_client.py",
    "dst": "mcp_client.py",
-   "sha256": "95184ebe49c8defa494f6c19a111275a895c0a5346d9a0d6b9fa9166b31b8995"
+   "sha256": "7c90e53e906fdfe2777bfefb87ac4c61522789c371361546177f2220a667e214"
   },
   {
    "src": "werkzeuge.py",
    "dst": "werkzeuge.py",
-   "sha256": "a85dad73cdcdc875043015435feb9306f9c894e7a90d1f5fc6c3f0b6e3cba1ad"
+   "sha256": "9474f94736c96f091ddccb837cbbe2e6bca102a6d4aefdbef0c1b047e56511b5"
   },
   {
    "src": "anbieter.py",
@@ -329,7 +329,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "ac05270bb46c1a1ca60b841ed9618d7888da11518c6cf33487c524abe01760c1"
+   "sha256": "f6a0b9759d1af128dd09bb3f49812c052c89168e7b159e6d269036a2faba3260"
   },
   {
    "src": "dienst_start.py",
@@ -339,22 +339,22 @@
   {
    "src": "pruefung.py",
    "dst": "pruefung.py",
-   "sha256": "712c9235274d2deb8aa56ae34579db99d9bf3b51a575633aa6c2f071712464ba"
+   "sha256": "2010d98d8041e59b3df8a9ec37380fa2843ced71e7f6f97fa457ecfeaeb332e1"
   },
   {
    "src": "diagnose.py",
    "dst": "diagnose.py",
-   "sha256": "5641cb974fcdd450f76a1591a19d627e8ca8370d659108ae32104b8b004c4151"
+   "sha256": "3af34480c5fe6ec43e36edec4d5a34b592ce0bb02c15a38f979411cb77937088"
   },
   {
    "src": "abnahme.py",
    "dst": "abnahme.py",
-   "sha256": "33d48206cf3f5e9cbc54a0f5625e358fdcd199e4739e4f8e71b7a69e51d152a6"
+   "sha256": "1ec944493fd1d295b2badea6ffcf7abc6f5265ebaecb270cfb90d7cc3df9c8f5"
   },
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "00348fc558dfc2901820f5aeb040d9cbdc547329aa68a481ee14bf3afca09427"
+   "sha256": "856cd2b66e9d1f25aeaf6f72546acabcab073aeeca714412d9cc0a36e136fc10"
   },
   {
    "src": "dashboard/test_petra.py",

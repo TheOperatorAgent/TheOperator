@@ -18,6 +18,7 @@ import json
 import os
 import subprocess
 import time
+import platform_compat as _plat
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 STATE_FILE = os.path.join(BOT_DIR, "run", "claude-health.json")
@@ -106,7 +107,7 @@ def probe(claude_bin="claude", env=None):
         # damit ein fragendes claude nie endlos wartet.
         r = subprocess.run([claude_bin, "-p", "--output-format", "json"], input="ok",
                            capture_output=True, text=True, timeout=PROBE_TIMEOUT,
-                           env=env or dict(os.environ))
+                           env=env or dict(os.environ), **_plat.OHNE_FENSTER)
         return record(r.returncode, r.stdout + r.stderr)
     except (OSError, subprocess.TimeoutExpired):
         return state().get("state", "unknown"), False

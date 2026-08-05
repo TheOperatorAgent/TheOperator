@@ -134,7 +134,8 @@ def selbsttest():
               f'echo boese > "{aussen}" 2>/dev/null && echo AUSSEN_DURCH || echo AUSSEN_BLOCKIERT')
     try:
         r = subprocess.run(wrap(["/bin/sh", "-c", skript]),
-                           capture_output=True, text=True, timeout=30)
+                           capture_output=True, text=True, timeout=30,
+                           **platform_compat.OHNE_FENSTER)
         aus = r.stdout
     except Exception as e:
         return False, f"Selbsttest fehlgeschlagen: {e}"

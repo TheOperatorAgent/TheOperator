@@ -17,6 +17,7 @@ import json
 import os
 import sys
 import urllib.request
+import platform_compat as _plat
 
 BOT_DIR = os.path.expanduser("~/.claude/matrix-bot")
 sys.path.insert(0, BOT_DIR)
@@ -156,7 +157,7 @@ def _signatur_pruefen(manifest_bytes, log):
             f.write(sig.strip() + "\n")
         r = subprocess.run([py, os.path.join(BOT_DIR, "update_verify.py"),
                             "verify", PUBKEY_FILE, mp, sp],
-                           capture_output=True, text=True, timeout=60)
+                           capture_output=True, text=True, timeout=60, **_plat.OHNE_FENSTER)
     if r.returncode != 0:
         return False, "Signatur UNGÜLTIG — Update abgelehnt (Quelle manipuliert?)."
     return True, ""

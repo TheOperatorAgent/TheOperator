@@ -29,6 +29,7 @@ import platform
 import subprocess
 import sys
 import time
+import platform_compat as _plat
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
@@ -121,7 +122,7 @@ def _lange_eingabe():
     pfad = pc.claude_bin(creds.get("claude_bin") or "")
     gross = "Zeile zur Größenprobe. " * 500 + "\nAntworte nur mit OK"
     r = subprocess.run([pfad, "-p"], input=gross, capture_output=True, text=True,
-                       timeout=180, errors="replace")
+                       timeout=180, errors="replace", **_plat.OHNE_FENSTER)
     if r.returncode != 0:
         return FEHLER, f"rc={r.returncode} bei {len(gross)} Zeichen: {(r.stderr or '')[:60]}"
     return OK, f"{len(gross)} Zeichen über die Standardeingabe: rc=0"
@@ -154,7 +155,7 @@ def _pruefungen():
     if not all(os.path.exists(t) for t in tests):
         return FEHLER, "Prüfungen fehlen — Installation vor 1.23.0?"
     r = subprocess.run([py, "-m", "pytest", *tests, "-q", "--tb=no", "-m", "not lieferkette"],
-                       capture_output=True, text=True, timeout=900, cwd=BOT_DIR)
+                       capture_output=True, text=True, timeout=900, cwd=BOT_DIR, **_plat.OHNE_FENSTER)
     import re
     p = re.search(r"(\d+) passed", r.stdout)
     f = re.search(r"(\d+) failed", r.stdout)

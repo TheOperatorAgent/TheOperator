@@ -26,6 +26,7 @@ import re
 import subprocess
 import sys
 import time
+import platform_compat as _plat
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
@@ -61,7 +62,7 @@ def lauf(argv, timeout=60, eingabe=None, cwd=None):
         r = subprocess.run(argv, capture_output=True, text=True, timeout=timeout,
                            input=eingabe, cwd=cwd,
                            stdin=None if eingabe is not None else subprocess.DEVNULL,
-                           errors="replace")
+                           errors="replace", **_plat.OHNE_FENSTER)
         return r.returncode, (r.stdout or ""), (r.stderr or "")
     except subprocess.TimeoutExpired:
         return -9, "", f"ZEITÜBERSCHREITUNG nach {timeout}s"
@@ -125,13 +126,13 @@ def teil1_fassung():
     # Kernfrage des 30.07.: steckt der stdin-Fix drin?
     sag("", "Merkmale einzelner Fixes in den Dateien auf der Platte:")
     for datei, marke, was in (
-            ("listener.py", "input=prompt", "Prompt über Standardeingabe (1.21.0)"),
+            ("listener.py", "stdin=fi", "Prompt über Datei statt Pipe (1.22.1)"),
             ("listener.py", '"-p", prompt', "ALTER Prompt als Argument (darf NICHT da sein)"),
             ("listener.py", "LOGDATEI", "schreibt eigenes Log (1.19.0)"),
             ("listener.py", "_plat.claude_bin(", "Windows-sichere Claude-Auflösung (1.18.8)"),
             ("dashboard/server.py", "input=prompt", "Assistent über Standardeingabe (1.21.0)"),
             ("dienst_start.py", "ABBRUCH", "Start-Mantel (1.20.0)"),
-            ("servicemgr.py", "isdigit()", "sprachfreier Dienststatus (1.20.1)")):
+            ("servicemgr.py", "Win32_Process", "Dienststatus fragt echte Prozesse (1.50.0)")):
         p = os.path.join(BOT_DIR, datei)
         try:
             drin = marke in open(p, encoding="utf-8", errors="replace").read()

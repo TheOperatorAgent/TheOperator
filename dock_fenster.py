@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import platform_compat as _plat
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
@@ -77,7 +78,7 @@ def oeffnen():
     if browser:
         subprocess.Popen([browser, f"--app={url}", "--window-size=430,760"],
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                         start_new_session=True)
+                         start_new_session=True, **_plat.OHNE_FENSTER)
         print("Satellit gestartet (eigenes Fenster).")
         return True
     if platform_compat.open_url(url):

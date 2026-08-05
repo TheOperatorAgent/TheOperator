@@ -55,7 +55,7 @@ def _bw(args, session=None, stdin=None, pw=None, timeout=60):
         env["BW_MASTERPW"] = pw
     os.makedirs(APPDATA_DIR, mode=0o700, exist_ok=True)
     r = subprocess.run([exe] + args, env=env, capture_output=True, text=True,
-                       input=stdin, timeout=timeout)
+                       input=stdin, timeout=timeout, **_plat.OHNE_FENSTER)
     return r.returncode, r.stdout, r.stderr
 
 

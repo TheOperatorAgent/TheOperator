@@ -184,7 +184,7 @@ def secure_chmod(path: str, mode: int = 0o600) -> None:
         user = os.environ.get("USERNAME") or getpass.getuser()
         try:
             subprocess.run(["icacls", path, "/inheritance:r", "/grant:r", f"{user}:F"],
-                           capture_output=True, timeout=10)
+                           capture_output=True, timeout=10, **OHNE_FENSTER)
         except Exception:
             pass
 

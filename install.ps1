@@ -24,7 +24,7 @@ $DashDir = Join-Path $BotDir "dashboard"
 $Workspace = if ($env:OPERATOR_WORKSPACE) { $env:OPERATOR_WORKSPACE } else { Join-Path $HOME "Operator" }
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 # #131: Der Installer nennt seine eigene Fassung (siehe install.sh).
-$InstallerVersion = "1.50.0"
+$InstallerVersion = "1.51.0"
 $RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
 

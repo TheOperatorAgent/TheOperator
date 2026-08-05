@@ -48,18 +48,18 @@ def _file_delete(account: str) -> None:
 # ---------------------------------------------------------------- macOS (security) --
 def _mac_get(account: str):
     r = subprocess.run(["security", "find-generic-password", "-s", SERVICE, "-a", account, "-w"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, **_plat.OHNE_FENSTER)
     return r.stdout.strip() if r.returncode == 0 else None
 
 
 def _mac_set(account: str, value: str) -> None:
     subprocess.run(["security", "add-generic-password", "-U", "-s", SERVICE, "-a", account,
-                    "-w", value], check=True, capture_output=True)
+                    "-w", value], check=True, capture_output=True, **_plat.OHNE_FENSTER)
 
 
 def _mac_delete(account: str) -> None:
     subprocess.run(["security", "delete-generic-password", "-s", SERVICE, "-a", account],
-                   capture_output=True)
+                   capture_output=True, **_plat.OHNE_FENSTER)
 
 
 # ---------------------------------------------------------------- Linux (secret-tool) --
@@ -69,19 +69,19 @@ def _has_secret_tool() -> bool:
 
 def _linux_get(account: str):
     r = subprocess.run(["secret-tool", "lookup", "service", SERVICE, "account", account],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True, **_plat.OHNE_FENSTER)
     return r.stdout.strip() if r.returncode == 0 and r.stdout.strip() else None
 
 
 def _linux_set(account: str, value: str) -> None:
     subprocess.run(["secret-tool", "store", "--label=Operator " + account,
                     "service", SERVICE, "account", account],
-                   input=value, capture_output=True, text=True, check=True)
+                   input=value, capture_output=True, text=True, check=True, **_plat.OHNE_FENSTER)
 
 
 def _linux_delete(account: str) -> None:
     subprocess.run(["secret-tool", "clear", "service", SERVICE, "account", account],
-                   capture_output=True)
+                   capture_output=True, **_plat.OHNE_FENSTER)
 
 
 # ---------------------------------------------------------------- Windows (DPAPI) --
@@ -94,7 +94,7 @@ def _ps(script: str, env_extra=None):
     if env_extra:
         env.update(env_extra)
     return subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
-                          capture_output=True, text=True, env=env, timeout=30)
+                          capture_output=True, text=True, env=env, timeout=30, **_plat.OHNE_FENSTER)
 
 
 def _win_get(account: str):

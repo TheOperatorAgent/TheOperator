@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import urllib.request
+import platform_compat as _plat
 
 BOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, BOT_DIR)
@@ -153,7 +154,7 @@ def schritt3_claude():
     try:
         r = subprocess.run([pfad, "-p", "Antworte nur mit: OK"], capture_output=True,
                            text=True, timeout=90,
-                           stdin=subprocess.DEVNULL)
+                           stdin=subprocess.DEVNULL, **_plat.OHNE_FENSTER)
         if "OK" in (r.stdout or ""):
             sagen(OK, "Claude antwortet (Anmeldung gültig)")
         else:
