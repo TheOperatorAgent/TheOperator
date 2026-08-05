@@ -24,7 +24,7 @@ WORKSPACE="${OPERATOR_WORKSPACE:-$HOME/Operator}"
 STATE_FILE="$BOT_DIR/.install-state.json"
 # #131: Der Installer nennt seine eigene Fassung. Bei zwei Auslieferungswegen
 # (GitHub sofort, operator.bayern per Handupload) ist Drift sonst unsichtbar.
-INSTALLER_VERSION="1.47.0"
+INSTALLER_VERSION="1.48.0"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main}"
 
@@ -893,8 +893,24 @@ case "\${1:-dashboard}" in
     else
       for s in listener dashboard pseudonym; do systemctl --user is-active --quiet "operator-\$s" && echo "✓ \$s läuft" || echo "✗ \$s gestoppt"; done
     fi;;
+  stop|start|neustart)
+    _dienste() {
+      if [ "\$(uname)" = Darwin ]; then
+        for s in listener dashboard pseudonym; do launchctl "\$1" "gui/\$(id -u)/com.the-operator.\$s" 2>/dev/null; done
+      else
+        for s in listener dashboard pseudonym; do systemctl --user "\$1" "operator-\$s" 2>/dev/null; done
+      fi
+    }
+    case "\$1" in
+      stop)     if [ "\$(uname)" = Darwin ]; then _dienste bootout; else _dienste stop; fi
+                echo "Operator gestoppt. Starten mit: operator start";;
+      start)    if [ "\$(uname)" = Darwin ]; then _dienste kickstart; else _dienste start; fi
+                echo "Operator gestartet.";;
+      neustart) if [ "\$(uname)" = Darwin ]; then _dienste "kickstart -k"; else _dienste restart; fi
+                echo "Operator neu gestartet.";;
+    esac;;
   uninstall)    u=\$(mktemp) && curl -fsSL "$REPO_RAW/install.sh" -o "\$u" && exec bash "\$u" --uninstall;;
-  *) echo "Nutzung: operator [dashboard|chat|log|pruefen|diagnose|abnahme|status|uninstall]";;
+  *) echo "Nutzung: operator [dashboard|chat|log|pruefen|diagnose|abnahme|status|stop|start|neustart|uninstall]";;
 esac
 LAUNCH
   chmod +x "$HOME/.local/bin/operator"

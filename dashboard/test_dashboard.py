@@ -7772,3 +7772,46 @@ def test_jede_manifest_datei_steht_in_BEIDEN_installern():
     assert not fehlend, (
         "Diese Dateien werden ausgeliefert, aber von einer frischen Installation nie "
         "geholt:\n  " + "\n  ".join(fehlend))
+
+
+def test_jeder_befehl_den_wir_empfehlen_existiert_auch():
+    """Die Einmal-Sperre sagt woertlich: »👉 Wenn du den laufenden beenden willst:
+    'operator stop'«. **Diesen Befehl gab es auf keiner Plattform.** Michi hat ihn am
+    04.08. zweimal ausgefuehrt und zweimal nur die Nutzungszeile bekommen.
+
+    Ein Hinweis, der auf einen Befehl zeigt, den es nicht gibt, ist schlimmer als
+    keiner: Er laesst den Nutzer glauben, er habe etwas falsch gemacht
+    (EINFACHHEIT.md — jeder Fehler braucht einen 👉-naechsten-Schritt, der TRAEGT).
+
+    **Die Nutzungszeile wird ausdruecklich entfernt, bevor gesucht wird.** Der erste
+    Entwurf dieses Tests fand »stop« genau dort und war gruen, obwohl der Befehl
+    fehlte — dieselbe Falle wie bei den Prosa-Treffern in #126, zum vierten Mal.
+    """
+    import re
+    bot = os.path.expanduser("~/.claude/matrix-bot")
+    rel = os.environ.get("OPERATOR_RELEASE_DIR", "/Users/Shared/operator-release")
+    sh = open(os.path.join(rel, "_diff_op", "install.sh"), encoding="utf-8").read()
+    ps = open(os.path.join(rel, "_diff_op", "install.ps1"), encoding="utf-8").read()
+    # Hilfetexte raus — sie zaehlen Befehle auf, sie setzen keinen davon um.
+    ohne_hilfe = lambda t: "\n".join(z for z in t.splitlines()
+                                     if "Nutzung: operator" not in z)
+    sh, ps = ohne_hilfe(sh), ohne_hilfe(ps)
+
+    empfohlen = set()
+    for datei in ("listener.py", "dashboard/server.py", "pruefung.py", "diagnose.py"):
+        pfad = os.path.join(bot, datei)
+        if os.path.exists(pfad):
+            empfohlen |= set(re.findall(r"['»\"]operator (\w+)['«\"]",
+                                       open(pfad, encoding="utf-8").read()))
+    assert "stop" in empfohlen, "prueft der Test noch das Richtige?"
+
+    fehlend = []
+    for w in sorted(empfohlen):
+        # Fallunterscheidungen duerfen mehrere Namen tragen: »pruefen|check)«.
+        in_sh = re.search(rf"(^|\||\s){re.escape(w)}(\||\))", sh, re.M) is not None
+        in_ps = f'"{w}"' in ps
+        if not (in_sh and in_ps):
+            fehlend.append(f"{w} (sh={in_sh}, ps1={in_ps})")
+    assert not fehlend, (
+        "Diese Befehle empfiehlt der Operator, aber der Kurzbefehl setzt sie nicht um: "
+        + ", ".join(fehlend))

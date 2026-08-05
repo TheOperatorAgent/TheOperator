@@ -24,7 +24,7 @@ $DashDir = Join-Path $BotDir "dashboard"
 $Workspace = if ($env:OPERATOR_WORKSPACE) { $env:OPERATOR_WORKSPACE } else { Join-Path $HOME "Operator" }
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 # #131: Der Installer nennt seine eigene Fassung (siehe install.sh).
-$InstallerVersion = "1.47.0"
+$InstallerVersion = "1.48.0"
 $RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
 
@@ -619,8 +619,11 @@ if /i "%1"=="pruefen" goto pruefen
 if /i "%1"=="diagnose" goto diagnose
 if /i "%1"=="abnahme" goto abnahme
 if /i "%1"=="check" goto pruefen
+if /i "%1"=="stop" goto stop
+if /i "%1"=="start" goto start
+if /i "%1"=="neustart" goto neustart
 if /i "%1"=="uninstall" goto uninstall
-echo Nutzung: operator [dashboard^|chat^|log^|pruefen^|diagnose^|abnahme^|status^|uninstall]
+echo Nutzung: operator [dashboard^|chat^|log^|pruefen^|diagnose^|abnahme^|status^|stop^|start^|neustart^|uninstall]
 goto :eof
 :dashboard
 "%PY%" "%BOT%\dashboard\open.py"
@@ -643,6 +646,23 @@ goto :eof
 :status
 powershell -NoProfile -Command "foreach (`$t in 'OperatorListener','OperatorDashboard','OperatorPseudonym') { `$s = (schtasks /query /tn `$t 2>`$null); if (`$LASTEXITCODE -eq 0) { Write-Host ('[ok] ' + `$t) } else { Write-Host ('[--] ' + `$t + ' nicht eingerichtet') } }"
 goto :eof
+:stop
+schtasks /end /tn OperatorListener >nul 2>&1
+schtasks /end /tn OperatorDashboard >nul 2>&1
+schtasks /end /tn OperatorPseudonym >nul 2>&1
+echo Operator gestoppt. Starten mit: operator start
+goto :eof
+:start
+schtasks /run /tn OperatorListener >nul 2>&1
+schtasks /run /tn OperatorDashboard >nul 2>&1
+schtasks /run /tn OperatorPseudonym >nul 2>&1
+echo Operator gestartet.
+goto :eof
+:neustart
+call "%~f0" stop
+call "%~f0" start
+goto :eof
+
 :uninstall
 powershell -NoProfile -Command "irm $RepoRaw/install.ps1 -OutFile `$env:TEMP\op_uninstall.ps1; & `$env:TEMP\op_uninstall.ps1 -Uninstall"
 goto :eof
