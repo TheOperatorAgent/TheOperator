@@ -7871,3 +7871,32 @@ def test_fensterunterdrueckung_gilt_nur_fuer_windows():
     r = subprocess.run([sys.executable, "-c", "print('ok')"],
                        capture_output=True, text=True, **p.OHNE_FENSTER)
     assert r.stdout.strip() == "ok"
+
+
+def test_operator_status_fragt_servicemgr_statt_selbst_zu_raten():
+    """Am 05.08. meldete `operator status` dreimal [ok], obwohl der Listener seit fuenf
+    Tagen keine Zeile geschrieben hatte. Ich habe daraufhin `servicemgr.status()`
+    repariert (#160) — **und die Reparatur war wirkungslos**, weil der Kurzbefehl
+    servicemgr gar nicht aufruft. Er hatte eine EIGENE Pruefung eingebaut:
+
+        if ($LASTEXITCODE -eq 0) { Write-Host ('[ok] ' + $t) }
+
+    Das fragt, ob die Aufgabe EINGETRAGEN ist. Nicht, ob sie laeuft.
+
+    Zwei Umsetzungen derselben Frage sind zwei Wahrheiten, von denen eine veraltet —
+    dieselbe Drift wie bei den zwei Installern (#126) und der Leseliste (#158).
+    Deshalb: **eine Quelle**, und dieser Test haelt sie fest."""
+    rel = os.environ.get("OPERATOR_RELEASE_DIR", "/Users/Shared/operator-release")
+    for datei in ("install.ps1", "install.sh"):
+        pfad = os.path.join(rel, "_diff_op", datei)
+        assert os.path.exists(pfad), f"{pfad} fehlt — Test darf nicht still uebersprungen werden"
+        s = open(pfad, encoding="utf-8").read()
+        # Den status-Zweig herausschneiden
+        i = s.find(":status") if datei.endswith(".ps1") else s.find("  status)")
+        assert i > 0, f"{datei}: kein status-Zweig gefunden"
+        zweig = s[i:i + 700]
+        assert "servicemgr" in zweig, \
+            f"{datei}: »operator status« raet wieder selbst, statt servicemgr zu fragen"
+        for eigenbau in ("LASTEXITCODE", "launchctl print", "is-active"):
+            assert eigenbau not in zweig, \
+                f"{datei}: eigene Dienstpruefung ({eigenbau}) statt der einen Quelle"

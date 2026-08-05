@@ -24,7 +24,7 @@ $DashDir = Join-Path $BotDir "dashboard"
 $Workspace = if ($env:OPERATOR_WORKSPACE) { $env:OPERATOR_WORKSPACE } else { Join-Path $HOME "Operator" }
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 # #131: Der Installer nennt seine eigene Fassung (siehe install.sh).
-$InstallerVersion = "1.49.0"
+$InstallerVersion = "1.50.0"
 $RepoRaw = if ($env:REPO_RAW) { $env:REPO_RAW } else { "https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main" }
 $Tasks   = @{ listener = "OperatorListener"; dashboard = "OperatorDashboard"; pseudonym = "OperatorPseudonym" }
 
@@ -644,7 +644,7 @@ goto :eof
 "%PY%" "%BOT%\abnahme.py"
 goto :eof
 :status
-powershell -NoProfile -Command "foreach (`$t in 'OperatorListener','OperatorDashboard','OperatorPseudonym') { `$s = (schtasks /query /tn `$t 2>`$null); if (`$LASTEXITCODE -eq 0) { Write-Host ('[ok] ' + `$t) } else { Write-Host ('[--] ' + `$t + ' nicht eingerichtet') } }"
+"%PY%" -c "import sys;sys.path.insert(0,r'%BOT%');import servicemgr as s;[print(('[ok] ' if s.status(d) else '[--] laeuft nicht: ')+d) for d in ('listener','dashboard','pseudonym')]"
 goto :eof
 :stop
 schtasks /end /tn OperatorListener >nul 2>&1

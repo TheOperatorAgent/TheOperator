@@ -1,8 +1,9 @@
 {
- "version": "1.49.0",
+ "version": "1.50.0",
  "date": "2026-08-05",
  "highlights": [
-  "🪟 Windows: Schluss mit den schwarzen Fenstern. Bei jeder Nachricht öffnete sich eines und blieb stehen, solange dein Operator nachdachte. Ab jetzt arbeitet er wirklich im Hintergrund.",
-  "🛡️ Das war nicht nur lästig: Es war genau die Sorte Fenster, deren Schließen den Dienst beendet — man konnte sich also versehentlich selbst abschalten."
+  "🩺 »operator status« sagt endlich die Wahrheit. Er meldete bisher »ok«, sobald ein Dienst nur eingetragen war — auch wenn er gar nicht lief. Jetzt zählt allein, ob wirklich ein Operator arbeitet.",
+  "🪟 Windows: keine schwarzen Fenster mehr bei jeder Nachricht.",
+  "🛑 »operator stop«, »start« und »neustart« gibt es jetzt wirklich."
  ]
 }

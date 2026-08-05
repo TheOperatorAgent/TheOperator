@@ -1,5 +1,5 @@
 {
- "version": "1.49.0",
+ "version": "1.50.0",
  "files": [
   {
    "src": "listener.py",
@@ -329,7 +329,7 @@
   {
    "src": "VERSION",
    "dst": "VERSION",
-   "sha256": "9761904ed5231958f3c472e68f320bc7cc644171390018375e0b92fcb360b5f1"
+   "sha256": "ac05270bb46c1a1ca60b841ed9618d7888da11518c6cf33487c524abe01760c1"
   },
   {
    "src": "dienst_start.py",
@@ -354,7 +354,7 @@
   {
    "src": "dashboard/test_dashboard.py",
    "dst": "dashboard/test_dashboard.py",
-   "sha256": "923db51d18bbe3535315b9e9db745cd10a9f118c477f4aa237fd3cb3e775b4d9"
+   "sha256": "00348fc558dfc2901820f5aeb040d9cbdc547329aa68a481ee14bf3afca09427"
   },
   {
    "src": "dashboard/test_petra.py",

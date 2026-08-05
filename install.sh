@@ -24,7 +24,7 @@ WORKSPACE="${OPERATOR_WORKSPACE:-$HOME/Operator}"
 STATE_FILE="$BOT_DIR/.install-state.json"
 # #131: Der Installer nennt seine eigene Fassung. Bei zwei Auslieferungswegen
 # (GitHub sofort, operator.bayern per Handupload) ist Drift sonst unsichtbar.
-INSTALLER_VERSION="1.49.0"
+INSTALLER_VERSION="1.50.0"
 # TODO vor GitHub-Publish: Raw-URL auf das GitHub-Repo umstellen
 REPO_RAW="${REPO_RAW:-https://raw.githubusercontent.com/TheOperatorAgent/TheOperator/main}"
 
@@ -888,11 +888,7 @@ case "\${1:-dashboard}" in
   diagnose)     exec "\$VENV" "\$BOT_DIR/diagnose.py";;
   abnahme)      exec "\$VENV" "\$BOT_DIR/abnahme.py";;
   status)
-    if [ "\$(uname)" = Darwin ]; then
-      for s in listener dashboard pseudonym; do launchctl print "gui/\$(id -u)/com.the-operator.\$s" >/dev/null 2>&1 && echo "✓ \$s läuft" || echo "✗ \$s gestoppt"; done
-    else
-      for s in listener dashboard pseudonym; do systemctl --user is-active --quiet "operator-\$s" && echo "✓ \$s läuft" || echo "✗ \$s gestoppt"; done
-    fi;;
+    exec "\$VENV" -c "import sys;sys.path.insert(0,'\$BOT_DIR');import servicemgr as s;[print(('✓ ' if s.status(d) else '✗ laeuft nicht: ')+d) for d in ('listener','dashboard','pseudonym')]";;
   stop|start|neustart)
     _dienste() {
       if [ "\$(uname)" = Darwin ]; then
